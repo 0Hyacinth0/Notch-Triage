@@ -331,10 +331,6 @@ final class AppModel: ObservableObject {
         notificationService.requestAccessibility()
     }
 
-    func openSystemNotificationCenter() {
-        notificationService.openNotificationCenter()
-    }
-
     func clearAllNotifications() {
         notificationService.clearAllNotifications()
     }

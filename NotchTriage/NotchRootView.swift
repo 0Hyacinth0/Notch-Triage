@@ -59,10 +59,6 @@ struct NotchRootView: View {
     }
 
     private var compactAlignmentOffset: CGFloat {
-        guard !model.isHoveringNotch,
-              !model.isExpanded,
-              !model.isPanelClosing,
-              model.systemHUD == nil else { return 0 }
         let leftWidth = compactWingWidth(
             for: model.leftWingContent,
             media: model.media
@@ -72,6 +68,92 @@ struct NotchRootView: View {
             media: model.media
         )
         return (rightWidth - leftWidth) / 2
+    }
+}
+
+private struct NotchSilhouette: Shape {
+    let shoulderRadius: CGFloat
+    let bottomCornerRadius: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        let shoulder = min(
+            shoulderRadius,
+            min(rect.width / 4, rect.height / 3)
+        )
+        let bodyLeft = rect.minX + shoulder
+        let bodyRight = rect.maxX - shoulder
+        let bottomRadius = min(
+            bottomCornerRadius,
+            min(
+                (bodyRight - bodyLeft) / 2,
+                max(0, rect.height - shoulder)
+            )
+        )
+        let bottom = rect.maxY
+
+        var path = Path()
+        // Extend the top edge slightly past the view bounds so antialiasing
+        // can never reveal a seam against the physical display notch.
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY - 1))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY - 1))
+
+        // The display notch flares outward where it meets the top bezel.
+        // These concave shoulders replace the abrupt 90-degree junction.
+        path.addCurve(
+            to: CGPoint(x: bodyRight, y: rect.minY + shoulder),
+            control1: CGPoint(
+                x: rect.maxX - shoulder * 0.58,
+                y: rect.minY - 1
+            ),
+            control2: CGPoint(
+                x: bodyRight,
+                y: rect.minY + shoulder * 0.42
+            )
+        )
+        path.addLine(
+            to: CGPoint(x: bodyRight, y: bottom - bottomRadius)
+        )
+        path.addCurve(
+            to: CGPoint(x: bodyRight - bottomRadius, y: bottom),
+            control1: CGPoint(
+                x: bodyRight,
+                y: bottom - bottomRadius * 0.45
+            ),
+            control2: CGPoint(
+                x: bodyRight - bottomRadius * 0.45,
+                y: bottom
+            )
+        )
+        path.addLine(
+            to: CGPoint(x: bodyLeft + bottomRadius, y: bottom)
+        )
+        path.addCurve(
+            to: CGPoint(x: bodyLeft, y: bottom - bottomRadius),
+            control1: CGPoint(
+                x: bodyLeft + bottomRadius * 0.45,
+                y: bottom
+            ),
+            control2: CGPoint(
+                x: bodyLeft,
+                y: bottom - bottomRadius * 0.45
+            )
+        )
+        path.addLine(
+            to: CGPoint(x: bodyLeft, y: rect.minY + shoulder)
+        )
+        path.addCurve(
+            to: CGPoint(x: rect.minX, y: rect.minY - 1),
+            control1: CGPoint(
+                x: bodyLeft,
+                y: rect.minY + shoulder * 0.42
+            ),
+            control2: CGPoint(
+                x: rect.minX + shoulder * 0.58,
+                y: rect.minY - 1
+            )
+        )
+        path.closeSubpath()
+        return path
     }
 }
 
@@ -266,6 +348,7 @@ private struct LivingNotch: View {
     @ObservedObject var model: AppModel
     let hoveredHeight: CGFloat
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private let shoulderRadius: CGFloat = 6
 
     private var hovering: Bool {
         model.isHoveringNotch
@@ -293,7 +376,7 @@ private struct LivingNotch: View {
     }
 
     private var width: CGFloat {
-        compactWidth
+        compactWidth + shoulderRadius * 2
     }
 
     private var height: CGFloat {
@@ -305,14 +388,9 @@ private struct LivingNotch: View {
     }
 
     var body: some View {
-        UnevenRoundedRectangle(
-            topLeadingRadius: 0,
-            bottomLeadingRadius: hovering
-                ? 22
-                : 12,
-            bottomTrailingRadius: hovering ? 22 : 12,
-            topTrailingRadius: 0,
-            style: .continuous
+        NotchSilhouette(
+            shoulderRadius: shoulderRadius,
+            bottomCornerRadius: hovering ? 22 : 12
         )
         .fill(.black)
         .frame(width: width, height: height, alignment: .top)
@@ -323,6 +401,7 @@ private struct LivingNotch: View {
         }
         .overlay {
             hoverPreview
+                .frame(width: compactWidth, height: height)
                 .opacity(hovering && model.systemHUD == nil ? 1 : 0)
                 .accessibilityHidden(!hovering || model.systemHUD != nil)
         }
@@ -332,6 +411,7 @@ private struct LivingNotch: View {
                     snapshot: snapshot,
                     menuBarHeight: model.menuBarHeight
                 )
+                .frame(width: compactWidth, height: height)
                 .id(snapshot.kind)
                 .transition(.opacity)
             }
@@ -381,7 +461,7 @@ private struct LivingNotch: View {
             )
             .frame(width: rightWidth, height: height)
         }
-        .frame(width: width, height: height)
+        .frame(width: compactWidth, height: height)
     }
 
     private var hoverPreview: some View {
@@ -933,24 +1013,6 @@ private struct ExpandedPanel: View {
                     .pickerStyle(.segmented)
                     .controlSize(.small)
                     .frame(width: 78)
-
-                    Group {
-                        if section == .triage {
-                            Button {
-                                model.openSystemNotificationCenter()
-                            } label: {
-                                Image(systemName: "rectangle.stack")
-                            }
-                            .buttonStyle(.glass)
-                            .controlSize(.small)
-                            .help("打开系统通知中心")
-                        } else {
-                            Color.clear
-                                .frame(width: 26, height: 26)
-                                .accessibilityHidden(true)
-                        }
-                    }
-                    .transition(.opacity)
 
                     settingsMenu
                 }

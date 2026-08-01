@@ -4,10 +4,19 @@ import SwiftUI
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private let persistentUtilityReason =
+        "Notch Triage remains available while its panel is collapsed"
     private let model = AppModel()
     private var panelController: NotchPanelController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // SwiftUI can opt accessory apps into AppKit automatic termination
+        // when no conventional window is visible. The notch panel is meant
+        // to remain resident even while collapsed, so keep the process alive.
+        ProcessInfo.processInfo.automaticTerminationSupportEnabled = true
+        ProcessInfo.processInfo.disableAutomaticTermination(
+            persistentUtilityReason
+        )
         NSApp.setActivationPolicy(.accessory)
 
         let controller = NotchPanelController(model: model)
@@ -19,6 +28,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         model.stop()
     }
+
+    func applicationShouldTerminateAfterLastWindowClosed(
+        _ sender: NSApplication
+    ) -> Bool {
+        false
+    }
 }
 
 @MainActor
@@ -27,6 +42,7 @@ final class NotchPanelController {
     private let panel: NSPanel
     private var cancellables = Set<AnyCancellable>()
     private var resizeRevision = 0
+    private var scheduledResizeTask: Task<Void, Never>?
     private var frameAnimationTimer: Timer?
     private var globalMouseMonitor: Any?
     private var localMouseMonitor: Any?
@@ -73,32 +89,20 @@ final class NotchPanelController {
             model.$isPanelClosing.removeDuplicates(),
             model.$isNotchCanvasExpanded.removeDuplicates()
         )
-            .sink { [weak self] expanded, hovering, closing, canvasExpanded in
-                self?.resize(
-                    expanded: expanded,
-                    hovering: hovering,
-                    closing: closing,
-                    canvasExpanded: canvasExpanded,
-                    animated: true
-                )
+            .sink { [weak self] _, _, _, _ in
+                self?.scheduleResize(animated: true)
             }
             .store(in: &cancellables)
 
         NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
             .sink { [weak self] _ in
-                guard let self else { return }
-                self.resize(
-                    expanded: self.model.isExpanded,
-                    hovering: self.model.isHoveringNotch,
-                    closing: self.model.isPanelClosing,
-                    canvasExpanded: self.model.isNotchCanvasExpanded,
-                    animated: false
-                )
+                self?.scheduleResize(animated: false)
             }
             .store(in: &cancellables)
     }
 
     deinit {
+        scheduledResizeTask?.cancel()
         frameAnimationTimer?.invalidate()
         if let globalMouseMonitor {
             NSEvent.removeMonitor(globalMouseMonitor)
@@ -117,6 +121,25 @@ final class NotchPanelController {
             animated: false
         )
         panel.orderFrontRegardless()
+    }
+
+    private func scheduleResize(animated: Bool) {
+        scheduledResizeTask?.cancel()
+        scheduledResizeTask = Task { @MainActor [weak self] in
+            // Published SwiftUI state can change while AppKit is in its
+            // constraint pass. Resizing the hosting window synchronously in
+            // that callback causes _postWindowNeedsUpdateConstraints to trap.
+            // Defer one display interval and coalesce intermediate states.
+            try? await Task.sleep(for: .milliseconds(16))
+            guard !Task.isCancelled, let self else { return }
+            self.resize(
+                expanded: self.model.isExpanded,
+                hovering: self.model.isHoveringNotch,
+                closing: self.model.isPanelClosing,
+                canvasExpanded: self.model.isNotchCanvasExpanded,
+                animated: animated
+            )
+        }
     }
 
     private func resize(
@@ -141,7 +164,12 @@ final class NotchPanelController {
 
         let height: CGFloat
         if closing {
-            height = max(menuBarHeight, hoveredHeight)
+            // Keep the canvas expanded while SwiftUI fades the surface out.
+            // Shrinking a window that still contains the fixed-height panel
+            // creates a constraint re-entry crash on macOS 27.
+            height = hoveredHeight
+                + expandedGap
+                + expandedPanelHeight
         } else if expanded {
             height = hoveredHeight
                 + expandedGap
