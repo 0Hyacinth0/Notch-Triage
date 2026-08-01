@@ -1,3 +1,33 @@
+# macOS metadata
 .DS_Store
-.derivedData/
+.AppleDouble
+.LSOverride
+._*
+
+# Xcode user-specific state
+xcuserdata/
+*.xcuserstate
+*.xccheckout
+*.xcscmblueprint
+
+# Xcode build products and archives
+build/
 DerivedData/
+.derivedData/
+*.dSYM
+*.dSYM.zip
+*.xcarchive
+
+# Swift Package Manager local state
+.build/
+.swiftpm/
+
+# Local packaging output; installers belong in GitHub Releases
+dist/
+*.dmg
+
+# Local environment and logs
+.env
+.env.*
+!.env.example
+*.log

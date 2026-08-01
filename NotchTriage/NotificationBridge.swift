@@ -18,6 +18,10 @@ final class NotificationBridge {
     private var previousFingerprints = Set<String>()
     private var hasBaseline = false
 
+    private enum PreferenceKey {
+        static let didAutomaticallyRequestAccessibility = "NotificationBridge.didAutomaticallyRequestAccessibility"
+    }
+
     init(
         onSources: @escaping SourcesHandler,
         onPulse: @escaping PulseHandler,
@@ -29,8 +33,16 @@ final class NotificationBridge {
     }
 
     func start(promptForAccessibility: Bool) {
-        if promptForAccessibility {
+        if AXIsProcessTrusted() {
+            onHealth(.ready("辅助功能权限已授权"))
+        } else if promptForAccessibility,
+                  !UserDefaults.standard.bool(forKey: PreferenceKey.didAutomaticallyRequestAccessibility) {
+            // Persist before asking so an interrupted prompt cannot turn into a
+            // system dialog on every subsequent launch.
+            UserDefaults.standard.set(true, forKey: PreferenceKey.didAutomaticallyRequestAccessibility)
             requestAccessibility()
+        } else {
+            onHealth(.warning("辅助功能权限未授权，可在更多菜单中重新申请"))
         }
         refreshNow()
         timer = Timer.scheduledTimer(withTimeInterval: 0.8, repeats: true) { [weak self] _ in
