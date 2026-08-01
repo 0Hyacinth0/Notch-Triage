@@ -25,6 +25,7 @@ final class AppModel: ObservableObject {
     @Published var power = PowerSnapshot.empty
     @Published var chargeLimit = ChargeLimitSnapshot.unavailable
     @Published var updateStatus = AppUpdateStatus.idle
+    @Published var updateDownloadProgress: AppUpdateDownloadProgress?
     @Published var availableUpdate: AppRelease?
     @Published var updatePrompt: AppUpdatePrompt?
     @Published var leftWingContent: NotchWingContent {
@@ -229,6 +230,7 @@ final class AppModel: ObservableObject {
     func checkForUpdates(manual: Bool) {
         guard !updateStatus.isBusy else { return }
         updateTask?.cancel()
+        updateDownloadProgress = nil
         updateStatus = .checking
 
         updateTask = Task { [weak self] in
@@ -286,15 +288,30 @@ final class AppModel: ObservableObject {
         }
 
         updateStatus = .downloading(release.version)
+        updateDownloadProgress = AppUpdateDownloadProgress(
+            receivedBytes: 0,
+            totalBytes: Int64(release.assetSize)
+        )
         updateTask?.cancel()
         updateTask = Task { [weak self] in
             guard let self else { return }
             do {
                 let preparedUpdate = try await updateService.prepareUpdate(
                     release,
-                    replacing: currentAppURL
+                    replacing: currentAppURL,
+                    onDownloadProgress: { [weak self] progress in
+                        Task { @MainActor [weak self] in
+                            guard let self,
+                                  case .downloading = self.updateStatus else { return }
+                            self.updateDownloadProgress = progress
+                        }
+                    }
                 )
                 guard !Task.isCancelled else { return }
+                updateDownloadProgress = AppUpdateDownloadProgress(
+                    receivedBytes: Int64(release.assetSize),
+                    totalBytes: Int64(release.assetSize)
+                )
                 updateStatus = .installing(release.version)
 
                 let installedURL = try FileManager.default.replaceItemAt(
@@ -315,8 +332,10 @@ final class AppModel: ObservableObject {
                 )
                 NSApp.terminate(nil)
             } catch is CancellationError {
+                updateDownloadProgress = nil
                 return
             } catch {
+                updateDownloadProgress = nil
                 updateStatus = .failed(error.localizedDescription)
                 updatePrompt = AppUpdatePrompt(
                     title: "更新安装失败",

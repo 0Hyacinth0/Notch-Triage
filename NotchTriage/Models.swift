@@ -49,6 +49,16 @@ struct PreparedAppUpdate: Sendable {
     let replacementDirectory: URL
 }
 
+struct AppUpdateDownloadProgress: Equatable, Sendable {
+    let receivedBytes: Int64
+    let totalBytes: Int64
+
+    var fraction: Double {
+        guard totalBytes > 0 else { return 0 }
+        return min(1, max(0, Double(receivedBytes) / Double(totalBytes)))
+    }
+}
+
 enum AppUpdateStatus: Equatable {
     case idle
     case checking
@@ -64,6 +74,24 @@ enum AppUpdateStatus: Equatable {
             return true
         default:
             return false
+        }
+    }
+
+    var isInstallingUpdate: Bool {
+        switch self {
+        case .downloading, .installing:
+            return true
+        default:
+            return false
+        }
+    }
+
+    var activeUpdateVersion: String? {
+        switch self {
+        case .downloading(let version), .installing(let version):
+            return version
+        default:
+            return nil
         }
     }
 

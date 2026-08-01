@@ -927,7 +927,12 @@ private struct ExpandedPanel: View {
             header
 
             Group {
-                if section == .power {
+                if model.updateStatus.isInstallingUpdate {
+                    updateProgressCard
+                        .frame(maxWidth: 380)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .transition(.opacity)
+                } else if section == .power {
                     PowerDashboardView(model: model)
                         .transition(.opacity)
                 } else {
@@ -942,6 +947,10 @@ private struct ExpandedPanel: View {
         .animation(
             reduceMotion ? .linear(duration: 0.10) : NotchDesign.Motion.sectionChange,
             value: section
+        )
+        .animation(
+            reduceMotion ? .linear(duration: 0.10) : NotchDesign.Motion.sectionChange,
+            value: model.updateStatus.isInstallingUpdate
         )
         .confirmationDialog(
             "清除系统通知中心中的全部通知？",
@@ -976,6 +985,93 @@ private struct ExpandedPanel: View {
                 dismissButton: .default(Text("好"))
             )
         }
+    }
+
+    private var updateProgressCard: some View {
+        let progress = model.updateDownloadProgress
+        let fraction = progress?.fraction ?? 0
+        let isInstalling: Bool = {
+            if case .installing = model.updateStatus { return true }
+            return false
+        }()
+        let isVerifying = !isInstalling && fraction >= 0.999
+        let title = isInstalling
+            ? "正在安装并准备重启"
+            : (isVerifying ? "正在验证更新" : "正在下载更新")
+        let symbol = isInstalling || isVerifying
+            ? "checkmark.shield.fill"
+            : "arrow.down.circle.fill"
+
+        return VStack(spacing: 14) {
+            VStack(spacing: 8) {
+                Image(systemName: symbol)
+                    .font(.system(size: 26, weight: .medium))
+                    .foregroundStyle(.tint)
+                    .contentTransition(.symbolEffect(.replace))
+
+                Text(title)
+                    .font(.system(size: 15, weight: .semibold))
+
+                Text(model.updateStatus.activeUpdateVersion.map { "Notch Triage v\($0)" } ?? "Notch Triage")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(.primary.opacity(0.09))
+
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: [.cyan, .blue, .indigo],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(
+                            width: proxy.size.width * (isInstalling ? 1 : fraction)
+                        )
+                }
+            }
+            .frame(height: 5)
+            .animation(
+                reduceMotion ? .linear(duration: 0.01) : .easeOut(duration: 0.16),
+                value: fraction
+            )
+
+            HStack {
+                if let progress {
+                    Text(Self.byteCount(progress.receivedBytes))
+                    Spacer()
+                    Text(Self.byteCount(progress.totalBytes))
+                    Text("·")
+                    Text("\(Int((fraction * 100).rounded()))%")
+                        .contentTransition(.numericText(value: fraction))
+                } else {
+                    Text(isInstalling ? "正在安全替换应用程序" : "正在准备下载")
+                }
+            }
+            .font(.caption2.monospacedDigit())
+            .foregroundStyle(.tertiary)
+
+            Text(isInstalling || isVerifying
+                ? "签名与完整性验证通过后会自动重启"
+                : "下载期间可以继续查看进度，请勿退出应用")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 18)
+        .panelGroupSurface()
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(title)
+        .accessibilityValue(isInstalling ? "" : "百分之\(Int((fraction * 100).rounded()))")
+    }
+
+    private static func byteCount(_ value: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: value, countStyle: .file)
     }
 
     private var header: some View {

@@ -49,11 +49,22 @@ actor UpdateService {
 
     func prepareUpdate(
         _ release: AppRelease,
-        replacing currentAppURL: URL
+        replacing currentAppURL: URL,
+        onDownloadProgress: @escaping @Sendable (AppUpdateDownloadProgress) -> Void
     ) async throws -> PreparedAppUpdate {
-        let (downloadedURL, response) = try await URLSession.shared.download(
-            from: release.downloadURL
+        var request = URLRequest(url: release.downloadURL)
+        request.timeoutInterval = 120
+        request.setValue("NotchTriage-Updater", forHTTPHeaderField: "User-Agent")
+
+        let downloader = ProgressiveUpdateDownloader(
+            request: request,
+            fallbackTotalBytes: Int64(release.assetSize),
+            onProgress: onDownloadProgress
         )
+        let (downloadedURL, response) = try await downloader.download()
+        defer {
+            try? FileManager.default.removeItem(at: downloadedURL)
+        }
         guard let response = response as? HTTPURLResponse,
               (200..<300).contains(response.statusCode) else {
             throw UpdateServiceError.downloadFailed
@@ -66,6 +77,18 @@ actor UpdateService {
            release.assetSize > 0,
            fileSize.intValue != release.assetSize {
             throw UpdateServiceError.downloadSizeMismatch
+        }
+
+        if let fileSize = attributes[.size] as? NSNumber {
+            let actualBytes = fileSize.int64Value
+            onDownloadProgress(
+                AppUpdateDownloadProgress(
+                    receivedBytes: actualBytes,
+                    totalBytes: release.assetSize > 0
+                        ? Int64(release.assetSize)
+                        : actualBytes
+                )
+            )
         }
 
         if let expectedDigest = release.digest?.lowercased(),
@@ -232,6 +255,159 @@ actor UpdateService {
     private static func normalizedVersion(_ version: String) -> String {
         version.trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "^[vV]", with: "", options: .regularExpression)
+    }
+}
+
+private final class ProgressiveUpdateDownloader: NSObject,
+    URLSessionDownloadDelegate,
+    @unchecked Sendable {
+    private let request: URLRequest
+    private let fallbackTotalBytes: Int64
+    private let onProgress: @Sendable (AppUpdateDownloadProgress) -> Void
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<(URL, URLResponse), Error>?
+    private var session: URLSession?
+    private var task: URLSessionDownloadTask?
+    private var downloadedURL: URL?
+    private var response: URLResponse?
+    private var isFinished = false
+    private var isCancelled = false
+
+    init(
+        request: URLRequest,
+        fallbackTotalBytes: Int64,
+        onProgress: @escaping @Sendable (AppUpdateDownloadProgress) -> Void
+    ) {
+        self.request = request
+        self.fallbackTotalBytes = fallbackTotalBytes
+        self.onProgress = onProgress
+    }
+
+    func download() async throws -> (URL, URLResponse) {
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                lock.lock()
+                if isCancelled {
+                    lock.unlock()
+                    continuation.resume(throwing: CancellationError())
+                    return
+                }
+
+                self.continuation = continuation
+                let configuration = URLSessionConfiguration.ephemeral
+                configuration.timeoutIntervalForRequest = 120
+                configuration.timeoutIntervalForResource = 300
+                let delegateQueue = OperationQueue()
+                delegateQueue.maxConcurrentOperationCount = 1
+                delegateQueue.qualityOfService = .userInitiated
+                let session = URLSession(
+                    configuration: configuration,
+                    delegate: self,
+                    delegateQueue: delegateQueue
+                )
+                let task = session.downloadTask(with: request)
+                self.session = session
+                self.task = task
+                lock.unlock()
+                task.resume()
+            }
+        } onCancel: {
+            cancel()
+        }
+    }
+
+    private func cancel() {
+        lock.lock()
+        isCancelled = true
+        let task = task
+        lock.unlock()
+        task?.cancel()
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didWriteData bytesWritten: Int64,
+        totalBytesWritten: Int64,
+        totalBytesExpectedToWrite: Int64
+    ) {
+        let expectedBytes = totalBytesExpectedToWrite > 0
+            ? totalBytesExpectedToWrite
+            : fallbackTotalBytes
+        onProgress(
+            AppUpdateDownloadProgress(
+                receivedBytes: totalBytesWritten,
+                totalBytes: expectedBytes
+            )
+        )
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didFinishDownloadingTo location: URL
+    ) {
+        let ownedURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("NotchTriage-\(UUID().uuidString)")
+            .appendingPathExtension("dmg")
+
+        do {
+            try FileManager.default.moveItem(at: location, to: ownedURL)
+            lock.lock()
+            downloadedURL = ownedURL
+            response = downloadTask.response
+            lock.unlock()
+        } catch {
+            finish(.failure(error))
+        }
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didCompleteWithError error: Error?
+    ) {
+        if let error {
+            if (error as NSError).code == NSURLErrorCancelled {
+                finish(.failure(CancellationError()))
+            } else {
+                finish(.failure(error))
+            }
+            return
+        }
+
+        lock.lock()
+        let downloadedURL = downloadedURL
+        let response = response
+        lock.unlock()
+
+        guard let downloadedURL, let response else {
+            finish(.failure(UpdateServiceError.downloadFailed))
+            return
+        }
+        finish(.success((downloadedURL, response)))
+    }
+
+    private func finish(_ result: Result<(URL, URLResponse), Error>) {
+        lock.lock()
+        guard !isFinished else {
+            lock.unlock()
+            return
+        }
+        isFinished = true
+        let continuation = continuation
+        self.continuation = nil
+        let session = session
+        self.session = nil
+        let downloadedURL = downloadedURL
+        task = nil
+        lock.unlock()
+
+        if case .failure = result, let downloadedURL {
+            try? FileManager.default.removeItem(at: downloadedURL)
+        }
+        session?.finishTasksAndInvalidate()
+        continuation?.resume(with: result)
     }
 }
 
