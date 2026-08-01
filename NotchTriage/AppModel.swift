@@ -7,6 +7,7 @@ final class AppModel: ObservableObject {
     private enum PreferenceKey {
         static let leftWingContent = "notch.leftWingContent"
         static let rightWingContent = "notch.rightWingContent"
+        static let lastUpdateCheck = "updates.lastSuccessfulCheck"
     }
 
     @Published var isExpanded = false
@@ -23,6 +24,9 @@ final class AppModel: ObservableObject {
     @Published var trashCount = 0
     @Published var power = PowerSnapshot.empty
     @Published var chargeLimit = ChargeLimitSnapshot.unavailable
+    @Published var updateStatus = AppUpdateStatus.idle
+    @Published var availableUpdate: AppRelease?
+    @Published var updatePrompt: AppUpdatePrompt?
     @Published var leftWingContent: NotchWingContent {
         didSet {
             UserDefaults.standard.set(
@@ -56,6 +60,7 @@ final class AppModel: ObservableObject {
     private var systemHUDDismissTask: Task<Void, Never>?
     private var hoverCollapseTask: Task<Void, Never>?
     private var panelCloseTask: Task<Void, Never>?
+    private var updateTask: Task<Void, Never>?
 
     private func motion(_ animation: Animation) -> Animation {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
@@ -138,6 +143,8 @@ final class AppModel: ObservableObject {
         }
     )
 
+    private let updateService = UpdateService()
+
     func start() {
         codexService.start()
         mediaService.start()
@@ -146,6 +153,7 @@ final class AppModel: ObservableObject {
         trashService.start()
         powerService.start()
         systemHUDService.start()
+        scheduleAutomaticUpdateCheck()
     }
 
     func stop() {
@@ -153,6 +161,7 @@ final class AppModel: ObservableObject {
         systemHUDDismissTask?.cancel()
         hoverCollapseTask?.cancel()
         panelCloseTask?.cancel()
+        updateTask?.cancel()
         codexService.stop()
         mediaService.stop()
         notificationService.stop()
@@ -190,19 +199,130 @@ final class AppModel: ObservableObject {
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 guard let self else { return }
-                self.isExpanded = false
-                self.isHoveringNotch = false
-                withAnimation(
-                    self.motion(NotchDesign.Motion.panelClose),
-                    completionCriteria: .logicallyComplete
-                ) {
+                withAnimation(self.motion(NotchDesign.Motion.panelClose)) {
+                    self.isExpanded = false
                     self.isPanelClosing = false
-                } completion: {
-                    guard !self.isExpanded,
-                          !self.isPanelClosing,
-                          !self.isHoveringNotch else { return }
-                    self.isNotchCanvasExpanded = false
+                    self.isHoveringNotch = false
                 }
+            }
+
+            try? await Task.sleep(for: .milliseconds(320))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard let self,
+                      !self.isExpanded,
+                      !self.isPanelClosing,
+                      !self.isHoveringNotch else { return }
+                self.isNotchCanvasExpanded = false
+            }
+        }
+    }
+
+    func handleUpdateMenuAction() {
+        if let availableUpdate {
+            presentUpdatePrompt(for: availableUpdate)
+        } else {
+            checkForUpdates(manual: true)
+        }
+    }
+
+    func checkForUpdates(manual: Bool) {
+        guard !updateStatus.isBusy else { return }
+        updateTask?.cancel()
+        updateStatus = .checking
+
+        updateTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let release = try await updateService.latestRelease()
+                guard !Task.isCancelled else { return }
+                UserDefaults.standard.set(
+                    Date(),
+                    forKey: PreferenceKey.lastUpdateCheck
+                )
+
+                if isNewerVersion(release.version, than: currentVersion) {
+                    availableUpdate = release
+                    updateStatus = .available(release.version)
+                    if manual {
+                        presentUpdatePrompt(for: release)
+                    }
+                } else {
+                    availableUpdate = nil
+                    updateStatus = .upToDate(currentVersion)
+                    if manual {
+                        updatePrompt = AppUpdatePrompt(
+                            title: "已经是最新版本",
+                            message: "当前版本为 v\(currentVersion)。",
+                            release: nil
+                        )
+                    }
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                updateStatus = .failed(error.localizedDescription)
+                if manual {
+                    updatePrompt = AppUpdatePrompt(
+                        title: "检查更新失败",
+                        message: error.localizedDescription,
+                        release: nil
+                    )
+                }
+            }
+        }
+    }
+
+    func installUpdate(_ release: AppRelease) {
+        guard !updateStatus.isBusy else { return }
+        let currentAppURL = Bundle.main.bundleURL.standardizedFileURL
+        guard isInstalledApplication(currentAppURL) else {
+            updatePrompt = AppUpdatePrompt(
+                title: "无法自动安装",
+                message: "请先将 NotchTriage.app 移到“应用程序”文件夹，再从那里运行并检查更新。",
+                release: nil
+            )
+            return
+        }
+
+        updateStatus = .downloading(release.version)
+        updateTask?.cancel()
+        updateTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let preparedUpdate = try await updateService.prepareUpdate(
+                    release,
+                    replacing: currentAppURL
+                )
+                guard !Task.isCancelled else { return }
+                updateStatus = .installing(release.version)
+
+                let installedURL = try FileManager.default.replaceItemAt(
+                    currentAppURL,
+                    withItemAt: preparedUpdate.appURL,
+                    backupItemName: nil,
+                    options: [.usingNewMetadataOnly]
+                ) ?? currentAppURL
+
+                let configuration = NSWorkspace.OpenConfiguration()
+                configuration.activates = false
+                configuration.createsNewApplicationInstance = true
+                configuration.allowsRunningApplicationSubstitution = false
+                configuration.promptsUserIfNeeded = true
+                _ = try await NSWorkspace.shared.openApplication(
+                    at: installedURL,
+                    configuration: configuration
+                )
+                NSApp.terminate(nil)
+            } catch is CancellationError {
+                return
+            } catch {
+                updateStatus = .failed(error.localizedDescription)
+                updatePrompt = AppUpdatePrompt(
+                    title: "更新安装失败",
+                    message: error.localizedDescription,
+                    release: nil
+                )
             }
         }
     }
@@ -308,6 +428,58 @@ final class AppModel: ObservableObject {
 
     func quitApplication() {
         NSApp.terminate(nil)
+    }
+
+    private var currentVersion: String {
+        Bundle.main.object(
+            forInfoDictionaryKey: "CFBundleShortVersionString"
+        ) as? String ?? "0.0.0"
+    }
+
+    private func scheduleAutomaticUpdateCheck() {
+        let lastCheck = UserDefaults.standard.object(
+            forKey: PreferenceKey.lastUpdateCheck
+        ) as? Date ?? .distantPast
+        guard Date().timeIntervalSince(lastCheck) >= 12 * 60 * 60 else { return }
+
+        updateTask?.cancel()
+        updateTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                self?.checkForUpdates(manual: false)
+            }
+        }
+    }
+
+    private func presentUpdatePrompt(for release: AppRelease) {
+        let summary = release.notes
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let abbreviatedNotes = summary.count > 320
+            ? String(summary.prefix(320)) + "…"
+            : summary
+        let message = abbreviatedNotes.isEmpty
+            ? "确认后将下载、验证并安装更新，然后重启 Notch Triage。"
+            : abbreviatedNotes
+                + "\n\n确认后将下载、验证并安装更新，然后重启 Notch Triage。"
+        updatePrompt = AppUpdatePrompt(
+            title: "发现 \(release.displayVersion)",
+            message: message,
+            release: release
+        )
+    }
+
+    private func isNewerVersion(_ candidate: String, than current: String) -> Bool {
+        candidate.compare(current, options: .numeric) == .orderedDescending
+    }
+
+    private func isInstalledApplication(_ appURL: URL) -> Bool {
+        let path = appURL.resolvingSymlinksInPath().path
+        let userApplications = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Applications", isDirectory: true)
+            .path
+        return path.hasPrefix("/Applications/")
+            || path.hasPrefix(userApplications + "/")
     }
 
     private func showNotificationPulse(_ pulse: NotificationPulse) {

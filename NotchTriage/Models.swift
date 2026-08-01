@@ -28,6 +28,87 @@ enum NotchWingContent: String, CaseIterable, Identifiable {
     }
 }
 
+struct AppRelease: Identifiable, Equatable, Sendable {
+    var id: String { tagName }
+
+    let tagName: String
+    let version: String
+    let title: String
+    let notes: String
+    let releaseURL: URL
+    let downloadURL: URL
+    let assetName: String
+    let assetSize: Int
+    let digest: String?
+
+    var displayVersion: String { "v\(version)" }
+}
+
+struct PreparedAppUpdate: Sendable {
+    let appURL: URL
+    let replacementDirectory: URL
+}
+
+enum AppUpdateStatus: Equatable {
+    case idle
+    case checking
+    case available(String)
+    case downloading(String)
+    case installing(String)
+    case upToDate(String)
+    case failed(String)
+
+    var isBusy: Bool {
+        switch self {
+        case .checking, .downloading, .installing:
+            return true
+        default:
+            return false
+        }
+    }
+
+    var menuTitle: String {
+        switch self {
+        case .idle:
+            return "检查更新"
+        case .checking:
+            return "正在检查更新…"
+        case .available(let version):
+            return "安装 v\(version)"
+        case .downloading(let version):
+            return "正在下载 v\(version)…"
+        case .installing(let version):
+            return "正在安装 v\(version)…"
+        case .upToDate(let version):
+            return "已是最新版 v\(version)"
+        case .failed:
+            return "重新检查更新"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .checking, .downloading, .installing:
+            return "arrow.trianglehead.2.clockwise.rotate.90"
+        case .available:
+            return "arrow.down.circle.fill"
+        case .upToDate:
+            return "checkmark.circle.fill"
+        case .failed:
+            return "exclamationmark.triangle.fill"
+        case .idle:
+            return "arrow.trianglehead.2.clockwise.rotate.90"
+        }
+    }
+}
+
+struct AppUpdatePrompt: Identifiable {
+    let id = UUID()
+    let title: String
+    let message: String
+    let release: AppRelease?
+}
+
 struct CodexLimitBucket: Identifiable, Equatable {
     let id: String
     let name: String

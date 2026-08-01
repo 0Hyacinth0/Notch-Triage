@@ -42,7 +42,7 @@ final class NotificationBridge {
             UserDefaults.standard.set(true, forKey: PreferenceKey.didAutomaticallyRequestAccessibility)
             requestAccessibility()
         } else {
-            onHealth(.warning("辅助功能权限未授权，可在更多菜单中重新申请"))
+            onHealth(.warning("辅助功能权限未授权，可在设置菜单中重新申请"))
         }
         refreshNow()
         timer = Timer.scheduledTimer(withTimeInterval: 0.8, repeats: true) { [weak self] _ in

@@ -265,6 +265,7 @@ private struct CompactBatteryContent: View {
 private struct LivingNotch: View {
     @ObservedObject var model: AppModel
     let hoveredHeight: CGFloat
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var hovering: Bool {
         model.isHoveringNotch
@@ -337,6 +338,10 @@ private struct LivingNotch: View {
         }
         .contentShape(Rectangle())
         .foregroundStyle(.white)
+        .animation(
+            reduceMotion ? .linear(duration: 0.01) : NotchDesign.Motion.hover,
+            value: hovering
+        )
     }
 
     private var compactContent: some View {
@@ -874,6 +879,23 @@ private struct ExpandedPanel: View {
                 model.emptyTrash()
             }
         }
+        .alert(item: $model.updatePrompt) { prompt in
+            if let release = prompt.release {
+                return Alert(
+                    title: Text(prompt.title),
+                    message: Text(prompt.message),
+                    primaryButton: .default(Text("安装并重启")) {
+                        model.installUpdate(release)
+                    },
+                    secondaryButton: .cancel(Text("稍后"))
+                )
+            }
+            return Alert(
+                title: Text(prompt.title),
+                message: Text(prompt.message),
+                dismissButton: .default(Text("好"))
+            )
+        }
     }
 
     private var header: some View {
@@ -930,26 +952,58 @@ private struct ExpandedPanel: View {
                     }
                     .transition(.opacity)
 
-                    NotchWingConfigurationMenu(model: model)
-
-                    moreMenu
-
-                    Button {
-                        model.toggleExpanded()
-                    } label: {
-                        Image(systemName: "chevron.up")
-                    }
-                    .buttonStyle(.glass)
-                    .controlSize(.small)
-                    .accessibilityLabel("收起")
+                    settingsMenu
                 }
             }
         }
         .frame(height: 28)
     }
 
-    private var moreMenu: some View {
+    private var settingsMenu: some View {
         Menu {
+            Menu {
+                wingChoices(selected: model.leftWingContent) { content in
+                    model.setLeftWingContent(content)
+                }
+            } label: {
+                Label(
+                    "左侧显示：\(model.leftWingContent.title)",
+                    systemImage: "rectangle.leadinghalf.inset.filled"
+                )
+            }
+
+            Menu {
+                wingChoices(selected: model.rightWingContent) { content in
+                    model.setRightWingContent(content)
+                }
+            } label: {
+                Label(
+                    "右侧显示：\(model.rightWingContent.title)",
+                    systemImage: "rectangle.trailinghalf.inset.filled"
+                )
+            }
+
+            Button {
+                model.swapWingContents()
+            } label: {
+                Label("左右互换", systemImage: "arrow.left.arrow.right")
+            }
+
+            Button {
+                model.resetWingContents()
+            } label: {
+                Label("恢复默认显示", systemImage: "arrow.counterclockwise")
+            }
+
+            Divider()
+
+            Button {
+                model.handleUpdateMenuAction()
+            } label: {
+                Label(model.updateStatus.menuTitle, systemImage: model.updateStatus.symbol)
+            }
+            .disabled(model.updateStatus.isBusy)
+
             Button {
                 model.autoDismissBanners.toggle()
             } label: {
@@ -975,14 +1029,34 @@ private struct ExpandedPanel: View {
                 Label("退出 Notch Triage", systemImage: "power")
             }
         } label: {
-            Image(systemName: "ellipsis")
+            Image(systemName: "gearshape")
                 .frame(width: 26, height: 26)
                 .contentShape(Circle())
                 .glassEffect(.regular.interactive(), in: .circle)
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
-        .help("更多")
+        .help("设置与更新")
+        .accessibilityLabel("设置与更新")
+    }
+
+    @ViewBuilder
+    private func wingChoices(
+        selected: NotchWingContent,
+        onSelect: @escaping (NotchWingContent) -> Void
+    ) -> some View {
+        ForEach(NotchWingContent.allCases) { content in
+            Button {
+                onSelect(content)
+            } label: {
+                Label(
+                    content.title,
+                    systemImage: selected == content
+                        ? "checkmark"
+                        : content.symbol
+                )
+            }
+        }
     }
 
     private var triageDashboard: some View {
@@ -1010,72 +1084,6 @@ private struct ExpandedPanel: View {
             NowPlayingStrip(snapshot: model.media)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-    }
-}
-
-private struct NotchWingConfigurationMenu: View {
-    @ObservedObject var model: AppModel
-
-    var body: some View {
-        Menu {
-            Menu {
-                wingChoices(selected: model.leftWingContent) { content in
-                    model.setLeftWingContent(content)
-                }
-            } label: {
-                Label("左侧", systemImage: "rectangle.leadinghalf.inset.filled")
-            }
-
-            Menu {
-                wingChoices(selected: model.rightWingContent) { content in
-                    model.setRightWingContent(content)
-                }
-            } label: {
-                Label("右侧", systemImage: "rectangle.trailinghalf.inset.filled")
-            }
-
-            Divider()
-
-            Button {
-                model.swapWingContents()
-            } label: {
-                Label("左右互换", systemImage: "arrow.left.arrow.right")
-            }
-
-            Button {
-                model.resetWingContents()
-            } label: {
-                Label("恢复默认", systemImage: "arrow.counterclockwise")
-            }
-        } label: {
-            Image(systemName: "slider.horizontal.3")
-                .frame(width: 26, height: 26)
-                .contentShape(Circle())
-                .glassEffect(.regular.interactive(), in: .circle)
-        }
-        .menuStyle(.borderlessButton)
-        .fixedSize()
-        .help("配置刘海两侧")
-        .accessibilityLabel("配置刘海两侧")
-    }
-
-    @ViewBuilder
-    private func wingChoices(
-        selected: NotchWingContent,
-        onSelect: @escaping (NotchWingContent) -> Void
-    ) -> some View {
-        ForEach(NotchWingContent.allCases) { content in
-            Button {
-                onSelect(content)
-            } label: {
-                Label(
-                    content.title,
-                    systemImage: selected == content
-                        ? "checkmark"
-                        : content.symbol
-                )
-            }
-        }
     }
 }
 

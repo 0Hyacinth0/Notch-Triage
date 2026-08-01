@@ -80,7 +80,9 @@ final class CodexUsageService {
                     "clientInfo": [
                         "name": "notch_triage",
                         "title": "Notch Triage",
-                        "version": "0.1.0"
+                        "version": Bundle.main.object(
+                            forInfoDictionaryKey: "CFBundleShortVersionString"
+                        ) as? String ?? "0.0.0"
                     ]
                 ]
             ])
