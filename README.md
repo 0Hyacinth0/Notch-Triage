@@ -5,7 +5,7 @@
   <p>原生、轻量、常驻的 macOS 刘海工具，集中呈现 Codex 额度、媒体、电源、通知与系统 HUD。</p>
 
   <p>
-    <img src="https://img.shields.io/badge/version-0.1.14-25D9C5?style=flat-square" alt="Version 0.1.14">
+    <img src="https://img.shields.io/badge/version-0.1.15-25D9C5?style=flat-square" alt="Version 0.1.15">
     <img src="https://img.shields.io/badge/macOS-26%2B-000000?style=flat-square&amp;logo=apple&amp;logoColor=white" alt="macOS 26+">
     <img src="https://img.shields.io/badge/Swift-5-F05138?style=flat-square&amp;logo=swift&amp;logoColor=white" alt="Swift 5">
     <img src="https://img.shields.io/badge/UI-Liquid%20Glass-4B5563?style=flat-square" alt="Liquid Glass">
