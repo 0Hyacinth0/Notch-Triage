@@ -1011,26 +1011,16 @@ private struct ExpandedPanel: View {
 
     private var settingsMenu: some View {
         Menu {
-            Menu {
+            SwiftUI.Section("左侧显示 · \(model.leftWingContent.title)") {
                 wingChoices(selected: model.leftWingContent) { content in
                     model.setLeftWingContent(content)
                 }
-            } label: {
-                Label(
-                    "左侧显示：\(model.leftWingContent.title)",
-                    systemImage: "rectangle.leadinghalf.inset.filled"
-                )
             }
 
-            Menu {
+            SwiftUI.Section("右侧显示 · \(model.rightWingContent.title)") {
                 wingChoices(selected: model.rightWingContent) { content in
                     model.setRightWingContent(content)
                 }
-            } label: {
-                Label(
-                    "右侧显示：\(model.rightWingContent.title)",
-                    systemImage: "rectangle.trailinghalf.inset.filled"
-                )
             }
 
             Button {
