@@ -16,6 +16,7 @@ final class NotificationBridge {
 
     private var previousFingerprints = Set<String>()
     private var hasBaseline = false
+    private var accessibilityProbeTask: Task<Void, Never>?
 
     private enum PreferenceKey {
         static let didAutomaticallyRequestAccessibility = "NotificationBridge.didAutomaticallyRequestAccessibility"
@@ -32,7 +33,7 @@ final class NotificationBridge {
     }
 
     func start(promptForAccessibility: Bool) {
-        if AXIsProcessTrusted() {
+        if hasAccessibilityAccess() {
             onHealth(.ready("辅助功能权限已授权"))
         } else if promptForAccessibility,
                   !UserDefaults.standard.bool(forKey: PreferenceKey.didAutomaticallyRequestAccessibility) {
@@ -47,6 +48,7 @@ final class NotificationBridge {
     }
 
     func stop() {
+        accessibilityProbeTask?.cancel()
         previousFingerprints.removeAll()
         hasBaseline = false
     }
@@ -54,16 +56,22 @@ final class NotificationBridge {
     func requestAccessibility() {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         let trusted = AXIsProcessTrustedWithOptions(options)
+            || hasAccessibilityAccess()
         onHealth(
             trusted
                 ? .ready("辅助功能权限已授权")
-                : .warning("请在系统设置中授予辅助功能权限")
+                : .loading("等待系统确认辅助功能权限")
         )
+        if trusted {
+            refreshNow()
+        } else {
+            probeAccessibilityAfterRequest()
+        }
     }
 
     func refreshNow() {
-        guard AXIsProcessTrusted() else {
-            onHealth(.warning("等待辅助功能权限"))
+        guard hasAccessibilityAccess() else {
+            onHealth(.warning("辅助功能权限尚未对当前应用生效"))
             return
         }
 
@@ -106,7 +114,7 @@ final class NotificationBridge {
     }
 
     func openNotificationCenter() {
-        guard AXIsProcessTrusted() else {
+        guard hasAccessibilityAccess() else {
             requestAccessibility()
             return
         }
@@ -127,7 +135,7 @@ final class NotificationBridge {
     }
 
     func clearAllNotifications() {
-        guard AXIsProcessTrusted(),
+        guard hasAccessibilityAccess(),
               let app = notificationCenterApplication() else {
             onHealth(.warning("没有辅助功能权限，无法清理通知"))
             return
@@ -165,6 +173,48 @@ final class NotificationBridge {
             }
             self.refreshNow()
         }
+    }
+
+    private func probeAccessibilityAfterRequest() {
+        accessibilityProbeTask?.cancel()
+        accessibilityProbeTask = Task { [weak self] in
+            guard let self else { return }
+
+            for _ in 0..<40 {
+                try? await Task.sleep(for: .milliseconds(500))
+                guard !Task.isCancelled else { return }
+                if self.hasAccessibilityAccess() {
+                    self.onHealth(.ready("辅助功能权限已授权"))
+                    self.refreshNow()
+                    return
+                }
+            }
+
+            self.onHealth(
+                .warning(
+                    "系统开关尚未对当前版本生效；请关闭后重新打开该开关"
+                )
+            )
+        }
+    }
+
+    private func hasAccessibilityAccess() -> Bool {
+        if AXIsProcessTrusted() {
+            return true
+        }
+
+        guard let notificationCenter = notificationCenterApplication() else {
+            return false
+        }
+        let appElement = AXUIElementCreateApplication(
+            notificationCenter.processIdentifier
+        )
+        var role: CFTypeRef?
+        return AXUIElementCopyAttributeValue(
+            appElement,
+            kAXRoleAttribute as CFString,
+            &role
+        ) == .success
     }
 
     private struct ScannedNotification {

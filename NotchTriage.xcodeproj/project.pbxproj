@@ -244,7 +244,7 @@
 				CODE_SIGN_ENTITLEMENTS = NotchTriage/NotchTriage.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 7;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = NO;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -256,7 +256,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.1.6;
+				MARKETING_VERSION = 0.1.7;
 				PRODUCT_BUNDLE_IDENTIFIER = com.hyacinth.notchtriage;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = NO;
@@ -274,7 +274,7 @@
 				CODE_SIGN_ENTITLEMENTS = NotchTriage/NotchTriage.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 7;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = NO;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -286,7 +286,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.1.6;
+				MARKETING_VERSION = 0.1.7;
 				PRODUCT_BUNDLE_IDENTIFIER = com.hyacinth.notchtriage;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = NO;

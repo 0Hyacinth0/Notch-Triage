@@ -496,7 +496,10 @@ private struct LivingNotch: View {
                 .frame(maxWidth: .infinity)
         } else {
             hoverStatus(for: content, side: side)
-                .frame(maxWidth: .infinity, alignment: .center)
+                .frame(
+                    maxWidth: .infinity,
+                    alignment: side == .left ? .leading : .trailing
+                )
         }
     }
 

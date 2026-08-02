@@ -73,6 +73,7 @@ final class AppModel: ObservableObject {
     var hoverCollapseTask: Task<Void, Never>?
     var panelCloseTask: Task<Void, Never>?
     var updateTask: Task<Void, Never>?
+    private var accessibilityRequestTask: Task<Void, Never>?
 
     func motion(_ animation: Animation) -> Animation {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
@@ -235,6 +236,7 @@ final class AppModel: ObservableObject {
         hoverCollapseTask?.cancel()
         panelCloseTask?.cancel()
         updateTask?.cancel()
+        accessibilityRequestTask?.cancel()
         codexService.stop()
         mediaService.stop()
         notificationService.stop()
@@ -295,7 +297,23 @@ final class AppModel: ObservableObject {
     }
 
     func requestAccessibility() {
-        notificationService.requestAccessibility()
+        accessibilityRequestTask?.cancel()
+        let shouldWaitForPanel = isExpanded || isPanelClosing
+        if isExpanded {
+            collapseExpanded()
+        }
+        applyHealth(.loading("正在打开辅助功能权限设置"), to: .notifications)
+
+        accessibilityRequestTask = Task { [weak self] in
+            try? await Task.sleep(
+                for: shouldWaitForPanel
+                    ? .milliseconds(760)
+                    : .milliseconds(120)
+            )
+            guard !Task.isCancelled, let self else { return }
+            NSApp.activate(ignoringOtherApps: true)
+            self.notificationService.requestAccessibility()
+        }
     }
 
     func clearAllNotifications() {
