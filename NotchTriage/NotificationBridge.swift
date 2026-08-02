@@ -86,7 +86,13 @@ final class NotificationBridge {
         }
 
         let appElement = AXUIElementCreateApplication(notificationCenter.processIdentifier)
+        // NotificationCenter exposes widgets (calendar, stocks, weather, battery)
+        // as AXWindow elements in the same process as the notification cards. The
+        // old scanner treated every one of those windows as a notification, which
+        // produced persistent "ghost" sources even when Notification Center was
+        // empty. Keep only visible, non-widget windows here.
         let windows = elements(appElement, attribute: kAXWindowsAttribute)
+            .filter(isCandidateNotificationWindow)
         let scanned = windows.compactMap(scanWindow)
         let currentFingerprints = Set(scanned.map { $0.fingerprint })
 
@@ -172,6 +178,20 @@ final class NotificationBridge {
                         ? .ready("已请求系统通知中心清除全部")
                         : .warning("系统拒绝了清除全部操作")
                 )
+                if result == .success {
+                    // Drop the old baseline immediately. The notification center
+                    // needs a moment to remove its AX nodes, so a delayed refresh
+                    // follows below instead of re-counting the pre-clear tree.
+                    self.previousFingerprints.removeAll()
+                    self.hasBaseline = false
+                    self.onSources([])
+                    Task { [weak self] in
+                        try? await Task.sleep(for: .milliseconds(700))
+                        guard let self, !Task.isCancelled else { return }
+                        self.refreshNow()
+                    }
+                    return
+                }
             } else {
                 self.onHealth(.warning("未找到系统“全部清除”按钮"))
             }
@@ -259,7 +279,36 @@ final class NotificationBridge {
         let isBanner: Bool
     }
 
+    private func isCandidateNotificationWindow(_ window: AXUIElement) -> Bool {
+        guard string(window, attribute: kAXRoleAttribute) == kAXWindowRole as String,
+              let frame = frame(of: window),
+              frame.width > 0,
+              frame.height > 0 else {
+            return false
+        }
+
+        if bool(window, attribute: kAXHiddenAttribute) == true
+            || bool(window, attribute: kAXMinimizedAttribute) == true {
+            return false
+        }
+
+        // WidgetKit views are hosted inside NotificationCenter windows and carry
+        // a stable widget-local identifier. They are not notification cards and
+        // must never contribute to the notification source count.
+        let descendants = descendants(of: window, maximumDepth: 5)
+        if descendants.contains(where: { element in
+            string(element, attribute: kAXIdentifierAttribute)?
+                .hasPrefix("widget-local:") == true
+        }) {
+            return false
+        }
+
+        return true
+    }
+
     private func scanWindow(_ window: AXUIElement) -> ScannedNotification? {
+        guard isCandidateNotificationWindow(window) else { return nil }
+
         let texts = descendants(of: window, maximumDepth: 5)
             .flatMap { element -> [String] in
                 [
@@ -269,7 +318,7 @@ final class NotificationBridge {
                 ].compactMap { $0 }
             }
 
-        let source = detectSource(in: texts)
+        guard let source = detectSource(in: texts) else { return nil }
         let frame = frame(of: window)
         let frameKey = frame.map {
             "\(Int($0.origin.x)):\(Int($0.origin.y)):\(Int($0.width)):\(Int($0.height))"
@@ -286,7 +335,7 @@ final class NotificationBridge {
         )
     }
 
-    private func detectSource(in texts: [String]) -> (name: String, bundleIdentifier: String?) {
+    private func detectSource(in texts: [String]) -> (name: String, bundleIdentifier: String?)? {
         let candidates = NSWorkspace.shared.runningApplications.compactMap { app -> (String, String?)? in
             guard let name = app.localizedName,
                   name != "NotificationCenter",
@@ -320,7 +369,19 @@ final class NotificationBridge {
             return source
         }
 
-        return ("系统通知", nil)
+        // Only use the system fallback when the AX tree identifies the element
+        // as notification-like. Unknown arbitrary windows must not become a
+        // synthetic system notification.
+        let notificationMarkers = ["通知", "notification", "alert", "提醒"]
+        if texts.contains(where: { text in
+            notificationMarkers.contains(where: {
+                text.localizedCaseInsensitiveContains($0)
+            })
+        }) {
+            return ("系统通知", nil)
+        }
+
+        return nil
     }
 
     private func safelyDismissBanner(_ window: AXUIElement) {
@@ -403,6 +464,14 @@ final class NotificationBridge {
             return nil
         }
         return value as? String
+    }
+
+    private func bool(_ element: AXUIElement, attribute: String) -> Bool? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else {
+            return nil
+        }
+        return value as? Bool
     }
 
     private func frame(of element: AXUIElement) -> CGRect? {
