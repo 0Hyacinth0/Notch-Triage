@@ -812,6 +812,28 @@ private struct ExpandedPanel: View {
             reduceMotion ? .linear(duration: 0.10) : NotchDesign.Motion.sectionChange,
             value: model.updateStatus.isInstallingUpdate
         )
+        .overlay {
+            if let prompt = model.updatePrompt,
+               let release = prompt.release,
+               !model.updateStatus.isBusy {
+                UpdateAvailableOverlay(
+                    release: release,
+                    onInstall: {
+                        model.updatePrompt = nil
+                        model.installUpdate(release)
+                    },
+                    onDismiss: {
+                        model.updatePrompt = nil
+                    }
+                )
+                .transition(
+                    reduceMotion
+                        ? .opacity
+                        : .opacity.combined(with: .scale(scale: 0.97))
+                )
+                .zIndex(10)
+            }
+        }
         .confirmationDialog(
             "清除系统通知中心中的全部通知？",
             isPresented: $confirmClearNotifications
@@ -828,7 +850,7 @@ private struct ExpandedPanel: View {
                 model.emptyTrash()
             }
         }
-        .alert(item: $model.updatePrompt) { prompt in
+        .alert(item: nonReleaseUpdatePrompt) { prompt in
             if prompt.recovery == .resetAccessibility {
                 return Alert(
                     title: Text(prompt.title),
@@ -839,22 +861,28 @@ private struct ExpandedPanel: View {
                     secondaryButton: .cancel(Text("取消"))
                 )
             }
-            if let release = prompt.release {
-                return Alert(
-                    title: Text(prompt.title),
-                    message: Text(prompt.message),
-                    primaryButton: .default(Text("安装并重启")) {
-                        model.installUpdate(release)
-                    },
-                    secondaryButton: .cancel(Text("稍后"))
-                )
-            }
             return Alert(
                 title: Text(prompt.title),
                 message: Text(prompt.message),
                 dismissButton: .default(Text("好"))
             )
         }
+    }
+
+    private var nonReleaseUpdatePrompt: Binding<AppUpdatePrompt?> {
+        Binding(
+            get: {
+                guard let prompt = model.updatePrompt, prompt.release == nil else {
+                    return nil
+                }
+                return prompt
+            },
+            set: { newValue in
+                guard newValue == nil,
+                      model.updatePrompt?.release == nil else { return }
+                model.updatePrompt = nil
+            }
+        )
     }
 
     private var updateProgressCard: some View {
@@ -866,78 +894,69 @@ private struct ExpandedPanel: View {
         }()
         let isVerifying = !isInstalling && fraction >= 0.999
         let title = isInstalling
-            ? "正在安装并准备重启"
+            ? "正在安装更新"
             : (isVerifying ? "正在验证更新" : "正在下载更新")
-        let symbol = isInstalling || isVerifying
-            ? "checkmark.shield.fill"
-            : "arrow.down.circle.fill"
+        let detail = isInstalling
+            ? "验证完成，正在安全替换应用并准备重启"
+            : (isVerifying
+                ? "正在验证签名与完整性"
+                : "下载完成后会自动验证并重启")
 
-        return VStack(spacing: 14) {
-            VStack(spacing: 8) {
-                Image(systemName: symbol)
-                    .font(.system(size: 26, weight: .medium))
+        return VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: isInstalling ? "checkmark.shield" : "arrow.down.circle")
+                    .font(.system(size: 22, weight: .medium))
                     .foregroundStyle(.tint)
-                    .contentTransition(.symbolEffect(.replace))
+                    .frame(width: 30, height: 30)
 
-                Text(title)
-                    .font(.system(size: 15, weight: .semibold))
-
-                Text(model.updateStatus.activeUpdateVersion.map { "Notch Triage v\($0)" } ?? "Notch Triage")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            GeometryReader { proxy in
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(.primary.opacity(0.09))
-
-                    Capsule()
-                        .fill(
-                            LinearGradient(
-                                colors: [.cyan, .blue, .indigo],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .frame(
-                            width: proxy.size.width * (isInstalling ? 1 : fraction)
-                        )
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.system(size: 15, weight: .semibold))
+                    Text(model.updateStatus.activeUpdateVersion.map { "Notch Triage v\($0)" } ?? "Notch Triage")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-            }
-            .frame(height: 5)
-            .animation(
-                reduceMotion ? .linear(duration: 0.01) : .easeOut(duration: 0.16),
-                value: fraction
-            )
 
-            HStack {
-                if let progress {
-                    Text(Self.byteCount(progress.receivedBytes))
-                    Spacer()
-                    Text(Self.byteCount(progress.totalBytes))
-                    Text("·")
+                Spacer(minLength: 12)
+
+                if !isInstalling {
                     Text("\(Int((fraction * 100).rounded()))%")
+                        .font(.system(size: 17, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
                         .contentTransition(.numericText(value: fraction))
                 } else {
-                    Text(isInstalling ? "正在安全替换应用程序" : "正在准备下载")
+                    ProgressView()
+                        .controlSize(.small)
                 }
             }
-            .font(.caption2.monospacedDigit())
-            .foregroundStyle(.tertiary)
 
-            Text(isInstalling || isVerifying
-                ? "签名与完整性验证通过后会自动重启"
-                : "下载期间可以继续查看进度，请勿退出应用")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+            ProgressView(value: isInstalling ? 1 : fraction)
+                .progressViewStyle(.linear)
+                .tint(.accentColor)
+                .animation(
+                    reduceMotion ? .linear(duration: 0.01) : .easeOut(duration: 0.16),
+                    value: fraction
+                )
+
+            HStack(spacing: 6) {
+                if let progress {
+                    Text("\(Self.byteCount(progress.receivedBytes)) / \(Self.byteCount(progress.totalBytes))")
+                    Spacer(minLength: 8)
+                    Text(detail)
+                } else {
+                    Text(detail)
+                }
+            }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 18)
-        .panelGroupSurface()
+        .padding(20)
+        .frame(maxWidth: 380, alignment: .leading)
+        .panelGroupSurface(cornerRadius: 20)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(title)
-        .accessibilityValue(isInstalling ? "" : "百分之\(Int((fraction * 100).rounded()))")
+        .accessibilityValue(isInstalling ? detail : "百分之\(Int((fraction * 100).rounded()))，\(detail)")
     }
 
     private static func byteCount(_ value: Int64) -> String {
@@ -1161,6 +1180,103 @@ private struct ExpandedPanel: View {
             NowPlayingStrip(snapshot: model.media)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+}
+
+private struct UpdateAvailableOverlay: View {
+    let release: AppRelease
+    let onInstall: () -> Void
+    let onDismiss: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var releaseNotes: String {
+        release.notes.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.16)
+                .contentShape(Rectangle())
+
+            VStack(alignment: .leading, spacing: 18) {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "arrow.down.app")
+                        .font(.system(size: 23, weight: .medium))
+                        .foregroundStyle(.tint)
+                        .frame(width: 30, height: 30)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("有新的版本可用")
+                            .font(.system(size: 17, weight: .semibold))
+                        Text("Notch Triage \(release.displayVersion)")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer(minLength: 8)
+                }
+
+                if !releaseNotes.isEmpty {
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text("更新内容")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+
+                        ScrollView {
+                            Text(releaseNotes)
+                                .font(.callout)
+                                .foregroundStyle(.primary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .textSelection(.enabled)
+                        }
+                        .frame(maxHeight: 116)
+                    }
+                }
+
+                Text("安装前会验证签名与完整性，完成后自动重启应用。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack {
+                    Button("稍后") {
+                        onDismiss()
+                    }
+                    .buttonStyle(.bordered)
+                    .keyboardShortcut(.cancelAction)
+
+                    Spacer(minLength: 8)
+
+                    Button("安装并重启") {
+                        onInstall()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+                }
+            }
+            .padding(22)
+            .frame(maxWidth: 390, alignment: .leading)
+            .glassEffect(
+                .regular,
+                in: .rect(cornerRadius: NotchDesign.Radius.panel)
+            )
+            .overlay {
+                RoundedRectangle(
+                    cornerRadius: NotchDesign.Radius.panel,
+                    style: .continuous
+                )
+                .stroke(.white.opacity(0.12), lineWidth: 0.5)
+            }
+            .shadow(color: .black.opacity(0.24), radius: 22, y: 12)
+            .transition(
+                reduceMotion
+                    ? .opacity
+                    : .opacity.combined(with: .scale(scale: 0.97))
+            )
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
     }
 }
 
