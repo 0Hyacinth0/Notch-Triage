@@ -6,8 +6,9 @@ import SwiftUI
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let persistentUtilityReason =
         "Notch Triage remains available while its panel is collapsed"
-    private let model = AppModel()
+    let model = AppModel()
     private var panelController: NotchPanelController?
+    private var settingsWindowController: SettingsWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // SwiftUI can opt accessory apps into AppKit automatic termination
@@ -19,6 +20,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         NSApp.setActivationPolicy(.accessory)
 
+        let settingsController = SettingsWindowController(model: model)
+        settingsWindowController = settingsController
+        model.settingsWindowOpener = { [weak settingsController] in
+            settingsController?.show()
+        }
+
         let controller = NotchPanelController(model: model)
         panelController = controller
         controller.show()
@@ -26,6 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        model.settingsWindowOpener = nil
         model.stop()
     }
 
@@ -33,6 +41,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ sender: NSApplication
     ) -> Bool {
         false
+    }
+}
+
+@MainActor
+final class SettingsWindowController: NSObject, NSWindowDelegate {
+    private let window: NSWindow
+
+    init(model: AppModel) {
+        let hostingView = NSHostingView(rootView: SettingsRootView(model: model))
+        window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 860, height: 640),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        super.init()
+
+        window.title = "Notch Triage 设置"
+        window.titleVisibility = .visible
+        window.isReleasedWhenClosed = false
+        window.isMovableByWindowBackground = true
+        window.minSize = NSSize(width: 780, height: 540)
+        window.contentView = hostingView
+        window.delegate = self
+        window.setFrameAutosaveName("NotchTriage.SettingsWindow")
+        window.standardWindowButton(.zoomButton)?.isEnabled = false
+        window.standardWindowButton(.miniaturizeButton)?.isEnabled = false
+    }
+
+    func show() {
+        NSApp.activate(ignoringOtherApps: true)
+        if !window.isVisible {
+            window.center()
+        }
+        window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        sender.orderOut(nil)
+        return false
     }
 }
 

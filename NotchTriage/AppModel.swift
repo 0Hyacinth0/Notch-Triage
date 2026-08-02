@@ -74,6 +74,8 @@ final class AppModel: ObservableObject {
     var hoverCollapseTask: Task<Void, Never>?
     var panelCloseTask: Task<Void, Never>?
     var updateTask: Task<Void, Never>?
+    var settingsWindowTask: Task<Void, Never>?
+    var settingsWindowOpener: (() -> Void)?
     private var accessibilityRequestTask: Task<Void, Never>?
 
     func motion(_ animation: Animation) -> Animation {
@@ -247,6 +249,7 @@ final class AppModel: ObservableObject {
         hoverCollapseTask?.cancel()
         panelCloseTask?.cancel()
         updateTask?.cancel()
+        settingsWindowTask?.cancel()
         accessibilityRequestTask?.cancel()
         codexService.stop()
         mediaService.stop()
@@ -484,6 +487,34 @@ final class AppModel: ObservableObject {
 
     func quitApplication() {
         NSApp.terminate(nil)
+    }
+
+    func openSettings() {
+        let shouldWaitForPanel = isExpanded || isPanelClosing
+        if isExpanded {
+            collapseExpanded()
+        }
+
+        settingsWindowTask?.cancel()
+        settingsWindowTask = Task { [weak self] in
+            if shouldWaitForPanel {
+                try? await Task.sleep(for: .milliseconds(420))
+            } else {
+                await Task.yield()
+            }
+            guard !Task.isCancelled, self != nil else { return }
+            guard let self else { return }
+            if let settingsWindowOpener = self.settingsWindowOpener {
+                settingsWindowOpener()
+            } else {
+                NSApp.activate(ignoringOtherApps: true)
+                NSApp.sendAction(
+                    Selector(("showSettingsWindow:")),
+                    to: nil,
+                    from: nil
+                )
+            }
+        }
     }
 
     private func showNotificationPulse(_ pulse: NotificationPulse) {

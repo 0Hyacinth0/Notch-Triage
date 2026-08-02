@@ -731,7 +731,6 @@ private struct ExpandedPanel: View {
     private enum Section: Hashable {
         case power
         case triage
-        case diagnostics
     }
 
     @ObservedObject var model: AppModel
@@ -761,7 +760,7 @@ private struct ExpandedPanel: View {
                     triageDashboard
                         .transition(.opacity)
                 } else {
-                    DiagnosticsDashboardView(model: model)
+                    triageDashboard
                         .transition(.opacity)
                 }
             }
@@ -958,128 +957,33 @@ private struct ExpandedPanel: View {
                         Image(systemName: "bell.fill")
                             .accessibilityLabel("通知")
                             .tag(Section.triage)
-                        Image(systemName: "waveform.path.ecg")
-                            .accessibilityLabel("诊断")
-                            .tag(Section.diagnostics)
                     }
                     .labelsHidden()
                     .pickerStyle(.segmented)
                     .controlSize(.small)
-                    .frame(width: 112)
+                    .frame(width: 76)
 
-                    settingsMenu
+                    Button {
+                        model.openSettings()
+                    } label: {
+                        Image(systemName: "gearshape")
+                            .frame(width: 26, height: 26)
+                            .contentShape(Circle())
+                            .glassEffect(.regular.interactive(), in: .circle)
+                    }
+                    .buttonStyle(.plain)
+                    .help("打开设置")
+                    .accessibilityLabel("打开设置")
                 }
             }
         }
         .frame(height: 28)
     }
 
-    private var settingsMenu: some View {
-        Menu {
-            SwiftUI.Section("左侧显示 · \(model.leftWingContent.title)") {
-                wingChoices(selected: model.leftWingContent) { content in
-                    model.setLeftWingContent(content)
-                }
-            }
-
-            SwiftUI.Section("右侧显示 · \(model.rightWingContent.title)") {
-                wingChoices(selected: model.rightWingContent) { content in
-                    model.setRightWingContent(content)
-                }
-            }
-
-            Button {
-                model.swapWingContents()
-            } label: {
-                Label("左右互换", systemImage: "arrow.left.arrow.right")
-            }
-
-            Button {
-                model.resetWingContents()
-            } label: {
-                Label("恢复默认显示", systemImage: "arrow.counterclockwise")
-            }
-
-            Divider()
-
-            Button {
-                model.handleUpdateMenuAction()
-            } label: {
-                Label(model.updateStatus.menuTitle, systemImage: model.updateStatus.symbol)
-            }
-            .disabled(model.updateStatus.isBusy)
-
-            Button {
-                model.autoDismissBanners.toggle()
-            } label: {
-                Label(
-                    model.autoDismissBanners ? "停止自动收起横幅" : "自动收起横幅",
-                    systemImage: model.autoDismissBanners
-                        ? "rectangle.slash"
-                        : "rectangle.compress.vertical"
-                )
-            }
-
-            Button {
-                if model.accessibilityRepairSuggested {
-                    model.presentAccessibilityRepairPrompt()
-                } else {
-                    model.requestAccessibility()
-                }
-            } label: {
-                Label(
-                    model.accessibilityRepairSuggested
-                        ? "修复辅助功能权限…"
-                        : "辅助功能权限",
-                    systemImage: model.accessibilityRepairSuggested
-                        ? "wrench.and.screwdriver"
-                        : "hand.raised"
-                )
-            }
-
-            Button {
-                model.setLaunchAtLoginEnabled(!model.launchAtLoginEnabled)
-            } label: {
-                Label(
-                    model.launchAtLoginEnabled ? "关闭开机启动" : "开机时启动",
-                    systemImage: model.launchAtLoginEnabled
-                        ? "checkmark.circle.fill"
-                        : "power"
-                )
-            }
-
-            if model.launchAtLoginRequiresApproval {
-                Button {
-                    model.openLoginItemsSettings()
-                } label: {
-                    Label("批准登录项…", systemImage: "gear")
-                }
-            }
-
-            Divider()
-
-            Button(role: .destructive) {
-                model.quitApplication()
-            } label: {
-                Label("退出 Notch Triage", systemImage: "power")
-            }
-        } label: {
-            Image(systemName: "gearshape")
-                .frame(width: 26, height: 26)
-                .contentShape(Circle())
-                .glassEffect(.regular.interactive(), in: .circle)
-        }
-        .menuStyle(.borderlessButton)
-        .fixedSize()
-        .help("设置与更新")
-        .accessibilityLabel("设置与更新")
-    }
-
     private var sectionTitle: String {
         switch section {
         case .power: return "电源"
         case .triage: return "通知"
-        case .diagnostics: return "诊断"
         }
     }
 
@@ -1087,26 +991,6 @@ private struct ExpandedPanel: View {
         switch section {
         case .power: return "bolt.fill"
         case .triage: return "bell.fill"
-        case .diagnostics: return "waveform.path.ecg"
-        }
-    }
-
-    @ViewBuilder
-    private func wingChoices(
-        selected: NotchWingContent,
-        onSelect: @escaping (NotchWingContent) -> Void
-    ) -> some View {
-        ForEach(NotchWingContent.allCases) { content in
-            Button {
-                onSelect(content)
-            } label: {
-                Label(
-                    content.title,
-                    systemImage: selected == content
-                        ? "checkmark"
-                        : content.symbol
-                )
-            }
         }
     }
 
