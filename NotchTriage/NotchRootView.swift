@@ -236,7 +236,7 @@ private struct CompactMediaContent: View {
     let snapshot: MediaSnapshot
 
     var body: some View {
-        MediaProgressRing(snapshot: snapshot, diameter: 27, lineWidth: 3.2)
+        MediaProgressRing(snapshot: snapshot, diameter: 22, lineWidth: 3.2)
             .frame(width: 37)
             .foregroundStyle(.white)
             .help(mediaHelp)
@@ -601,7 +601,7 @@ private struct LivingNotch: View {
     }
 
     private var hoverMediaRing: some View {
-        MediaProgressRing(snapshot: model.media, diameter: 24, lineWidth: 2.8)
+        MediaProgressRing(snapshot: model.media, diameter: 20, lineWidth: 2.6)
     }
 
     private var hoverBatteryRing: some View {
