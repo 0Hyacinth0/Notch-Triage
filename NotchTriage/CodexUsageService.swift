@@ -13,7 +13,6 @@ final class CodexUsageService {
     private var outputPipe: Pipe?
     private var errorPipe: Pipe?
     private var readBuffer = Data()
-    private var refreshTimer: Timer?
     private var requestID = 1
 
     init(
@@ -88,12 +87,6 @@ final class CodexUsageService {
             ])
             send(["method": "initialized", "params": [:]])
             refresh()
-
-            refreshTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-                Task { @MainActor [weak self] in
-                    self?.refresh()
-                }
-            }
         } catch {
             onHealth(.failed("无法启动 Codex App Server：\(error.localizedDescription)"))
             stop()
@@ -101,9 +94,6 @@ final class CodexUsageService {
     }
 
     func stop() {
-        refreshTimer?.invalidate()
-        refreshTimer = nil
-
         outputPipe?.fileHandleForReading.readabilityHandler = nil
         errorPipe?.fileHandleForReading.readabilityHandler = nil
 

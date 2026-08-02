@@ -470,7 +470,7 @@ private struct LivingNotch: View {
                 .frame(height: model.menuBarHeight)
 
             HStack(spacing: 10) {
-                hoverCell(for: model.leftWingContent)
+                hoverCell(for: model.leftWingContent, side: .left)
 
                 hoverDivider
 
@@ -479,7 +479,7 @@ private struct LivingNotch: View {
 
                 hoverDivider
 
-                hoverCell(for: model.rightWingContent)
+                hoverCell(for: model.rightWingContent, side: .right)
             }
             .padding(.horizontal, 14)
             .frame(maxHeight: .infinity)
@@ -487,12 +487,15 @@ private struct LivingNotch: View {
     }
 
     @ViewBuilder
-    private func hoverCell(for content: NotchWingContent) -> some View {
+    private func hoverCell(
+        for content: NotchWingContent,
+        side: NotchWingSide
+    ) -> some View {
         if content == .hidden {
             Color.clear
                 .frame(maxWidth: .infinity)
         } else {
-            hoverStatus(for: content)
+            hoverStatus(for: content, side: side)
                 .frame(maxWidth: .infinity, alignment: .center)
         }
     }
@@ -530,17 +533,18 @@ private struct LivingNotch: View {
     }
 
     @ViewBuilder
-    private func hoverStatus(for content: NotchWingContent) -> some View {
+    private func hoverStatus(
+        for content: NotchWingContent,
+        side: NotchWingSide
+    ) -> some View {
         switch content {
         case .media:
             HStack(spacing: 7) {
-                SourceIcon(
-                    bundleIdentifier: model.media.bundleIdentifier,
-                    fallback: "music.note"
-                )
-                .frame(width: 20, height: 20)
+                if side == .left {
+                    hoverMediaIcon
+                }
 
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: side == .left ? .leading : .trailing, spacing: 1) {
                     Text(model.media == .idle ? "暂未播放" : model.media.title)
                         .font(.system(size: 10.5, weight: .semibold))
                         .lineLimit(1)
@@ -555,20 +559,23 @@ private struct LivingNotch: View {
                     .foregroundStyle(.white.opacity(0.48))
                     .lineLimit(1)
                 }
+
+                if side == .right {
+                    hoverMediaIcon
+                }
             }
-            .frame(maxWidth: 154, alignment: .leading)
+            .frame(
+                maxWidth: 154,
+                alignment: side == .left ? .leading : .trailing
+            )
 
         case .battery:
             HStack(spacing: 7) {
-                UsageArc(
-                    progress: Double(model.power.batteryPercent) / 100,
-                    color: model.power.isCharging ? .green : .white.opacity(0.92),
-                    lineWidth: 2.6,
-                    trackColor: .white.opacity(0.16)
-                )
-                .frame(width: 20, height: 20)
+                if side == .left {
+                    hoverBatteryRing
+                }
 
-                VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: side == .left ? .leading : .trailing, spacing: 0) {
                     Text("\(model.power.batteryPercent)%")
                         .font(.system(size: 10.5, weight: .bold, design: .rounded))
                         .monospacedDigit()
@@ -577,20 +584,20 @@ private struct LivingNotch: View {
                         .font(.system(size: 8.5, weight: .medium))
                         .foregroundStyle(.white.opacity(0.48))
                 }
+
+                if side == .right {
+                    hoverBatteryRing
+                }
             }
 
         case .codex:
             HStack(spacing: 7) {
                 if let primary = model.codexLimits.first {
-                    UsageArc(
-                        progress: primary.remainingFraction,
-                        color: .white.opacity(0.92),
-                        lineWidth: 2.6,
-                        trackColor: .white.opacity(0.16)
-                    )
-                    .frame(width: 20, height: 20)
+                    if side == .left {
+                        hoverCodexRing(primary)
+                    }
 
-                    VStack(alignment: .leading, spacing: 0) {
+                    VStack(alignment: side == .left ? .leading : .trailing, spacing: 0) {
                         Text("\(Int(primary.remainingPercent.rounded()))%")
                             .font(.system(size: 10.5, weight: .bold, design: .rounded))
                             .monospacedDigit()
@@ -599,18 +606,59 @@ private struct LivingNotch: View {
                             .font(.system(size: 8.5, weight: .medium))
                             .foregroundStyle(.white.opacity(0.48))
                     }
+
+                    if side == .right {
+                        hoverCodexRing(primary)
+                    }
                 } else {
-                    Image(systemName: "gauge.with.dots.needle.67percent")
-                        .font(.system(size: 11, weight: .semibold))
+                    if side == .left {
+                        hoverCodexFallbackIcon
+                    }
                     Text("正在连接")
                         .font(.system(size: 9, weight: .medium))
                         .foregroundStyle(.white.opacity(0.48))
+                    if side == .right {
+                        hoverCodexFallbackIcon
+                    }
                 }
             }
 
         case .hidden:
             EmptyView()
         }
+    }
+
+    private var hoverMediaIcon: some View {
+        SourceIcon(
+            bundleIdentifier: model.media.bundleIdentifier,
+            fallback: "music.note"
+        )
+        .frame(width: 20, height: 20)
+    }
+
+    private var hoverBatteryRing: some View {
+        UsageArc(
+            progress: Double(model.power.batteryPercent) / 100,
+            color: model.power.isCharging ? .green : .white.opacity(0.92),
+            lineWidth: 2.6,
+            trackColor: .white.opacity(0.16)
+        )
+        .frame(width: 20, height: 20)
+    }
+
+    private func hoverCodexRing(_ primary: CodexLimitBucket) -> some View {
+        UsageArc(
+            progress: primary.remainingFraction,
+            color: .white.opacity(0.92),
+            lineWidth: 2.6,
+            trackColor: .white.opacity(0.16)
+        )
+        .frame(width: 20, height: 20)
+    }
+
+    private var hoverCodexFallbackIcon: some View {
+        Image(systemName: "gauge.with.dots.needle.67percent")
+            .font(.system(size: 11, weight: .semibold))
     }
 
     private var hoverBatteryDetail: String {
@@ -621,201 +669,6 @@ private struct LivingNotch: View {
             return "已连接电源"
         }
         return "电池供电"
-    }
-}
-
-private struct SystemHUDContent: View {
-    let snapshot: SystemHUDSnapshot
-    let menuBarHeight: CGFloat
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var contentVisible = false
-
-    var body: some View {
-        VStack(spacing: 0) {
-            Color.clear
-                .frame(height: menuBarHeight)
-
-            Group {
-                if snapshot.kind == .airPods {
-                    airPodsContent
-                } else {
-                    levelContent
-                }
-            }
-            .padding(.horizontal, 24)
-            .frame(maxHeight: .infinity)
-            .opacity(contentVisible ? 1 : 0)
-            .offset(y: reduceMotion || contentVisible ? 0 : -3)
-        }
-        .foregroundStyle(.white)
-        .onAppear {
-            withAnimation(reduceMotion ? .linear(duration: 0.12) : NotchDesign.Motion.panelOpen) {
-                contentVisible = true
-            }
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(snapshot.title)，\(snapshot.subtitle)")
-    }
-
-    private var levelContent: some View {
-        HStack(spacing: 12) {
-            systemIcon
-
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(snapshot.title)
-                        .font(.system(size: 10.5, weight: .bold))
-                    Spacer(minLength: 8)
-                    Text(snapshot.subtitle)
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                        .contentTransition(.numericText())
-                }
-
-                AnimatedLevelBar(
-                    value: snapshot.value ?? 0,
-                    gradient: levelGradient
-                )
-                .frame(height: 4.5)
-            }
-        }
-    }
-
-    private var airPodsContent: some View {
-        HStack(spacing: 11) {
-            systemIcon
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(snapshot.title)
-                    .font(.system(size: 11, weight: .semibold))
-                    .lineLimit(1)
-                Text(snapshot.subtitle)
-                    .font(.system(size: 8.5, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.5))
-            }
-
-            Spacer(minLength: 8)
-
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(.green)
-        }
-    }
-
-    @ViewBuilder
-    private var systemIcon: some View {
-        switch snapshot.kind {
-        case .volume:
-            Image(systemName: snapshot.symbol)
-                .font(.system(size: 16, weight: .semibold))
-                .symbolRenderingMode(.monochrome)
-                .foregroundStyle(systemIconColor)
-                .contentTransition(.symbolEffect(.replace))
-                .symbolEffect(
-                    .wiggle.forward.byLayer,
-                    options: .nonRepeating.speed(1.18),
-                    value: snapshot.subtitle
-                )
-                .frame(width: 22, height: 27)
-
-        case .brightness:
-            Image(systemName: snapshot.symbol)
-                .font(.system(size: 16, weight: .semibold))
-                .symbolRenderingMode(.monochrome)
-                .foregroundStyle(systemIconColor)
-                .contentTransition(.symbolEffect(.replace))
-                .symbolEffect(
-                    .breathe.pulse.byLayer,
-                    options: .nonRepeating.speed(1.15),
-                    value: snapshot.subtitle
-                )
-                .frame(width: 22, height: 27)
-
-        case .airPods:
-            Image(systemName: snapshot.symbol)
-                .font(.system(size: 16, weight: .semibold))
-                .symbolRenderingMode(.monochrome)
-                .foregroundStyle(systemIconColor)
-                .symbolEffect(
-                    .breathe.pulse.byLayer,
-                    options: .nonRepeating.speed(1.05),
-                    value: snapshot.id
-                )
-                .frame(width: 22, height: 27)
-        }
-    }
-
-    private var levelGradient: LinearGradient {
-        switch snapshot.kind {
-        case .volume:
-            return LinearGradient(
-                colors: [
-                    Color(red: 0.30, green: 0.48, blue: 1.00),
-                    Color(red: 0.20, green: 0.82, blue: 1.00)
-                ],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-        case .brightness:
-            return LinearGradient(
-                colors: [
-                    Color(red: 1.00, green: 0.48, blue: 0.08),
-                    Color(red: 1.00, green: 0.87, blue: 0.18)
-                ],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-        case .airPods:
-            return LinearGradient(
-                colors: [.cyan, .mint],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-        }
-    }
-
-    private var systemIconColor: Color {
-        snapshot.kind == .airPods ? .cyan : .white.opacity(0.94)
-    }
-
-}
-
-private struct AnimatedLevelBar: View {
-    let value: Double
-    let gradient: LinearGradient
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var displayedValue = 0.0
-
-    private var normalizedValue: Double {
-        max(0, min(1, value))
-    }
-
-    var body: some View {
-        GeometryReader { proxy in
-            let filledWidth = displayedValue > 0
-                ? max(proxy.size.height, proxy.size.width * displayedValue)
-                : 0
-
-            ZStack(alignment: .leading) {
-                Capsule(style: .continuous)
-                    .fill(.white.opacity(0.14))
-
-                Capsule(style: .continuous)
-                    .fill(gradient)
-                    .frame(width: filledWidth)
-            }
-        }
-        .onAppear {
-            displayedValue = reduceMotion ? normalizedValue : 0
-            withAnimation(reduceMotion ? .linear(duration: 0.01) : NotchDesign.Motion.panelOpen) {
-                displayedValue = normalizedValue
-            }
-        }
-        .onChange(of: value) { _, _ in
-            withAnimation(reduceMotion ? .linear(duration: 0.01) : NotchDesign.Motion.value) {
-                displayedValue = normalizedValue
-            }
-        }
     }
 }
 
@@ -910,6 +763,7 @@ private struct ExpandedPanel: View {
     private enum Section: Hashable {
         case power
         case triage
+        case diagnostics
     }
 
     @ObservedObject var model: AppModel
@@ -935,8 +789,11 @@ private struct ExpandedPanel: View {
                 } else if section == .power {
                     PowerDashboardView(model: model)
                         .transition(.opacity)
-                } else {
+                } else if section == .triage {
                     triageDashboard
+                        .transition(.opacity)
+                } else {
+                    DiagnosticsDashboardView(model: model)
                         .transition(.opacity)
                 }
             }
@@ -1077,10 +934,10 @@ private struct ExpandedPanel: View {
     private var header: some View {
         HStack(spacing: 10) {
             HStack(spacing: 7) {
-                Image(systemName: section == .power ? "bolt.fill" : "bell.fill")
+                Image(systemName: sectionSymbol)
                     .font(.system(size: 12, weight: .semibold))
                     .contentTransition(.symbolEffect(.replace))
-                Text(section == .power ? "电源" : "通知")
+                Text(sectionTitle)
                     .font(.system(size: 14, weight: .semibold))
 
                 Text("\(notificationCount)")
@@ -1104,11 +961,14 @@ private struct ExpandedPanel: View {
                         Image(systemName: "bell.fill")
                             .accessibilityLabel("通知")
                             .tag(Section.triage)
+                        Image(systemName: "waveform.path.ecg")
+                            .accessibilityLabel("诊断")
+                            .tag(Section.diagnostics)
                     }
                     .labelsHidden()
                     .pickerStyle(.segmented)
                     .controlSize(.small)
-                    .frame(width: 78)
+                    .frame(width: 112)
 
                     settingsMenu
                 }
@@ -1179,6 +1039,25 @@ private struct ExpandedPanel: View {
                 Label("辅助功能权限", systemImage: "hand.raised")
             }
 
+            Button {
+                model.setLaunchAtLoginEnabled(!model.launchAtLoginEnabled)
+            } label: {
+                Label(
+                    model.launchAtLoginEnabled ? "关闭开机启动" : "开机时启动",
+                    systemImage: model.launchAtLoginEnabled
+                        ? "checkmark.circle.fill"
+                        : "power"
+                )
+            }
+
+            if model.launchAtLoginRequiresApproval {
+                Button {
+                    model.openLoginItemsSettings()
+                } label: {
+                    Label("批准登录项…", systemImage: "gear")
+                }
+            }
+
             Divider()
 
             Button(role: .destructive) {
@@ -1196,6 +1075,22 @@ private struct ExpandedPanel: View {
         .fixedSize()
         .help("设置与更新")
         .accessibilityLabel("设置与更新")
+    }
+
+    private var sectionTitle: String {
+        switch section {
+        case .power: return "电源"
+        case .triage: return "通知"
+        case .diagnostics: return "诊断"
+        }
+    }
+
+    private var sectionSymbol: String {
+        switch section {
+        case .power: return "bolt.fill"
+        case .triage: return "bell.fill"
+        case .diagnostics: return "waveform.path.ecg"
+        }
     }
 
     @ViewBuilder

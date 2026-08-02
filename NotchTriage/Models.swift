@@ -300,6 +300,60 @@ enum ServiceHealth: Equatable {
     }
 }
 
+enum DiagnosticService: String, CaseIterable, Identifiable {
+    case media
+    case notifications
+    case power
+    case codex
+    case updates
+    case trash
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .media: return "媒体"
+        case .notifications: return "通知"
+        case .power: return "电源"
+        case .codex: return "Codex"
+        case .updates: return "更新"
+        case .trash: return "废纸篓"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .media: return "music.note"
+        case .notifications: return "bell.fill"
+        case .power: return "bolt.fill"
+        case .codex: return "gauge.with.dots.needle.67percent"
+        case .updates: return "arrow.trianglehead.2.clockwise.rotate.90"
+        case .trash: return "trash.fill"
+        }
+    }
+}
+
+struct ServiceDiagnosticRecord: Equatable {
+    let service: DiagnosticService
+    var health: ServiceHealth
+    var lastCheckedAt: Date
+    var lastHealthyAt: Date?
+}
+
+struct DiagnosticEvent: Identifiable, Equatable {
+    let id = UUID()
+    let date: Date
+    let service: DiagnosticService?
+    let level: DiagnosticEventLevel
+    let message: String
+}
+
+enum DiagnosticEventLevel: String {
+    case info
+    case warning
+    case error
+}
+
 struct ChargeLimitSnapshot: Equatable {
     var isSupported: Bool
     var isEnabled: Bool

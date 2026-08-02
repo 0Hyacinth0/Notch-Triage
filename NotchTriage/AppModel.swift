@@ -4,7 +4,7 @@ import SwiftUI
 
 @MainActor
 final class AppModel: ObservableObject {
-    private enum PreferenceKey {
+    enum PreferenceKey {
         static let leftWingContent = "notch.leftWingContent"
         static let rightWingContent = "notch.rightWingContent"
         static let lastUpdateCheck = "updates.lastSuccessfulCheck"
@@ -25,7 +25,11 @@ final class AppModel: ObservableObject {
     @Published var trashCount: Int?
     @Published var power = PowerSnapshot.empty
     @Published var chargeLimit = ChargeLimitSnapshot.unavailable
-    @Published var updateStatus = AppUpdateStatus.idle
+    @Published var updateStatus = AppUpdateStatus.idle {
+        didSet {
+            diagnostics.update(.updates, health: updateDiagnosticHealth)
+        }
+    }
     @Published var updateDownloadProgress: AppUpdateDownloadProgress?
     @Published var availableUpdate: AppRelease?
     @Published var updatePrompt: AppUpdatePrompt?
@@ -51,6 +55,12 @@ final class AppModel: ObservableObject {
     @Published var notificationHealth: ServiceHealth = .loading("正在检查辅助功能权限")
     @Published var trashHealth: ServiceHealth = .loading("正在读取废纸篓")
     @Published var powerHealth: ServiceHealth = .loading("正在读取电池与适配器")
+    @Published var isBackgroundRefreshPaused = false
+    @Published var launchAtLoginEnabled = false
+    @Published var launchAtLoginRequiresApproval = false
+    @Published var launchAtLoginHealth: ServiceHealth = .loading("正在读取登录项状态")
+
+    let diagnostics = DiagnosticsStore()
 
     @Published var autoDismissBanners = true {
         didSet {
@@ -58,14 +68,13 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private var pulseTask: Task<Void, Never>?
-    private var systemHUDDismissTask: Task<Void, Never>?
-    private var hoverCollapseTask: Task<Void, Never>?
-    private var panelCloseTask: Task<Void, Never>?
-    private var updateTask: Task<Void, Never>?
-    private var updateMonitorTask: Task<Void, Never>?
+    var pulseTask: Task<Void, Never>?
+    var systemHUDDismissTask: Task<Void, Never>?
+    var hoverCollapseTask: Task<Void, Never>?
+    var panelCloseTask: Task<Void, Never>?
+    var updateTask: Task<Void, Never>?
 
-    private func motion(_ animation: Animation) -> Animation {
+    func motion(_ animation: Animation) -> Animation {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
             ? .linear(duration: 0.01)
             : animation
@@ -87,24 +96,24 @@ final class AppModel: ObservableObject {
     private lazy var codexService = CodexUsageService(
         onLimits: { [weak self] limits in
             self?.codexLimits = limits
-            self?.codexHealth = .ready(
+            self?.applyHealth(.ready(
                 limits.isEmpty ? "当前没有返回限额桶" : "已读取 \(limits.count) 个动态限额桶"
-            )
+            ), to: .codex)
         },
         onHealth: { [weak self] health in
-            self?.codexHealth = health
+            self?.applyHealth(health, to: .codex)
         }
     )
 
     private lazy var mediaService = MediaService(
         onSnapshot: { [weak self] snapshot in
             self?.media = snapshot
-            self?.mediaHealth = snapshot == .idle
+            self?.applyHealth(snapshot == .idle
                 ? .warning("未检测到正在播放的曲目")
-                : .ready("正在读取 \(snapshot.sourceName)")
+                : .ready("正在读取 \(snapshot.sourceName)"), to: .media)
         },
         onHealth: { [weak self] health in
-            self?.mediaHealth = health
+            self?.applyHealth(health, to: .media)
         }
     )
 
@@ -116,7 +125,7 @@ final class AppModel: ObservableObject {
             self?.showNotificationPulse(pulse)
         },
         onHealth: { [weak self] health in
-            self?.notificationHealth = health
+            self?.applyHealth(health, to: .notifications)
         }
     )
 
@@ -124,13 +133,13 @@ final class AppModel: ObservableObject {
         onCount: { [weak self] count in
             self?.trashCount = count
             if let count {
-                self?.trashHealth = .ready(
+                self?.applyHealth(.ready(
                     count == 0 ? "废纸篓为空" : "废纸篓中有 \(count) 项"
-                )
+                ), to: .trash)
             }
         },
         onHealth: { [weak self] health in
-            self?.trashHealth = health
+            self?.applyHealth(health, to: .trash)
         }
     )
 
@@ -140,17 +149,68 @@ final class AppModel: ObservableObject {
             self?.chargeLimit = chargeLimit
         },
         onHealth: { [weak self] health in
-            self?.powerHealth = health
+            self?.applyHealth(health, to: .power)
         }
     )
 
-    private lazy var systemHUDService = SystemHUDService(
+    lazy var systemHUDService = SystemHUDService(
         onEvent: { [weak self] snapshot in
             self?.showSystemHUD(snapshot)
         }
     )
 
-    private let updateService = UpdateService()
+    let updateService = UpdateService()
+    let launchAtLoginService = LaunchAtLoginService()
+
+    lazy var refreshScheduler = BackgroundRefreshScheduler(jobs: [
+        .init(
+            id: .notifications,
+            compactInterval: 2,
+            interactiveInterval: 1.25,
+            action: { [weak self] in self?.notificationService.refreshNow() }
+        ),
+        .init(
+            id: .media,
+            compactInterval: 5,
+            interactiveInterval: 2,
+            action: { [weak self] in self?.mediaService.refresh() }
+        ),
+        .init(
+            id: .power,
+            compactInterval: 15,
+            interactiveInterval: 3,
+            action: { [weak self] in self?.powerService.refresh() }
+        ),
+        .init(
+            id: .trash,
+            compactInterval: 30,
+            interactiveInterval: 10,
+            action: { [weak self] in self?.trashService.refresh() }
+        ),
+        .init(
+            id: .codex,
+            compactInterval: 60,
+            interactiveInterval: 60,
+            action: { [weak self] in self?.codexService.refresh() }
+        ),
+        .init(
+            id: .brightness,
+            compactInterval: 8,
+            interactiveInterval: 4,
+            action: { [weak self] in self?.systemHUDService.refreshBrightness() }
+        ),
+        .init(
+            id: .updates,
+            compactInterval: 6 * 60 * 60,
+            interactiveInterval: 6 * 60 * 60,
+            refreshOnResume: false,
+            action: { [weak self] in self?.checkForUpdates(manual: false) }
+        )
+    ])
+
+    private lazy var activityMonitor = AppActivityMonitor { [weak self] paused, reason in
+        self?.setBackgroundRefreshPaused(paused, reason: reason)
+    }
 
     func start() {
         codexService.start()
@@ -160,22 +220,28 @@ final class AppModel: ObservableObject {
         trashService.start()
         powerService.start()
         systemHUDService.start()
-        scheduleAutomaticUpdateCheck()
+        refreshLaunchAtLoginStatus()
+        refreshScheduler.start()
+        activityMonitor.start()
+        checkForUpdates(manual: false)
+        diagnostics.recordLifecycle("应用服务已启动；后台刷新由统一调度器管理")
     }
 
     func stop() {
+        activityMonitor.stop()
+        refreshScheduler.stop()
         pulseTask?.cancel()
         systemHUDDismissTask?.cancel()
         hoverCollapseTask?.cancel()
         panelCloseTask?.cancel()
         updateTask?.cancel()
-        updateMonitorTask?.cancel()
         codexService.stop()
         mediaService.stop()
         notificationService.stop()
         trashService.stop()
         powerService.stop()
         systemHUDService.stop()
+        diagnostics.recordLifecycle("应用服务已停止")
     }
 
     func toggleExpanded() {
@@ -190,6 +256,7 @@ final class AppModel: ObservableObject {
         isNotchCanvasExpanded = true
         isExpanded = true
         isHoveringNotch = false
+        refreshScheduler.setInteractive(true)
         notificationService.refreshNow()
         trashService.refresh()
         powerService.refresh()
@@ -200,6 +267,7 @@ final class AppModel: ObservableObject {
         hoverCollapseTask?.cancel()
         isNotchCanvasExpanded = true
         isPanelClosing = true
+        refreshScheduler.setInteractive(false)
 
         panelCloseTask?.cancel()
         panelCloseTask = Task { [weak self] in
@@ -222,143 +290,6 @@ final class AppModel: ObservableObject {
                       !self.isPanelClosing,
                       !self.isHoveringNotch else { return }
                 self.isNotchCanvasExpanded = false
-            }
-        }
-    }
-
-    func handleUpdateMenuAction() {
-        if let availableUpdate {
-            UserDefaults.standard.set(
-                availableUpdate.version,
-                forKey: PreferenceKey.lastPromptedVersion
-            )
-            presentUpdatePrompt(for: availableUpdate)
-        } else {
-            checkForUpdates(manual: true)
-        }
-    }
-
-    func checkForUpdates(manual: Bool) {
-        guard !updateStatus.isBusy else { return }
-        updateTask?.cancel()
-        updateDownloadProgress = nil
-        updateStatus = .checking
-
-        updateTask = Task { [weak self] in
-            guard let self else { return }
-            do {
-                let release = try await updateService.latestRelease()
-                guard !Task.isCancelled else { return }
-                UserDefaults.standard.set(
-                    Date(),
-                    forKey: PreferenceKey.lastUpdateCheck
-                )
-
-                if isNewerVersion(release.version, than: currentVersion) {
-                    availableUpdate = release
-                    updateStatus = .available(release.version)
-                    if manual {
-                        UserDefaults.standard.set(
-                            release.version,
-                            forKey: PreferenceKey.lastPromptedVersion
-                        )
-                        presentUpdatePrompt(for: release)
-                    } else {
-                        presentAutomaticUpdatePromptIfNeeded(for: release)
-                    }
-                } else {
-                    availableUpdate = nil
-                    updateStatus = .upToDate(currentVersion)
-                    if manual {
-                        updatePrompt = AppUpdatePrompt(
-                            title: "已经是最新版本",
-                            message: "当前版本为 v\(currentVersion)。",
-                            release: nil
-                        )
-                    }
-                }
-            } catch is CancellationError {
-                return
-            } catch {
-                updateStatus = .failed(error.localizedDescription)
-                if manual {
-                    updatePrompt = AppUpdatePrompt(
-                        title: "检查更新失败",
-                        message: error.localizedDescription,
-                        release: nil
-                    )
-                }
-            }
-        }
-    }
-
-    func installUpdate(_ release: AppRelease) {
-        guard !updateStatus.isBusy else { return }
-        let currentAppURL = Bundle.main.bundleURL.standardizedFileURL
-        guard isInstalledApplication(currentAppURL) else {
-            updatePrompt = AppUpdatePrompt(
-                title: "无法自动安装",
-                message: "请先将 NotchTriage.app 移到“应用程序”文件夹，再从那里运行并检查更新。",
-                release: nil
-            )
-            return
-        }
-
-        updateStatus = .downloading(release.version)
-        updateDownloadProgress = AppUpdateDownloadProgress(
-            receivedBytes: 0,
-            totalBytes: Int64(release.assetSize)
-        )
-        updateTask?.cancel()
-        updateTask = Task { [weak self] in
-            guard let self else { return }
-            do {
-                let preparedUpdate = try await updateService.prepareUpdate(
-                    release,
-                    replacing: currentAppURL,
-                    onDownloadProgress: { [weak self] progress in
-                        Task { @MainActor [weak self] in
-                            guard let self,
-                                  case .downloading = self.updateStatus else { return }
-                            self.updateDownloadProgress = progress
-                        }
-                    }
-                )
-                guard !Task.isCancelled else { return }
-                updateDownloadProgress = AppUpdateDownloadProgress(
-                    receivedBytes: Int64(release.assetSize),
-                    totalBytes: Int64(release.assetSize)
-                )
-                updateStatus = .installing(release.version)
-
-                let installedURL = try FileManager.default.replaceItemAt(
-                    currentAppURL,
-                    withItemAt: preparedUpdate.appURL,
-                    backupItemName: nil,
-                    options: [.usingNewMetadataOnly]
-                ) ?? currentAppURL
-
-                let configuration = NSWorkspace.OpenConfiguration()
-                configuration.activates = false
-                configuration.createsNewApplicationInstance = true
-                configuration.allowsRunningApplicationSubstitution = false
-                configuration.promptsUserIfNeeded = true
-                _ = try await NSWorkspace.shared.openApplication(
-                    at: installedURL,
-                    configuration: configuration
-                )
-                NSApp.terminate(nil)
-            } catch is CancellationError {
-                updateDownloadProgress = nil
-                return
-            } catch {
-                updateDownloadProgress = nil
-                updateStatus = .failed(error.localizedDescription)
-                updatePrompt = AppUpdatePrompt(
-                    title: "更新安装失败",
-                    message: error.localizedDescription,
-                    release: nil
-                )
             }
         }
     }
@@ -469,83 +400,6 @@ final class AppModel: ObservableObject {
 
     func quitApplication() {
         NSApp.terminate(nil)
-    }
-
-    private var currentVersion: String {
-        Bundle.main.object(
-            forInfoDictionaryKey: "CFBundleShortVersionString"
-        ) as? String ?? "0.0.0"
-    }
-
-    private func scheduleAutomaticUpdateCheck() {
-        updateMonitorTask?.cancel()
-        updateMonitorTask = Task { @MainActor [weak self] in
-            do {
-                try await Task.sleep(for: .seconds(3))
-                while !Task.isCancelled {
-                    guard let self else { return }
-                    self.checkForUpdates(manual: false)
-                    try await Task.sleep(for: .seconds(6 * 60 * 60))
-                }
-            } catch is CancellationError {
-                return
-            } catch {
-                return
-            }
-        }
-    }
-
-    private func presentAutomaticUpdatePromptIfNeeded(for release: AppRelease) {
-        let defaults = UserDefaults.standard
-        guard defaults.string(forKey: PreferenceKey.lastPromptedVersion)
-                != release.version else { return }
-        defaults.set(release.version, forKey: PreferenceKey.lastPromptedVersion)
-
-        hoverCollapseTask?.cancel()
-        panelCloseTask?.cancel()
-        isNotchCanvasExpanded = true
-        withAnimation(motion(NotchDesign.Motion.panelOpen)) {
-            isExpanded = true
-            isPanelClosing = false
-            isHoveringNotch = false
-        }
-
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(240))
-            guard let self,
-                  self.availableUpdate?.version == release.version else { return }
-            self.presentUpdatePrompt(for: release)
-        }
-    }
-
-    private func presentUpdatePrompt(for release: AppRelease) {
-        let summary = release.notes
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let abbreviatedNotes = summary.count > 320
-            ? String(summary.prefix(320)) + "…"
-            : summary
-        let message = abbreviatedNotes.isEmpty
-            ? "确认后将下载、验证并安装更新，然后重启 Notch Triage。"
-            : abbreviatedNotes
-                + "\n\n确认后将下载、验证并安装更新，然后重启 Notch Triage。"
-        updatePrompt = AppUpdatePrompt(
-            title: "发现 \(release.displayVersion)",
-            message: message,
-            release: release
-        )
-    }
-
-    private func isNewerVersion(_ candidate: String, than current: String) -> Bool {
-        candidate.compare(current, options: .numeric) == .orderedDescending
-    }
-
-    private func isInstalledApplication(_ appURL: URL) -> Bool {
-        let path = appURL.resolvingSymlinksInPath().path
-        let userApplications = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Applications", isDirectory: true)
-            .path
-        return path.hasPrefix("/Applications/")
-            || path.hasPrefix(userApplications + "/")
     }
 
     private func showNotificationPulse(_ pulse: NotificationPulse) {

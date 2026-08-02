@@ -8,7 +8,6 @@ final class PowerMonitorService {
     private let onSnapshot: (PowerSnapshot, ChargeLimitSnapshot) -> Void
     private let onHealth: (ServiceHealth) -> Void
     private let chargeController = SystemChargeLimitController()
-    private var timer: Timer?
 
     init(
         onSnapshot: @escaping (PowerSnapshot, ChargeLimitSnapshot) -> Void,
@@ -20,20 +19,9 @@ final class PowerMonitorService {
 
     func start() {
         refresh()
-
-        let timer = Timer(timeInterval: 3, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.refresh()
-            }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        self.timer = timer
     }
 
-    func stop() {
-        timer?.invalidate()
-        timer = nil
-    }
+    func stop() {}
 
     func refresh() {
         let snapshot = PowerSnapshotReader.read()

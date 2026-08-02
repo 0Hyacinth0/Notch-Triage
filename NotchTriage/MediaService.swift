@@ -18,7 +18,6 @@ final class MediaService {
 
     private var mediaRemoteHandle: UnsafeMutableRawPointer?
     private var getNowPlayingInfo: GetNowPlayingInfo?
-    private var timer: Timer?
 
     init(
         onSnapshot: @escaping SnapshotHandler,
@@ -31,16 +30,9 @@ final class MediaService {
 
     func start() {
         refresh()
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.refresh()
-            }
-        }
     }
 
     func stop() {
-        timer?.invalidate()
-        timer = nil
         if let mediaRemoteHandle {
             dlclose(mediaRemoteHandle)
         }
@@ -48,7 +40,7 @@ final class MediaService {
         getNowPlayingInfo = nil
     }
 
-    private func refresh() {
+    func refresh() {
         guard let getNowPlayingInfo else {
             refreshWithAppleScript()
             return

@@ -1,3 +1,4 @@
+import AppKit
 import CoreAudio
 import CoreGraphics
 import Darwin
@@ -27,7 +28,9 @@ final class SystemHUDService {
     private var lastBrightness: Double?
     private var lastAirPodsEvent: (name: String, date: Date)?
 
-    private var brightnessTimer: Timer?
+    private var globalSystemKeyMonitor: Any?
+    private var localSystemKeyMonitor: Any?
+    private var brightnessObserver: NSObjectProtocol?
     private var displayServicesHandle: UnsafeMutableRawPointer?
     private var getDisplayBrightness: DisplayServicesGetBrightness?
 
@@ -37,26 +40,20 @@ final class SystemHUDService {
     }
 
     func start() {
+        if getDisplayBrightness == nil {
+            loadDisplayServices()
+        }
         stopAudioListeners()
         installSystemAudioListeners()
         knownDevices = Set(audioDevices())
         updateDefaultOutput(showConnection: false)
 
         lastBrightness = readBrightness()
-        brightnessTimer?.invalidate()
-        let timer = Timer(timeInterval: 0.12, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.pollBrightness()
-            }
-        }
-        timer.tolerance = 0.025
-        brightnessTimer = timer
-        RunLoop.main.add(timer, forMode: .common)
+        installBrightnessObservers()
     }
 
     func stop() {
-        brightnessTimer?.invalidate()
-        brightnessTimer = nil
+        removeBrightnessObservers()
         stopAudioListeners()
 
         if let displayServicesHandle {
@@ -64,6 +61,54 @@ final class SystemHUDService {
         }
         displayServicesHandle = nil
         getDisplayBrightness = nil
+    }
+
+    func refreshBrightness() {
+        pollBrightness()
+    }
+
+    private func installBrightnessObservers() {
+        removeBrightnessObservers()
+
+        globalSystemKeyMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: .systemDefined
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.pollBrightness()
+            }
+        }
+        localSystemKeyMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: .systemDefined
+        ) { [weak self] event in
+            Task { @MainActor [weak self] in
+                self?.pollBrightness()
+            }
+            return event
+        }
+        brightnessObserver = DistributedNotificationCenter.default().addObserver(
+            forName: Notification.Name("com.apple.BezelServices.BrightnessChanged"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.pollBrightness()
+            }
+        }
+    }
+
+    private func removeBrightnessObservers() {
+        if let globalSystemKeyMonitor {
+            NSEvent.removeMonitor(globalSystemKeyMonitor)
+        }
+        if let localSystemKeyMonitor {
+            NSEvent.removeMonitor(localSystemKeyMonitor)
+        }
+        if let brightnessObserver {
+            DistributedNotificationCenter.default().removeObserver(brightnessObserver)
+        }
+        globalSystemKeyMonitor = nil
+        localSystemKeyMonitor = nil
+        brightnessObserver = nil
     }
 
     private func installSystemAudioListeners() {

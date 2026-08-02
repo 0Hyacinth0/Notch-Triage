@@ -14,7 +14,6 @@ final class NotificationBridge {
     private let onPulse: PulseHandler
     private let onHealth: HealthHandler
 
-    private var timer: Timer?
     private var previousFingerprints = Set<String>()
     private var hasBaseline = false
 
@@ -45,16 +44,11 @@ final class NotificationBridge {
             onHealth(.warning("辅助功能权限未授权，可在设置菜单中重新申请"))
         }
         refreshNow()
-        timer = Timer.scheduledTimer(withTimeInterval: 0.8, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.refreshNow()
-            }
-        }
     }
 
     func stop() {
-        timer?.invalidate()
-        timer = nil
+        previousFingerprints.removeAll()
+        hasBaseline = false
     }
 
     func requestAccessibility() {

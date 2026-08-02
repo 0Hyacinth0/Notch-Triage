@@ -9,7 +9,6 @@ final class TrashService {
 
     private let onCount: CountHandler
     private let onHealth: HealthHandler
-    private var timer: Timer?
 
     init(
         onCount: @escaping CountHandler,
@@ -21,17 +20,9 @@ final class TrashService {
 
     func start() {
         refresh()
-        timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.refresh()
-            }
-        }
     }
 
-    func stop() {
-        timer?.invalidate()
-        timer = nil
-    }
+    func stop() {}
 
     func refresh() {
         if let count = finderTrashCountIfAlreadyAuthorized() {
