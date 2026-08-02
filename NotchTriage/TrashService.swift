@@ -1,9 +1,10 @@
 import AppKit
+import CoreServices
 import Foundation
 
 @MainActor
 final class TrashService {
-    typealias CountHandler = @MainActor (Int) -> Void
+    typealias CountHandler = @MainActor (Int?) -> Void
     typealias HealthHandler = @MainActor (ServiceHealth) -> Void
 
     private let onCount: CountHandler
@@ -33,7 +34,13 @@ final class TrashService {
     }
 
     func refresh() {
+        if let count = finderTrashCountIfAlreadyAuthorized() {
+            onCount(count)
+            return
+        }
+
         guard let url = trashURL() else {
+            onCount(nil)
             onHealth(.warning("无法定位用户废纸篓"))
             return
         }
@@ -42,11 +49,12 @@ final class TrashService {
             let items = try FileManager.default.contentsOfDirectory(
                 at: url,
                 includingPropertiesForKeys: nil,
-                options: [.skipsHiddenFiles]
+                options: []
             )
             onCount(items.count)
         } catch {
-            onHealth(.warning("无法读取废纸篓：\(error.localizedDescription)"))
+            onCount(nil)
+            onHealth(.warning("废纸篓计数不可用，仍可直接清空"))
         }
     }
 
@@ -78,5 +86,29 @@ final class TrashService {
 
     private func trashURL() -> URL? {
         FileManager.default.urls(for: .trashDirectory, in: .userDomainMask).first
+    }
+
+    private func finderTrashCountIfAlreadyAuthorized() -> Int? {
+        let finder = NSAppleEventDescriptor(bundleIdentifier: "com.apple.finder")
+        guard let target = finder.aeDesc,
+              AEDeterminePermissionToAutomateTarget(
+                target,
+                typeWildCard,
+                typeWildCard,
+                false
+              ) == noErr else {
+            return nil
+        }
+
+        var error: NSDictionary?
+        let script = NSAppleScript(source: """
+        tell application "Finder"
+            count every item of trash
+        end tell
+        """)
+        guard let result = script?.executeAndReturnError(&error), error == nil else {
+            return nil
+        }
+        return max(0, Int(result.int32Value))
     }
 }

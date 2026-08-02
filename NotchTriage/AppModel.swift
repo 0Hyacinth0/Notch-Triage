@@ -21,7 +21,7 @@ final class AppModel: ObservableObject {
     @Published var notificationSources: [NotificationSource] = []
     @Published var notificationPulse: NotificationPulse?
     @Published var systemHUD: SystemHUDSnapshot?
-    @Published var trashCount = 0
+    @Published var trashCount: Int?
     @Published var power = PowerSnapshot.empty
     @Published var chargeLimit = ChargeLimitSnapshot.unavailable
     @Published var updateStatus = AppUpdateStatus.idle
@@ -121,7 +121,11 @@ final class AppModel: ObservableObject {
     private lazy var trashService = TrashService(
         onCount: { [weak self] count in
             self?.trashCount = count
-            self?.trashHealth = .ready(count == 0 ? "废纸篓为空" : "废纸篓中有 \(count) 项")
+            if let count {
+                self?.trashHealth = .ready(
+                    count == 0 ? "废纸篓为空" : "废纸篓中有 \(count) 项"
+                )
+            }
         },
         onHealth: { [weak self] health in
             self?.trashHealth = health

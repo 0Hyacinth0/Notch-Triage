@@ -1417,13 +1417,13 @@ private struct TrashCompactCard: View {
 
     var body: some View {
         HStack(spacing: 9) {
-            Image(systemName: model.trashCount == 0 ? "trash" : "trash.fill")
+            Image(systemName: trashSymbol)
                 .font(.system(size: 16, weight: .medium))
 
             VStack(alignment: .leading, spacing: 1) {
                 Text("废纸篓")
                     .font(.system(size: 11.5, weight: .semibold))
-                Text(model.trashCount == 0 ? "空" : "\(model.trashCount) 项")
+                Text(trashStatus)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -1444,12 +1444,21 @@ private struct TrashCompactCard: View {
                 Image(systemName: "trash.slash")
             }
             .buttonStyle(.plain)
-            .disabled(model.trashCount == 0)
-            .help("清空废纸篓")
+            .help(model.trashCount == nil ? "清空废纸篓（计数不可用）" : "清空废纸篓")
         }
         .padding(.horizontal, 12)
         .frame(maxWidth: .infinity, minHeight: 66)
         .panelGroupSurface()
+    }
+
+    private var trashStatus: String {
+        guard let count = model.trashCount else { return "计数不可用" }
+        return count == 0 ? "空" : "\(count) 项"
+    }
+
+    private var trashSymbol: String {
+        guard let count = model.trashCount else { return "trash" }
+        return count == 0 ? "trash" : "trash.fill"
     }
 }
 
