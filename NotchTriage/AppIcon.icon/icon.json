@@ -1,0 +1,46 @@
+{
+  "features" : [
+    "refractivity"
+  ],
+  "fill" : {
+    "automatic-gradient" : "extended-srgb:0.03000,0.04500,0.06500,1.00000"
+  },
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "image-name" : "03-mint-highlights.svg",
+          "name" : "Mint Highlights"
+        },
+        {
+          "image-name" : "02-status-ring.svg",
+          "name" : "Cyan Status Ring"
+        },
+        {
+          "image-name" : "01-inner-lens.svg",
+          "name" : "Inner Lens"
+        }
+      ],
+      "name" : "Status Mark",
+      "refractivity" : {
+        "depth" : 0,
+        "enabled" : true,
+        "strength" : 0.5
+      },
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.6
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.2
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}
