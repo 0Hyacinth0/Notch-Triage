@@ -63,7 +63,19 @@ final class TrashService {
         NSWorkspace.shared.open(url)
     }
 
-    func emptyTrash() {
+    func emptyTrash() -> String? {
+        let permissionStatus = finderAutomationPermission(askUserIfNeeded: true)
+        guard permissionStatus == noErr else {
+            let message: String
+            if permissionStatus == OSStatus(errAEEventNotPermitted) {
+                message = "请在“系统设置 → 隐私与安全性 → 自动化”中允许 Notch Triage 控制 Finder，然后重试。"
+            } else {
+                message = "Finder 自动化权限不可用（错误 \(permissionStatus)）。"
+            }
+            onHealth(.failed(message))
+            return message
+        }
+
         var error: NSDictionary?
         let script = NSAppleScript(source: """
         tell application "Finder"
@@ -73,7 +85,14 @@ final class TrashService {
         script?.executeAndReturnError(&error)
 
         if let error {
-            onHealth(.failed("清空废纸篓失败：\(error.description)"))
+            let code = error[NSAppleScript.errorNumber] as? Int
+            let detail = error[NSAppleScript.errorMessage] as? String
+                ?? error.description
+            let message = code == Int(errAEEventNotPermitted)
+                ? "Finder 拒绝了清空请求。请在“系统设置 → 隐私与安全性 → 自动化”中允许 Notch Triage 控制 Finder。"
+                : "Finder 未能清空废纸篓：\(detail)"
+            onHealth(.failed(message))
+            return message
         } else {
             onHealth(.ready("已请求 Finder 清空废纸篓"))
         }
@@ -82,6 +101,7 @@ final class TrashService {
             try? await Task.sleep(for: .seconds(1))
             self?.refresh()
         }
+        return nil
     }
 
     private func trashURL() -> URL? {
@@ -89,14 +109,7 @@ final class TrashService {
     }
 
     private func finderTrashCountIfAlreadyAuthorized() -> Int? {
-        let finder = NSAppleEventDescriptor(bundleIdentifier: "com.apple.finder")
-        guard let target = finder.aeDesc,
-              AEDeterminePermissionToAutomateTarget(
-                target,
-                typeWildCard,
-                typeWildCard,
-                false
-              ) == noErr else {
+        guard finderAutomationPermission(askUserIfNeeded: false) == noErr else {
             return nil
         }
 
@@ -110,5 +123,18 @@ final class TrashService {
             return nil
         }
         return max(0, Int(result.int32Value))
+    }
+
+    private func finderAutomationPermission(askUserIfNeeded: Bool) -> OSStatus {
+        let finder = NSAppleEventDescriptor(bundleIdentifier: "com.apple.finder")
+        guard let target = finder.aeDesc else {
+            return OSStatus(errAEEventNotPermitted)
+        }
+        return AEDeterminePermissionToAutomateTarget(
+            target,
+            typeWildCard,
+            typeWildCard,
+            askUserIfNeeded
+        )
     }
 }

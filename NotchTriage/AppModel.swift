@@ -8,6 +8,7 @@ final class AppModel: ObservableObject {
         static let leftWingContent = "notch.leftWingContent"
         static let rightWingContent = "notch.rightWingContent"
         static let lastUpdateCheck = "updates.lastSuccessfulCheck"
+        static let lastPromptedVersion = "updates.lastPromptedVersion"
     }
 
     @Published var isExpanded = false
@@ -62,6 +63,7 @@ final class AppModel: ObservableObject {
     private var hoverCollapseTask: Task<Void, Never>?
     private var panelCloseTask: Task<Void, Never>?
     private var updateTask: Task<Void, Never>?
+    private var updateMonitorTask: Task<Void, Never>?
 
     private func motion(_ animation: Animation) -> Animation {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
@@ -167,6 +169,7 @@ final class AppModel: ObservableObject {
         hoverCollapseTask?.cancel()
         panelCloseTask?.cancel()
         updateTask?.cancel()
+        updateMonitorTask?.cancel()
         codexService.stop()
         mediaService.stop()
         notificationService.stop()
@@ -225,6 +228,10 @@ final class AppModel: ObservableObject {
 
     func handleUpdateMenuAction() {
         if let availableUpdate {
+            UserDefaults.standard.set(
+                availableUpdate.version,
+                forKey: PreferenceKey.lastPromptedVersion
+            )
             presentUpdatePrompt(for: availableUpdate)
         } else {
             checkForUpdates(manual: true)
@@ -251,7 +258,13 @@ final class AppModel: ObservableObject {
                     availableUpdate = release
                     updateStatus = .available(release.version)
                     if manual {
+                        UserDefaults.standard.set(
+                            release.version,
+                            forKey: PreferenceKey.lastPromptedVersion
+                        )
                         presentUpdatePrompt(for: release)
+                    } else {
+                        presentAutomaticUpdatePromptIfNeeded(for: release)
                     }
                 } else {
                     availableUpdate = nil
@@ -367,7 +380,16 @@ final class AppModel: ObservableObject {
     }
 
     func emptyTrash() {
-        trashService.emptyTrash()
+        if let message = trashService.emptyTrash() {
+            Task { @MainActor [weak self] in
+                await Task.yield()
+                self?.updatePrompt = AppUpdatePrompt(
+                    title: "无法清空废纸篓",
+                    message: message,
+                    release: nil
+                )
+            }
+        }
     }
 
     func refreshPower() {
@@ -456,18 +478,43 @@ final class AppModel: ObservableObject {
     }
 
     private func scheduleAutomaticUpdateCheck() {
-        let lastCheck = UserDefaults.standard.object(
-            forKey: PreferenceKey.lastUpdateCheck
-        ) as? Date ?? .distantPast
-        guard Date().timeIntervalSince(lastCheck) >= 12 * 60 * 60 else { return }
-
-        updateTask?.cancel()
-        updateTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(2))
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                self?.checkForUpdates(manual: false)
+        updateMonitorTask?.cancel()
+        updateMonitorTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(3))
+                while !Task.isCancelled {
+                    guard let self else { return }
+                    self.checkForUpdates(manual: false)
+                    try await Task.sleep(for: .seconds(6 * 60 * 60))
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                return
             }
+        }
+    }
+
+    private func presentAutomaticUpdatePromptIfNeeded(for release: AppRelease) {
+        let defaults = UserDefaults.standard
+        guard defaults.string(forKey: PreferenceKey.lastPromptedVersion)
+                != release.version else { return }
+        defaults.set(release.version, forKey: PreferenceKey.lastPromptedVersion)
+
+        hoverCollapseTask?.cancel()
+        panelCloseTask?.cancel()
+        isNotchCanvasExpanded = true
+        withAnimation(motion(NotchDesign.Motion.panelOpen)) {
+            isExpanded = true
+            isPanelClosing = false
+            isHoveringNotch = false
+        }
+
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(240))
+            guard let self,
+                  self.availableUpdate?.version == release.version else { return }
+            self.presentUpdatePrompt(for: release)
         }
     }
 
