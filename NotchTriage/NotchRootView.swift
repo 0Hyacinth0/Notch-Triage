@@ -1510,14 +1510,6 @@ private struct MediaProgressRing: View {
                 trackColor: .white.opacity(0.16)
             )
 
-            SourceIcon(
-                bundleIdentifier: snapshot.bundleIdentifier,
-                fallback: "music.note"
-            )
-            .frame(
-                width: max(10, diameter * 0.46),
-                height: max(10, diameter * 0.46)
-            )
         }
         .frame(width: diameter, height: diameter)
         .animation(NotchDesign.Motion.value, value: snapshot.progress)

@@ -54,10 +54,11 @@ final class MediaService {
                     self.onSnapshot(snapshot)
                 } else {
                     // MediaRemote can briefly return an incomplete dictionary
-                    // while a track is changing. Do not fall back to
-                    // AppleScript here: that path invokes the automation TCC
-                    // prompt and can ask again on every track transition.
-                    self.onSnapshot(.idle)
+                    // while a track is changing. Use the guarded fallback
+                    // only when MediaRemote did not provide a usable snapshot;
+                    // a denied automation request is then permanently
+                    // suppressed for this app run.
+                    self.refreshWithAppleScript()
                 }
             }
         }
@@ -78,9 +79,14 @@ final class MediaService {
     }
 
     private func parseMediaRemote(_ dictionary: CFDictionary?) -> MediaSnapshot? {
-        guard let dictionary,
-              let info = dictionary as NSDictionary as? [String: Any] else {
+        guard let dictionary else {
             return nil
+        }
+
+        let info = (dictionary as NSDictionary).reduce(into: [String: Any]()) {
+            result,
+            entry in
+            result[String(describing: entry.key)] = entry.value
         }
 
         let title = stringValue(in: info, suffix: "Title")
