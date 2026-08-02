@@ -29,7 +29,7 @@
 <p align="center">
   <img src="./docs/assets/compact-notch.png" alt="Notch Triage 默认刘海状态" width="560">
   <br>
-  <sub><strong>默认状态：电池与 Codex 额度在实体刘海两侧保持镜像、紧凑显示</strong></sub>
+  <sub><strong>默认状态：自定义显示内容在实体刘海两侧保持镜像、紧凑显示</strong></sub>
 </p>
 
 <p align="center">
@@ -41,7 +41,7 @@
 <p align="center">
   <img src="./docs/assets/power-dashboard.png" alt="完整电源与充电管理面板" width="560">
   <br>
-  <sub><strong>完整电源面板：充电上限、实时功率流、电池健康与适配器遥测</strong></sub>
+  <sub><strong>充电上限、实时功率流、电池健康与适配器遥测</strong></sub>
 </p>
 
 <p align="center">
@@ -51,7 +51,7 @@
   <br>
   <img src="./docs/assets/airpods-hud.png" alt="AirPods 连接 HUD" width="560">
   <br>
-  <sub><strong>透明背景、居中呈现的音量、亮度与 AirPods 连接状态</strong></sub>
+  <sub><strong>音量、亮度与 AirPods 连接状态</strong></sub>
 </p>
 
 ## 核心能力
