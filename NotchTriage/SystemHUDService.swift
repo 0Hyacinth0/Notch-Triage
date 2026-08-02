@@ -26,6 +26,7 @@ final class SystemHUDService {
     private var lastVolume: Double?
     private var lastMuted: Bool?
     private var lastBrightness: Double?
+    private var lastManualBrightnessEventUptime: TimeInterval?
     private var lastAirPodsEvent: (name: String, date: Date)?
 
     private var globalSystemKeyMonitor: Any?
@@ -72,16 +73,19 @@ final class SystemHUDService {
 
         globalSystemKeyMonitor = NSEvent.addGlobalMonitorForEvents(
             matching: .systemDefined
-        ) { [weak self] _ in
+        ) { [weak self] event in
+            guard Self.isBrightnessKeyEvent(event) else { return }
             Task { @MainActor [weak self] in
-                self?.pollBrightness()
+                self?.handleManualBrightnessEvent()
             }
         }
         localSystemKeyMonitor = NSEvent.addLocalMonitorForEvents(
             matching: .systemDefined
         ) { [weak self] event in
-            Task { @MainActor [weak self] in
-                self?.pollBrightness()
+            if Self.isBrightnessKeyEvent(event) {
+                Task { @MainActor [weak self] in
+                    self?.handleManualBrightnessEvent()
+                }
             }
             return event
         }
@@ -91,7 +95,13 @@ final class SystemHUDService {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.pollBrightness()
+                guard let self else { return }
+                // BezelServices also broadcasts changes caused by automatic
+                // brightness, True Tone, and ambient-light adjustments. Those
+                // should update our baseline without looking like a user action.
+                self.pollBrightness(
+                    allowHUD: self.isManualBrightnessEventRecent
+                )
             }
         }
     }
@@ -109,6 +119,7 @@ final class SystemHUDService {
         globalSystemKeyMonitor = nil
         localSystemKeyMonitor = nil
         brightnessObserver = nil
+        lastManualBrightnessEventUptime = nil
     }
 
     private func installSystemAudioListeners() {
@@ -491,12 +502,33 @@ final class SystemHUDService {
         )
     }
 
-    private func pollBrightness() {
+    private func handleManualBrightnessEvent() {
+        lastManualBrightnessEventUptime = ProcessInfo.processInfo.systemUptime
+        pollBrightness(allowHUD: true)
+    }
+
+    private var isManualBrightnessEventRecent: Bool {
+        guard let lastManualBrightnessEventUptime else { return false }
+        return ProcessInfo.processInfo.systemUptime - lastManualBrightnessEventUptime < 1.0
+    }
+
+    private func pollBrightness(allowHUD: Bool = false) {
         guard let brightness = readBrightness() else { return }
         defer { lastBrightness = brightness }
         guard let previous = lastBrightness,
               abs(previous - brightness) > 0.004 else { return }
-        onEvent(.brightness(brightness))
+        if allowHUD, isManualBrightnessEventRecent {
+            onEvent(.brightness(brightness))
+        }
+    }
+
+    nonisolated private static func isBrightnessKeyEvent(_ event: NSEvent) -> Bool {
+        guard event.type == .systemDefined else { return false }
+
+        // systemDefined media-key events store the NX key type in the high
+        // 16 bits of data1. NX_KEYTYPE_BRIGHTNESS_UP/DOWN are 2 and 3.
+        let keyType = (UInt32(truncatingIfNeeded: event.data1) >> 16) & 0xFFFF
+        return keyType == 2 || keyType == 3
     }
 
     private func readBrightness() -> Double? {
