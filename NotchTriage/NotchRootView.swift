@@ -226,7 +226,7 @@ private func compactWingWidth(
         // 5 pt on every side on the built-in display's 37 pt menu bar.
         return 37
     case .media:
-        return media == .idle ? 0 : 170
+        return media == .idle ? 0 : 37
     case .hidden:
         return 0
     }
@@ -234,53 +234,24 @@ private func compactWingWidth(
 
 private struct CompactMediaContent: View {
     let snapshot: MediaSnapshot
-    let side: NotchWingSide
 
     var body: some View {
-        HStack(spacing: 7) {
-            if side == .right {
-                mediaIcon
-            }
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(snapshot.title)
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .lineLimit(1)
-
-                GeometryReader { proxy in
-                    ZStack(alignment: .leading) {
-                        Capsule()
-                            .fill(.white.opacity(0.14))
-                        Capsule()
-                            .fill(.white.opacity(0.84))
-                            .frame(width: proxy.size.width * snapshot.progress)
-                    }
-                }
-                .frame(height: 1.5)
-            }
-
-            if side == .left {
-                mediaIcon
-            }
-        }
-        .padding(.horizontal, 10)
-        .frame(width: 170)
-        .foregroundStyle(.white)
+        MediaProgressRing(snapshot: snapshot, diameter: 27, lineWidth: 3.2)
+            .frame(width: 37)
+            .foregroundStyle(.white)
+            .help(mediaHelp)
+            .accessibilityLabel(mediaHelp)
     }
 
-    private var mediaIcon: some View {
-        SourceIcon(
-            bundleIdentifier: snapshot.bundleIdentifier,
-            fallback: "music.note"
-        )
-        .frame(width: 18, height: 18)
+    private var mediaHelp: String {
+        let artist = snapshot.artist.isEmpty ? snapshot.sourceName : snapshot.artist
+        return "\(snapshot.title) · \(artist) · \(Int((snapshot.progress * 100).rounded()))%"
     }
 }
 
 private struct CompactWingSlot: View {
     @ObservedObject var model: AppModel
     let content: NotchWingContent
-    let side: NotchWingSide
 
     var body: some View {
         Group {
@@ -294,7 +265,7 @@ private struct CompactWingSlot: View {
                 )
             case .media:
                 if model.media != .idle {
-                    CompactMediaContent(snapshot: model.media, side: side)
+                    CompactMediaContent(snapshot: model.media)
                 }
             case .hidden:
                 EmptyView()
@@ -428,8 +399,7 @@ private struct LivingNotch: View {
         HStack(spacing: 0) {
             CompactWingSlot(
                 model: model,
-                content: model.leftWingContent,
-                side: .left
+                content: model.leftWingContent
             )
             .frame(width: leftWidth, height: height)
 
@@ -456,8 +426,7 @@ private struct LivingNotch: View {
 
             CompactWingSlot(
                 model: model,
-                content: model.rightWingContent,
-                side: .right
+                content: model.rightWingContent
             )
             .frame(width: rightWidth, height: height)
         }
@@ -544,7 +513,7 @@ private struct LivingNotch: View {
         case .media:
             HStack(spacing: 7) {
                 if side == .left {
-                    hoverMediaIcon
+                    hoverMediaRing
                 }
 
                 VStack(alignment: side == .left ? .leading : .trailing, spacing: 1) {
@@ -564,7 +533,7 @@ private struct LivingNotch: View {
                 }
 
                 if side == .right {
-                    hoverMediaIcon
+                    hoverMediaRing
                 }
             }
             .frame(
@@ -631,12 +600,8 @@ private struct LivingNotch: View {
         }
     }
 
-    private var hoverMediaIcon: some View {
-        SourceIcon(
-            bundleIdentifier: model.media.bundleIdentifier,
-            fallback: "music.note"
-        )
-        .frame(width: 20, height: 20)
+    private var hoverMediaRing: some View {
+        MediaProgressRing(snapshot: model.media, diameter: 24, lineWidth: 2.8)
     }
 
     private var hoverBatteryRing: some View {
@@ -1526,6 +1491,37 @@ private struct NowPlayingStrip: View {
         .padding(.horizontal, 12)
         .frame(height: 48)
         .panelGroupSurface(cornerRadius: NotchDesign.Radius.compactGroup)
+    }
+}
+
+private struct MediaProgressRing: View {
+    let snapshot: MediaSnapshot
+    let diameter: CGFloat
+    let lineWidth: CGFloat
+
+    var body: some View {
+        ZStack {
+            UsageArc(
+                progress: snapshot.progress,
+                color: snapshot.isPlaying
+                    ? .white.opacity(0.96)
+                    : .white.opacity(0.62),
+                lineWidth: lineWidth,
+                trackColor: .white.opacity(0.16)
+            )
+
+            SourceIcon(
+                bundleIdentifier: snapshot.bundleIdentifier,
+                fallback: "music.note"
+            )
+            .frame(
+                width: max(10, diameter * 0.46),
+                height: max(10, diameter * 0.46)
+            )
+        }
+        .frame(width: diameter, height: diameter)
+        .animation(NotchDesign.Motion.value, value: snapshot.progress)
+        .animation(NotchDesign.Motion.value, value: snapshot.isPlaying)
     }
 }
 

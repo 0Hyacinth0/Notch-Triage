@@ -18,6 +18,7 @@ final class MediaService {
 
     private var mediaRemoteHandle: UnsafeMutableRawPointer?
     private var getNowPlayingInfo: GetNowPlayingInfo?
+    private var appleScriptFallbackDisabled = false
 
     init(
         onSnapshot: @escaping SnapshotHandler,
@@ -52,7 +53,11 @@ final class MediaService {
                 if let snapshot = self.parseMediaRemote(dictionary) {
                     self.onSnapshot(snapshot)
                 } else {
-                    self.refreshWithAppleScript()
+                    // MediaRemote can briefly return an incomplete dictionary
+                    // while a track is changing. Do not fall back to
+                    // AppleScript here: that path invokes the automation TCC
+                    // prompt and can ask again on every track transition.
+                    self.onSnapshot(.idle)
                 }
             }
         }
@@ -132,7 +137,15 @@ final class MediaService {
     }
 
     private func refreshWithAppleScript() {
-        if let snapshot = appleMusicSnapshot() ?? spotifySnapshot() {
+        guard !appleScriptFallbackDisabled else {
+            onSnapshot(.idle)
+            return
+        }
+
+        if let snapshot = appleMusicSnapshot() {
+            onSnapshot(snapshot)
+        } else if !appleScriptFallbackDisabled,
+                  let snapshot = spotifySnapshot() {
             onSnapshot(snapshot)
         } else {
             onSnapshot(.idle)
@@ -193,6 +206,11 @@ final class MediaService {
         var error: NSDictionary?
         guard let descriptor = NSAppleScript(source: script)?.executeAndReturnError(&error),
               descriptor.numberOfItems >= 5 else {
+            if let errorNumber = error?[NSAppleScript.errorNumber] as? NSNumber,
+               errorNumber.intValue == -1743 {
+                appleScriptFallbackDisabled = true
+                onHealth(.warning("媒体自动化权限未授权；已停止重复请求"))
+            }
             return nil
         }
 
