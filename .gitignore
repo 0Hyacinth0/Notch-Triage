@@ -3,6 +3,7 @@
 .AppleDouble
 .LSOverride
 ._*
+marketing/
 
 # Xcode user-specific state
 xcuserdata/
