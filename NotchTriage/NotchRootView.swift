@@ -829,6 +829,16 @@ private struct ExpandedPanel: View {
             }
         }
         .alert(item: $model.updatePrompt) { prompt in
+            if prompt.recovery == .resetAccessibility {
+                return Alert(
+                    title: Text(prompt.title),
+                    message: Text(prompt.message),
+                    primaryButton: .destructive(Text("重置并重新授权")) {
+                        model.repairAccessibilityAuthorization()
+                    },
+                    secondaryButton: .cancel(Text("取消"))
+                )
+            }
             if let release = prompt.release {
                 return Alert(
                     title: Text(prompt.title),
@@ -1037,9 +1047,20 @@ private struct ExpandedPanel: View {
             }
 
             Button {
-                model.requestAccessibility()
+                if model.accessibilityRepairSuggested {
+                    model.presentAccessibilityRepairPrompt()
+                } else {
+                    model.requestAccessibility()
+                }
             } label: {
-                Label("辅助功能权限", systemImage: "hand.raised")
+                Label(
+                    model.accessibilityRepairSuggested
+                        ? "修复辅助功能权限…"
+                        : "辅助功能权限",
+                    systemImage: model.accessibilityRepairSuggested
+                        ? "wrench.and.screwdriver"
+                        : "hand.raised"
+                )
             }
 
             Button {

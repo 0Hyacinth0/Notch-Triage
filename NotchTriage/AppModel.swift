@@ -59,6 +59,7 @@ final class AppModel: ObservableObject {
     @Published var launchAtLoginEnabled = false
     @Published var launchAtLoginRequiresApproval = false
     @Published var launchAtLoginHealth: ServiceHealth = .loading("正在读取登录项状态")
+    @Published var accessibilityRepairSuggested = false
 
     let diagnostics = DiagnosticsStore()
 
@@ -126,7 +127,17 @@ final class AppModel: ObservableObject {
             self?.showNotificationPulse(pulse)
         },
         onHealth: { [weak self] health in
+            if case .ready = health {
+                self?.accessibilityRepairSuggested = false
+            }
             self?.applyHealth(health, to: .notifications)
+        },
+        onAuthorizationRepairSuggested: { [weak self] in
+            self?.accessibilityRepairSuggested = true
+            self?.diagnostics.recordLifecycle(
+                "多次检查仍未获得辅助功能权限，可能存在旧构建授权记录",
+                level: .warning
+            )
         }
     )
 
@@ -311,6 +322,61 @@ final class AppModel: ObservableObject {
                     : .milliseconds(120)
             )
             guard !Task.isCancelled, let self else { return }
+            NSApp.activate(ignoringOtherApps: true)
+            self.notificationService.requestAccessibility()
+        }
+    }
+
+    func presentAccessibilityRepairPrompt() {
+        updatePrompt = AppUpdatePrompt(
+            title: "修复辅助功能授权？",
+            message: "macOS 可能仍在使用旧构建的授权记录。继续后只会重置 Notch Triage 的辅助功能权限，并立即打开系统设置让你重新开启；其他 App 的权限不会变化。",
+            release: nil,
+            recovery: .resetAccessibility
+        )
+    }
+
+    func repairAccessibilityAuthorization() {
+        accessibilityRequestTask?.cancel()
+        let shouldWaitForPanel = isExpanded || isPanelClosing
+        if isExpanded {
+            collapseExpanded()
+        }
+        accessibilityRepairSuggested = false
+        applyHealth(.loading("正在清除旧的辅助功能授权记录"), to: .notifications)
+        diagnostics.recordLifecycle("用户确认修复辅助功能授权记录")
+
+        accessibilityRequestTask = Task { [weak self] in
+            try? await Task.sleep(
+                for: shouldWaitForPanel
+                    ? .milliseconds(760)
+                    : .milliseconds(120)
+            )
+            guard !Task.isCancelled, let self else { return }
+
+            let bundleIdentifier = Bundle.main.bundleIdentifier
+                ?? "com.hyacinth.notchtriage"
+            let errorMessage = await Task.detached(priority: .userInitiated) {
+                NotificationBridge.resetSystemAccessibilityAuthorization(
+                    bundleIdentifier: bundleIdentifier
+                )
+            }.value
+            guard !Task.isCancelled else { return }
+
+            if let errorMessage {
+                self.applyHealth(
+                    .failed("无法重置辅助功能授权：\(errorMessage)"),
+                    to: .notifications
+                )
+                self.updatePrompt = AppUpdatePrompt(
+                    title: "无法修复辅助功能授权",
+                    message: errorMessage,
+                    release: nil
+                )
+                return
+            }
+
+            self.diagnostics.recordLifecycle("已清除旧授权记录，正在请求当前构建权限")
             NSApp.activate(ignoringOtherApps: true)
             self.notificationService.requestAccessibility()
         }

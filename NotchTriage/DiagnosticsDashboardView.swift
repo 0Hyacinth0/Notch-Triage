@@ -154,6 +154,15 @@ struct DiagnosticsDashboardView: View {
                 Label("复制", systemImage: "doc.on.doc")
             }
             .help("复制诊断报告")
+
+            if model.accessibilityRepairSuggested {
+                Button {
+                    model.presentAccessibilityRepairPrompt()
+                } label: {
+                    Label("修复权限", systemImage: "wrench.and.screwdriver")
+                }
+                .help("移除旧构建的辅助功能授权记录并重新申请")
+            }
         }
         .font(.caption)
         .buttonStyle(.borderless)

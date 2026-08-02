@@ -7,12 +7,14 @@ final class NotificationBridge {
     typealias SourcesHandler = @MainActor ([NotificationSource]) -> Void
     typealias PulseHandler = @MainActor (NotificationPulse) -> Void
     typealias HealthHandler = @MainActor (ServiceHealth) -> Void
+    typealias AuthorizationRepairHandler = @MainActor () -> Void
 
     var autoDismissBanners = true
 
     private let onSources: SourcesHandler
     private let onPulse: PulseHandler
     private let onHealth: HealthHandler
+    private let onAuthorizationRepairSuggested: AuthorizationRepairHandler
 
     private var previousFingerprints = Set<String>()
     private var hasBaseline = false
@@ -25,11 +27,13 @@ final class NotificationBridge {
     init(
         onSources: @escaping SourcesHandler,
         onPulse: @escaping PulseHandler,
-        onHealth: @escaping HealthHandler
+        onHealth: @escaping HealthHandler,
+        onAuthorizationRepairSuggested: @escaping AuthorizationRepairHandler
     ) {
         self.onSources = onSources
         self.onPulse = onPulse
         self.onHealth = onHealth
+        self.onAuthorizationRepairSuggested = onAuthorizationRepairSuggested
     }
 
     func start(promptForAccessibility: Bool) {
@@ -42,7 +46,7 @@ final class NotificationBridge {
             UserDefaults.standard.set(true, forKey: PreferenceKey.didAutomaticallyRequestAccessibility)
             requestAccessibility()
         } else {
-            onHealth(.warning("辅助功能权限未授权，可在设置菜单中重新申请"))
+            onHealth(.warning("辅助功能权限未授权，或现有授权记录不匹配"))
         }
         refreshNow()
     }
@@ -71,7 +75,7 @@ final class NotificationBridge {
 
     func refreshNow() {
         guard hasAccessibilityAccess() else {
-            onHealth(.warning("辅助功能权限尚未对当前应用生效"))
+            onHealth(.warning("辅助功能权限未授权，或现有授权记录不匹配"))
             return
         }
 
@@ -109,7 +113,7 @@ final class NotificationBridge {
         if windows.isEmpty {
             onHealth(.ready("通知桥已就绪，当前没有可见通知节点"))
         } else {
-            onHealth(.ready("已镜像 \(windows.count) 个系统通知节点"))
+            onHealth(.ready("辅助功能权限有效；已镜像 \(windows.count) 个系统通知节点"))
         }
     }
 
@@ -192,10 +196,40 @@ final class NotificationBridge {
 
             self.onHealth(
                 .warning(
-                    "系统开关尚未对当前版本生效；请关闭后重新打开该开关"
+                    "系统仍未授权；若开关已开启，请使用“修复权限”重新授权"
                 )
             )
+            self.onAuthorizationRepairSuggested()
         }
+    }
+
+    nonisolated static func resetSystemAccessibilityAuthorization(
+        bundleIdentifier: String
+    ) -> String? {
+        let process = Process()
+        let outputPipe = Pipe()
+        let errorPipe = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+        process.arguments = ["reset", "Accessibility", bundleIdentifier]
+        process.standardOutput = outputPipe
+        process.standardError = errorPipe
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return error.localizedDescription
+        }
+
+        guard process.terminationStatus == 0 else {
+            let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+            let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+            let detail = String(data: errorData, encoding: .utf8)
+                ?? String(data: outputData, encoding: .utf8)
+                ?? "tccutil 返回未知错误"
+            return detail.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return nil
     }
 
     private func hasAccessibilityAccess() -> Bool {

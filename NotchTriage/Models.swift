@@ -130,11 +130,28 @@ enum AppUpdateStatus: Equatable {
     }
 }
 
+enum AppPromptRecovery {
+    case resetAccessibility
+}
+
 struct AppUpdatePrompt: Identifiable {
     let id = UUID()
     let title: String
     let message: String
     let release: AppRelease?
+    let recovery: AppPromptRecovery?
+
+    init(
+        title: String,
+        message: String,
+        release: AppRelease?,
+        recovery: AppPromptRecovery? = nil
+    ) {
+        self.title = title
+        self.message = message
+        self.release = release
+        self.recovery = recovery
+    }
 }
 
 struct CodexLimitBucket: Identifiable, Equatable {
