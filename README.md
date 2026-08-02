@@ -1,65 +1,129 @@
-# Notch Triage
+<div align="center">
+  <img src="./docs/assets/notch-triage-logo.png" alt="Notch Triage Logo" width="132" height="132">
+  <h1>Notch Triage</h1>
+  <p><strong>把 MacBook 刘海变成真正有用的系统状态与效率中心。</strong></p>
+  <p>原生、轻量、常驻的 macOS 刘海工具，集中呈现 Codex 额度、媒体、电源、通知与系统 HUD。</p>
 
-面向 Codex 用户的原生 macOS 刘海通知与状态层。
+  <p>
+    <img src="https://img.shields.io/badge/version-0.1.9-25D9C5?style=flat-square" alt="Version 0.1.9">
+    <img src="https://img.shields.io/badge/macOS-26%2B-000000?style=flat-square&amp;logo=apple&amp;logoColor=white" alt="macOS 26+">
+    <img src="https://img.shields.io/badge/Swift-5-F05138?style=flat-square&amp;logo=swift&amp;logoColor=white" alt="Swift 5">
+    <img src="https://img.shields.io/badge/UI-Liquid%20Glass-4B5563?style=flat-square" alt="Liquid Glass">
+  </p>
 
-## 当前版本
+  <p>
+    <a href="https://github.com/0Hyacinth0/Notch-Triage/releases/latest"><strong>下载最新版</strong></a>
+    ·
+    <a href="#核心能力">功能概览</a>
+    ·
+    <a href="#安装与首次运行">安装指南</a>
+    ·
+    <a href="https://github.com/0Hyacinth0/Notch-Triage/issues">问题反馈</a>
+  </p>
+</div>
 
-- 折叠态严格使用当前屏幕的系统菜单栏高度，并按内屏安全区域匹配刘海宽度。
-- 媒体、实体刘海和 Codex 状态共用一个连续黑色轮廓；鼠标悬停时整块自动长高为紧凑预览，点击才打开完整面板。
-- 交互采用“静止 → 悬停预览 → 点击展开”的连续状态，窗口从屏幕顶边锚定变形，面板内容分层入场。
-- 悬停预览使用无回弹的平滑展开曲线，并始终以实体刘海中心为锚点；单侧内容不会在展开时横向跳动，轮廓顶部带有贴合硬件刘海的外翻圆角。
-- 悬停预览的左翼内容锚定左外沿、右翼内容锚定右外沿；两侧圆环形成真正的几何镜像，文字向实体刘海方向收拢。
-- 完整面板展开后，点击面板外部、桌面或其他 App 会自动收起；面板内菜单和确认弹窗不受影响。
-- 默认左翼为正在播放、右翼为 Codex；媒体翼只在实际播放时出现，其他配置保持常驻。
-- “设置与更新”菜单可分别配置左翼和右翼：电池状态、ChatGPT / Codex 额度、正在播放或隐藏，并支持左右互换；选择会跨启动保存。
-- 折叠态使用小而粗的纯圆环，精确数值在悬停预览和完整面板中显示。
-- Codex 用量通过 App Server 动态读取当前账户实际返回的限额桶。
-- 通知、媒体、电源、废纸篓、Codex、亮度兜底与更新检查共用一个带容差的节能调度器；面板展开时按需提频，收起后自动降频。
-- 屏幕锁定、熄屏或系统休眠时暂停非必要刷新，解锁或唤醒后自动恢复并补一次全量刷新。
-- macOS 27 上直接使用系统手动充电上限，支持本机返回的 80/85/90/95/100% 档位和临时充满；不安装 root helper。
-- 通知桥仅保存来源 App，不保存通知正文。
-- 原生横幅只在系统提供 `AXCancel` 安全动作时尝试收起；否则保持原样。
-- 请求辅助功能权限时会先完整收起刘海面板，再激活系统权限窗口；授权后短时复查。若 macOS 仍绑定早期构建的精确代码哈希，诊断页会提供“修复权限”，只重置 Notch Triage 这一条记录后重新申请。
-- 展开面板使用 macOS 26+ 原生 Liquid Glass。
-- 废纸篓操作经用户二次确认后交给 Finder 执行。
-- 单一齿轮菜单集中管理刘海左右内容、通知行为、辅助功能、开机启动、更新与退出，不再保留重复菜单或无效收起按钮。
-- 诊断页显示媒体、通知、电源、Codex、更新和废纸篓的健康状态、最近检查时间与后台调度状态，并可复制最近诊断报告。
-- 服务状态变化会写入统一日志，重复的健康状态不会反复刷屏。
-- 启动时检查 GitHub 最新 Release，常驻期间每 6 小时复查；临时网络失败会在 15 分钟后通过同一调度器重试。确认后校验 SHA-256、Bundle ID、版本和签名 Team ID，原子替换 App 并自动重启。
-- 面板淡出结束后才缩小宿主窗口，避免 SwiftUI 约束更新期间重入 AppKit 导致收起崩溃；折叠后进程保持常驻。
-- 应用内更新会显示真实下载百分比、已下载/总大小和连续进度条，下载完成后切换到签名与完整性验证状态。
-- 废纸篓计数包含隐藏项；读取受系统隐私限制时会显示未知状态，但清空入口始终可用，已有 Finder 自动化权限时会读取聚合计数。
-- 清空废纸篓使用具备 Apple Events entitlement 的 Finder 自动化；权限或执行失败会显示明确错误和系统设置路径。
-- 可通过系统 `SMAppService` 注册开机启动；需要用户批准时会提供登录项设置快捷入口。
+---
 
-## Xcode 验证
+## 产品预览
 
-1. 用 Xcode 打开 `NotchTriage.xcodeproj`。
-2. Target 为 `NotchTriage`，最低系统版本为 macOS 26。
-3. 首次运行时，在“系统设置 → 隐私与安全性 → 辅助功能”中允许调试版 App。
-4. 播放 Apple Music、Spotify、QQ 音乐或网易云音乐，检查左翼是否读取曲目和进度。
-5. 将鼠标移到连续黑色刘海区域检查悬停预览，再点击展开完整面板；点击桌面或其他 App 应自动收起。
-6. 右翼应按 Codex App Server 当前返回的数据展示，不假设存在固定的 5 小时窗口。
-7. 使用“设置与更新 → 自动收起横幅”配置通知行为，再用真实通知验证系统横幅与通知中心行为。
-8. 使用“设置与更新 → 退出 Notch Triage”正常结束应用。
-9. 展开后默认进入“电源”页；切换 80/85/90/95/100% 会立即写入系统充电上限，“充满”只临时覆盖限制。
-10. 点击标题栏的齿轮图标，分别更改左右显示内容；收起面板检查圆环，再重启 App 验证配置是否保留。
-11. 切换到“诊断”页，确认六项服务状态与最近检查时间会更新，并测试复制诊断报告。
-12. 在齿轮菜单启用“开机时启动”；如果系统要求批准，点击“批准登录项…”检查系统登录项设置。
-13. Xcode Debug 构建使用独立的 `com.hyacinth.notchtriage.debug` 身份，不要把 Debug 权限条目当作正式版；正式 Release 使用 `com.hyacinth.notchtriage`。
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <img src="./docs/assets/notifications-codex.png" alt="通知、Codex 与媒体面板">
+      <br>
+      <sub><strong>通知、Codex 额度与媒体状态</strong></sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="./docs/assets/power-dashboard.png" alt="电源与充电管理面板">
+      <br>
+      <sub><strong>充电上限、电池健康与实时功率</strong></sub>
+    </td>
+  </tr>
+</table>
 
-## 原型边界
+<p align="center">
+  <img src="./docs/assets/volume-hud.png" alt="音量 HUD" width="560"><br>
+  <img src="./docs/assets/brightness-hud.png" alt="显示亮度 HUD" width="560"><br>
+  <img src="./docs/assets/airpods-hud.png" alt="AirPods 连接 HUD" width="560"><br>
+  <sub><strong>音量、亮度与 AirPods 连接状态直接进入刘海</strong></sub>
+</p>
 
-- 系统级 Now Playing 使用动态加载的 MediaRemote 桥接，仅适合官网分发原型，不适合直接提交 Mac App Store。
-- macOS 27 的手动充电上限目前来自系统私有 PowerUI 接口；旧系统自动降级为只读监控，也不适合直接提交 Mac App Store。
-- 通知中心没有公开的跨 App 管理 API，AX 层级可能随 macOS 更新变化。
-- 清除通知和清空废纸篓都必须由用户在面板中明确触发。
-- 当前未加入歌词、窗口切换、自动通知删除或旧系统视觉降级。
-- 已加入完整 16–1024 px macOS App Icon 资产；如果以后用 Icon Composer 重做品牌图层，可用新的 `.icon` 文件替换当前 `AppIcon` 资源。
+## 核心能力
 
-## 命令行构建
+| 模块 | 能力 | 说明 |
+| --- | --- | --- |
+| 刘海交互 | 静止、悬停预览、点击展开 | 窗口锚定屏幕顶边连续变形，左右内容按实体刘海镜像布局 |
+| Codex 状态 | ChatGPT / Codex 额度 | 通过本机 Codex App Server 读取账户实际返回的限额桶，不假设固定时间窗口 |
+| 系统 HUD | 音量、显示亮度、AirPods | 系统状态变化时以紧凑 HUD 进入刘海，展示完成后自动收起 |
+| 媒体中心 | 正在播放与播放进度 | 支持 Apple Music、Spotify、QQ 音乐、网易云音乐等系统媒体来源 |
+| 电源管理 | 电池健康、循环次数、实时功率 | 展示适配器、系统与电池之间的功率流；支持系统提供的充电上限档位 |
+| 通知与废纸篓 | 通知来源、横幅处理、废纸篓操作 | 通知桥不保存正文；危险操作需要用户明确确认 |
+| 稳定性 | 节能调度、休眠感知、诊断面板 | 锁屏、熄屏或休眠时暂停非必要刷新，唤醒后自动恢复 |
+| 更新 | GitHub Release 自动更新 | 下载后校验 SHA-256、Bundle ID、版本与签名 Team ID，再原子替换并重启 |
 
-本机完整 Xcode 位于 `/Applications/Xcode-beta.app`，无需修改全局 `xcode-select`：
+左右翼内容可以分别设置为电池状态、ChatGPT / Codex 额度、正在播放或隐藏，也可以自由互换；配置会跨启动保存。
+
+## 交互方式
+
+1. **静止**：刘海保持紧凑，只呈现必要状态。
+2. **悬停**：展开为无回弹的快速预览，精确数值和媒体信息随即出现。
+3. **点击**：打开完整 Liquid Glass 面板，集中管理通知、电源、诊断和设置。
+4. **离开**：点击桌面或其他 App 后自动收起；面板内菜单和确认弹窗不会误触关闭。
+
+## 安装与首次运行
+
+1. 前往 [Releases](https://github.com/0Hyacinth0/Notch-Triage/releases/latest) 下载最新发布包。
+2. 将 `Notch Triage.app` 移入“应用程序”文件夹并启动。
+3. 根据需要授予辅助功能、Finder 自动化或登录项权限。
+4. 点击刘海区域打开面板，在“设置与更新”中配置左右翼内容和通知行为。
+
+> Notch Triage 当前定位为 GitHub / 官网分发的 macOS 工具，不面向 Mac App Store。
+
+### 权限说明
+
+| 权限 | 使用目的 | 是否必需 |
+| --- | --- | --- |
+| 辅助功能 | 识别系统横幅，并仅在系统提供安全取消动作时尝试收起 | 按需 |
+| Finder 自动化 | 读取废纸篓聚合数量、执行经用户确认的清空操作 | 按需 |
+| 登录项 | 使用系统 `SMAppService` 实现开机启动 | 可选 |
+
+应用不会安装 root helper。请求辅助功能权限前，面板会先完整收起，再打开系统设置；“修复权限”也只会重置 Notch Triage 自身的授权记录。
+
+## 兼容性
+
+| 项目 | 要求 |
+| --- | --- |
+| 最低系统 | macOS 26.0 |
+| 推荐设备 | 带实体刘海的 MacBook 内建显示器 |
+| 原生充电上限 | macOS 27.0 及系统支持的硬件；其他系统自动降级为只读电源监控 |
+| Codex 额度 | 本机存在 Codex 或 ChatGPT 提供的 Codex 可执行文件，并已登录对应账户 |
+| 完整通知能力 | 需要用户授予辅助功能权限 |
+
+## 隐私与安全
+
+- 通知桥只保存来源 App，不保存通知正文。
+- 清除通知、清空废纸篓等操作必须由用户在面板中明确触发。
+- 原生横幅仅在系统暴露 `AXCancel` 安全动作时尝试收起，否则保持原样。
+- 更新包会校验摘要、Bundle ID、版本与签名身份，不直接执行未经验证的下载内容。
+- 后台服务共享节能调度器；面板收起后自动降频，锁屏和休眠期间暂停非必要刷新。
+
+## 诊断与更新
+
+诊断页统一展示媒体、通知、电源、Codex、更新和废纸篓的健康状态、最近检查时间与后台调度状态，并支持复制最近诊断报告。
+
+应用启动时会检查 GitHub 最新 Release，常驻期间每 6 小时复查。临时网络失败会在 15 分钟后重试；更新界面会显示真实下载百分比、已下载大小、总大小以及签名和完整性验证状态。
+
+## 开发构建
+
+### 环境
+
+- Xcode（需包含项目所用的 macOS SDK）
+- Swift 5
+- macOS 26.0 或更高版本
+
+### 命令行构建
+
+本项目可以使用独立的 Xcode Beta 构建，无需修改全局 `xcode-select`：
 
 ```sh
 DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer \
@@ -69,3 +133,44 @@ DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer \
   -derivedDataPath /tmp/notch-triage-derived \
   build
 ```
+
+Debug 构建使用 `com.hyacinth.notchtriage.debug`，正式 Release 使用 `com.hyacinth.notchtriage`，两者的辅助功能授权记录彼此独立。
+
+<details>
+<summary><strong>展开完整验证清单</strong></summary>
+
+1. 用 Xcode 打开 `NotchTriage.xcodeproj`，选择 `NotchTriage` Scheme。
+2. 首次运行时，在“系统设置 → 隐私与安全性 → 辅助功能”中允许调试版 App。
+3. 播放 Apple Music、Spotify、QQ 音乐或网易云音乐，检查左翼曲目与进度。
+4. 将鼠标移入连续黑色刘海区域检查悬停预览，再点击展开完整面板。
+5. 点击桌面或其他 App，确认完整面板自动收起。
+6. 检查 Codex 额度是否与 App Server 当前返回的数据一致。
+7. 配置“自动收起横幅”，并使用真实通知验证横幅与通知中心行为。
+8. 切换 80 / 85 / 90 / 95 / 100% 充电上限，验证系统返回状态；“充满”只应临时覆盖限制。
+9. 分别更改左右显示内容，收起并重启 App，确认设置保留。
+10. 检查音量、显示亮度与 AirPods 连接 HUD。
+11. 在诊断页确认六项服务状态与最近检查时间更新，并测试复制诊断报告。
+12. 启用“开机时启动”；如果系统要求批准，检查登录项设置入口。
+13. 使用“设置与更新 → 退出 Notch Triage”正常结束应用。
+
+</details>
+
+## 技术边界
+
+- 系统级 Now Playing 使用动态加载的 MediaRemote 桥接，适合官网分发，不适合直接提交 Mac App Store。
+- macOS 27 手动充电上限来自系统 PowerUI 接口；旧系统自动降级为只读监控。
+- 通知中心没有公开的跨 App 管理 API，辅助功能层级可能随 macOS 更新而变化。
+- 当前未加入歌词、窗口切换、自动通知删除或旧系统视觉降级。
+
+## 项目链接
+
+- [Releases](https://github.com/0Hyacinth0/Notch-Triage/releases) — 下载正式版本
+- [Issues](https://github.com/0Hyacinth0/Notch-Triage/issues) — 报告问题与提出建议
+- [Source](https://github.com/0Hyacinth0/Notch-Triage) — 浏览源代码
+
+---
+
+<p align="center">
+  <strong>Notch Triage</strong><br>
+  <sub>让原本占据空间的刘海，成为抬眼可见的效率中心。</sub>
+</p>
