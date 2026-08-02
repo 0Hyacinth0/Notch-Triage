@@ -26,26 +26,32 @@
 
 ## 产品预览
 
-<table>
-  <tr>
-    <td width="50%" align="center">
-      <img src="./docs/assets/notifications-codex.png" alt="通知、Codex 与媒体面板">
-      <br>
-      <sub><strong>通知、Codex 额度与媒体状态</strong></sub>
-    </td>
-    <td width="50%" align="center">
-      <img src="./docs/assets/power-dashboard.png" alt="电源与充电管理面板">
-      <br>
-      <sub><strong>充电上限、电池健康与实时功率</strong></sub>
-    </td>
-  </tr>
-</table>
+<p align="center">
+  <img src="./docs/assets/compact-notch.png" alt="Notch Triage 默认刘海状态" width="560">
+  <br>
+  <sub><strong>默认状态：电池与 Codex 额度在实体刘海两侧保持镜像、紧凑显示</strong></sub>
+</p>
 
 <p align="center">
-  <img src="./docs/assets/volume-hud.png" alt="音量 HUD" width="560"><br>
-  <img src="./docs/assets/brightness-hud.png" alt="显示亮度 HUD" width="560"><br>
-  <img src="./docs/assets/airpods-hud.png" alt="AirPods 连接 HUD" width="560"><br>
-  <sub><strong>音量、亮度与 AirPods 连接状态直接进入刘海</strong></sub>
+  <img src="./docs/assets/notifications-codex.png" alt="通知、Codex 与媒体面板" width="560">
+  <br>
+  <sub><strong>通知、Codex 额度、废纸篓与媒体状态</strong></sub>
+</p>
+
+<p align="center">
+  <img src="./docs/assets/power-dashboard.png" alt="完整电源与充电管理面板" width="560">
+  <br>
+  <sub><strong>完整电源面板：充电上限、实时功率流、电池健康与适配器遥测</strong></sub>
+</p>
+
+<p align="center">
+  <img src="./docs/assets/volume-hud.png" alt="音量 HUD" width="560">
+  <br>
+  <img src="./docs/assets/brightness-hud.png" alt="显示亮度 HUD" width="560">
+  <br>
+  <img src="./docs/assets/airpods-hud.png" alt="AirPods 连接 HUD" width="560">
+  <br>
+  <sub><strong>透明背景、居中呈现的音量、亮度与 AirPods 连接状态</strong></sub>
 </p>
 
 ## 核心能力
