@@ -5,7 +5,7 @@
   <p>原生、轻量、常驻的 macOS 刘海工具，集中呈现 Codex 额度、媒体、电源、通知与系统 HUD。</p>
 
   <p>
-    <img src="https://img.shields.io/badge/version-0.2.2-25D9C5?style=flat-square" alt="Version 0.2.2">
+    <img src="https://img.shields.io/badge/version-0.2.3-25D9C5?style=flat-square" alt="Version 0.2.3">
     <img src="https://img.shields.io/badge/macOS-26%2B-000000?style=flat-square&amp;logo=apple&amp;logoColor=white" alt="macOS 26+">
     <img src="https://img.shields.io/badge/Swift-5-F05138?style=flat-square&amp;logo=swift&amp;logoColor=white" alt="Swift 5">
     <img src="https://img.shields.io/badge/UI-Liquid%20Glass-4B5563?style=flat-square" alt="Liquid Glass">
@@ -81,7 +81,7 @@
 1. 前往 [Releases](https://github.com/0Hyacinth0/Notch-Triage/releases/latest) 下载最新发布包。
 2. 将 `NotchTriage.app` 移入“应用程序”文件夹并启动。
 
-> 如果“应用程序”中同时存在 `NotchTriage.app` 与旧的 `Notch Triage.app`，请先退出两者，再用 v0.2.2 的 `NotchTriage.app` 覆盖并移除旧的空格命名副本，避免同一 Bundle ID 启动两个实例。
+> 如果“应用程序”中同时存在 `NotchTriage.app` 与旧的 `Notch Triage.app`，请先退出两者，再用 v0.2.3 的 `NotchTriage.app` 覆盖并移除旧的空格命名副本，避免同一 Bundle ID 启动两个实例。
 
 3. 根据需要授予辅助功能、Finder 自动化或登录项权限。
 4. 点击刘海区域打开面板，在“设置与更新”中配置左右翼内容和通知行为。
@@ -184,7 +184,7 @@ DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer \
 
 ## 技术边界
 
-- 系统级 Now Playing 使用动态加载的 MediaRemote 桥接，适合官网分发，不适合直接提交 Mac App Store。
+- 系统级 Now Playing 使用动态加载的 MediaRemote 桥接；QQ 音乐在 Hardened Runtime 下改用其 AX 播放器节点兜底，适合官网分发，不适合直接提交 Mac App Store。
 - macOS 27 手动充电上限来自系统 PowerUI 接口；旧系统自动降级为只读监控。
 - 通知中心没有公开的跨 App 管理 API，辅助功能层级可能随 macOS 更新而变化。
 - 当前未加入歌词、窗口切换、自动通知删除或旧系统视觉降级。

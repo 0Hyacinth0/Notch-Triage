@@ -48,6 +48,23 @@ final class NotchTriageModelTests: XCTestCase {
         XCTAssertEqual(makeSnapshot(duration: 100, elapsed: 125).progress, 1)
     }
 
+    func testQQMusicMetadataParserReadsTrackAndPlaybackAction() {
+        XCTAssertEqual(
+            QQMusicMetadataParser.track(
+                from: "歌曲名：朝天门 - 歌手名：GAI周延",
+                isPlaying: true
+            ),
+            QQMusicTrackMetadata(
+                title: "朝天门",
+                artist: "GAI周延",
+                isPlaying: true
+            )
+        )
+        XCTAssertEqual(QQMusicMetadataParser.isPlaying(from: ["播放"]), false)
+        XCTAssertEqual(QQMusicMetadataParser.isPlaying(from: ["暂停"]), true)
+        XCTAssertNil(QQMusicMetadataParser.isPlaying(from: ["播放列表"]))
+    }
+
     func testRingAppearanceDefaultFollowsSelectedTheme() {
         var settings = RingAppearanceSettings.default
         XCTAssertFalse(settings.codex.isEnabled)

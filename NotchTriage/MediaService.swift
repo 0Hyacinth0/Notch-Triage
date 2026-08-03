@@ -2,6 +2,53 @@ import AppKit
 import Darwin
 import Foundation
 
+struct QQMusicTrackMetadata: Equatable {
+    let title: String
+    let artist: String
+    let isPlaying: Bool
+}
+
+enum QQMusicMetadataParser {
+    static func track(from text: String, isPlaying: Bool) -> QQMusicTrackMetadata? {
+        let normalized = text.replacingOccurrences(of: "：", with: ":")
+        guard let titleMarker = normalized.range(of: "歌曲名:"),
+              let artistMarker = normalized.range(of: "歌手名:",
+                                                  range: titleMarker.upperBound..<normalized.endIndex) else {
+            return nil
+        }
+
+        let title = normalized[titleMarker.upperBound..<artistMarker.lowerBound]
+            .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines
+                .union(CharacterSet(charactersIn: "-–—")))
+        let artist = normalized[artistMarker.upperBound...]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !title.isEmpty else { return nil }
+        return QQMusicTrackMetadata(
+            title: title,
+            artist: artist,
+            isPlaying: isPlaying
+        )
+    }
+
+    static func isPlaying(from buttonTexts: [String]) -> Bool? {
+        let normalized = buttonTexts.map {
+            $0.replacingOccurrences(of: "：", with: ":")
+        }
+
+        // QQ Music exposes the action of the play/pause button rather than
+        // a separate state value: “暂停” means the track is playing, while
+        // “播放” means the track is paused.
+        if normalized.contains(where: { $0.contains("暂停") }) {
+            return true
+        }
+        if normalized.contains(where: { $0 == "播放" }) {
+            return false
+        }
+        return nil
+    }
+}
+
 @MainActor
 final class MediaService {
     typealias SnapshotHandler = @MainActor (MediaSnapshot) -> Void
@@ -16,6 +63,7 @@ final class MediaService {
     private let onSnapshot: SnapshotHandler
     private let onHealth: HealthHandler
 
+    private let qqMusicBundleIdentifier = "com.tencent.QQMusicMac"
     private var mediaRemoteHandle: UnsafeMutableRawPointer?
     private var getNowPlayingInfo: GetNowPlayingInfo?
     private var appleScriptFallbackDisabled = false
@@ -42,6 +90,15 @@ final class MediaService {
     }
 
     func refresh() {
+        // Hardened Runtime builds can receive “Operation not permitted” from
+        // MediaRemote even though the player exposes a complete AX tree.
+        // QQ Music is one of those clients, so prefer its direct AX snapshot
+        // whenever the client is running and exposes a track.
+        if let qqSnapshot = qqMusicSnapshot() {
+            onSnapshot(qqSnapshot)
+            return
+        }
+
         guard let getNowPlayingInfo else {
             refreshWithAppleScript()
             return
@@ -50,7 +107,8 @@ final class MediaService {
         let callback: NowPlayingCallback = { [weak self] dictionary in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                if let snapshot = self.parseMediaRemote(dictionary) {
+                let parsedSnapshot = self.parseMediaRemote(dictionary)
+                if let snapshot = self.resolvedMediaRemoteSnapshot(parsedSnapshot) {
                     self.onSnapshot(snapshot)
                 } else {
                     // MediaRemote can briefly return an incomplete dictionary
@@ -116,6 +174,9 @@ final class MediaService {
             if let string = value as? String {
                 return string
             }
+            if let string = value as? NSString {
+                return string as String
+            }
         }
         return nil
     }
@@ -144,11 +205,13 @@ final class MediaService {
 
     private func refreshWithAppleScript() {
         guard !appleScriptFallbackDisabled else {
-            onSnapshot(.idle)
+            onSnapshot(qqMusicSnapshot() ?? .idle)
             return
         }
 
-        if let snapshot = appleMusicSnapshot() {
+        if let snapshot = qqMusicSnapshot() {
+            onSnapshot(snapshot)
+        } else if let snapshot = appleMusicSnapshot() {
             onSnapshot(snapshot)
         } else if !appleScriptFallbackDisabled,
                   let snapshot = spotifySnapshot() {
@@ -156,6 +219,130 @@ final class MediaService {
         } else {
             onSnapshot(.idle)
         }
+    }
+
+    private func resolvedMediaRemoteSnapshot(
+        _ snapshot: MediaSnapshot?
+    ) -> MediaSnapshot? {
+        guard let snapshot else {
+            return qqMusicSnapshot()
+        }
+
+        // QQ Music currently publishes title/artist/progress through
+        // MediaRemote but omits the client bundle identifier. When its AX
+        // tree has the same track, use the button state and restore the
+        // source name without confusing another active media app.
+        guard snapshot.bundleIdentifier == nil,
+              let qqSnapshot = qqMusicSnapshot(),
+              normalizedMediaText(snapshot.title) == normalizedMediaText(qqSnapshot.title) else {
+            return snapshot
+        }
+
+        return MediaSnapshot(
+            sourceName: "QQ 音乐",
+            bundleIdentifier: qqMusicBundleIdentifier,
+            title: qqSnapshot.title,
+            artist: qqSnapshot.artist.isEmpty ? snapshot.artist : qqSnapshot.artist,
+            duration: snapshot.duration > 0 ? snapshot.duration : qqSnapshot.duration,
+            elapsed: snapshot.elapsed,
+            isPlaying: qqSnapshot.isPlaying
+        )
+    }
+
+    private func qqMusicSnapshot() -> MediaSnapshot? {
+        guard let application = NSRunningApplication.runningApplications(
+            withBundleIdentifier: qqMusicBundleIdentifier
+        ).first else {
+            return nil
+        }
+
+        let appElement = AXUIElementCreateApplication(application.processIdentifier)
+        let windows = elements(appElement, attribute: kAXWindowsAttribute)
+        guard !windows.isEmpty else { return nil }
+        var buttonTexts: [String] = []
+
+        for window in windows {
+            for element in axElements(in: window, maximumDepth: 8) {
+                let values = textValues(of: element)
+                if string(element, attribute: kAXRoleAttribute) == kAXButtonRole as String {
+                    buttonTexts.append(contentsOf: values)
+                }
+            }
+        }
+
+        // The track row is encountered before the play button in QQ Music's
+        // AX tree, so resolve the state in a second pass after collecting all
+        // button labels.
+        guard let trackText = windows
+            .flatMap({ axElements(in: $0, maximumDepth: 8) })
+            .flatMap(textValues(of:))
+            .first(where: { $0.contains("歌曲名") && $0.contains("歌手名") }),
+              let metadata = QQMusicMetadataParser.track(
+                  from: trackText,
+                  isPlaying: QQMusicMetadataParser.isPlaying(from: buttonTexts) ?? false
+              ) else {
+            return nil
+        }
+
+        return MediaSnapshot(
+            sourceName: "QQ 音乐",
+            bundleIdentifier: qqMusicBundleIdentifier,
+            title: metadata.title,
+            artist: metadata.artist,
+            duration: 0,
+            elapsed: 0,
+            isPlaying: metadata.isPlaying
+        )
+    }
+
+    private func normalizedMediaText(_ text: String) -> String {
+        text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    private func axElements(
+        in root: AXUIElement,
+        maximumDepth: Int
+    ) -> [AXUIElement] {
+        guard maximumDepth > 0 else { return [root] }
+        var result = [root]
+        for child in elements(root, attribute: kAXChildrenAttribute) {
+            result.append(contentsOf: axElements(in: child, maximumDepth: maximumDepth - 1))
+        }
+        return result
+    }
+
+    private func textValues(of element: AXUIElement) -> [String] {
+        [
+            string(element, attribute: kAXTitleAttribute),
+            string(element, attribute: kAXDescriptionAttribute),
+            string(element, attribute: kAXIdentifierAttribute),
+            string(element, attribute: kAXValueAttribute),
+            string(element, attribute: kAXHelpAttribute)
+        ].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    private func elements(_ element: AXUIElement, attribute: String) -> [AXUIElement] {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success,
+              let elements = value as? [AXUIElement] else {
+            return []
+        }
+        return elements
+    }
+
+    private func string(_ element: AXUIElement, attribute: String) -> String? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else {
+            return nil
+        }
+        if let string = value as? String {
+            return string
+        }
+        if let string = value as? NSString {
+            return string as String
+        }
+        return nil
     }
 
     private func appleMusicSnapshot() -> MediaSnapshot? {
