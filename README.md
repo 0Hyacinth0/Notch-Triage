@@ -142,6 +142,20 @@ DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer \
 
 Debug 构建使用 `com.hyacinth.notchtriage.debug`，正式 Release 使用 `com.hyacinth.notchtriage`，两者的辅助功能授权记录彼此独立。
 
+### 自动化测试
+
+使用 Xcode Beta 运行 macOS 单元测试：
+
+```sh
+DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer \
+  xcodebuild test -project NotchTriage.xcodeproj \
+  -scheme NotchTriage \
+  -destination 'platform=macOS' \
+  -derivedDataPath /tmp/notch-triage-tests
+```
+
+当前测试覆盖纯模型边界，不覆盖真实系统权限或更新安装流程。
+
 ### 分层 App 图标
 
 应用图标由 [Icon Composer 文档](./NotchTriage/AppIcon.icon/icon.json) 构成，三个 SVG 图层随 `.icon` 包一同保存，保留 Default、Dark、Mono 和系统小尺寸渲染能力；圆角遮罩、折射、阴影与材质由系统生成，不预烘焙进源图。
