@@ -17,7 +17,7 @@ struct SettingsRootView: View {
     @State private var selection: Destination? = .appearance
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: .constant(.all)) {
             List(selection: $selection) {
                 Section("Notch Triage") {
                     sidebarItem("外观", symbol: "rectangle.on.rectangle", destination: .appearance)
@@ -44,8 +44,10 @@ struct SettingsRootView: View {
             }
             .background(Color(nsColor: .windowBackgroundColor))
         }
+        .navigationSplitViewStyle(.balanced)
         .frame(minWidth: 780, idealWidth: 860, minHeight: 540, idealHeight: 640)
         .background(Color(nsColor: .windowBackgroundColor))
+        .toolbar(removing: .sidebarToggle)
         .onAppear {
             model.refreshLaunchAtLoginStatus()
         }
