@@ -2,10 +2,249 @@ import AppKit
 import Darwin
 import Foundation
 
-struct QQMusicTrackMetadata: Equatable {
+struct QQMusicTrackMetadata: Equatable, Sendable {
     let title: String
     let artist: String
     let isPlaying: Bool
+}
+
+protocol QQMusicAccessibilityScanning: Sendable {
+    func trackMetadata(
+        processIdentifier: pid_t,
+        cancellation: QQMusicScanCancellation
+    ) async -> QQMusicTrackMetadata?
+}
+
+final class QQMusicScanCancellation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+
+    var isCancelled: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return cancelled
+    }
+
+    func cancel() {
+        lock.lock()
+        cancelled = true
+        lock.unlock()
+    }
+}
+
+final class QQMusicAccessibilityScanner: QQMusicAccessibilityScanning, @unchecked Sendable {
+    private static let maximumDepth = 8
+    private static let maximumElementCount = 256
+    private static let messagingTimeout: Float = 0.2
+
+    private struct NodeSnapshot {
+        let textValues: [String]
+        let children: [AXUIElement]
+    }
+
+    private let queue = DispatchQueue(
+        label: "com.hyacinth.notchtriage.qqmusic-accessibility",
+        qos: .utility
+    )
+
+    func trackMetadata(
+        processIdentifier: pid_t,
+        cancellation: QQMusicScanCancellation
+    ) async -> QQMusicTrackMetadata? {
+        await withCheckedContinuation { continuation in
+            queue.async {
+                continuation.resume(
+                    returning: Self.scan(
+                        processIdentifier: processIdentifier,
+                        cancellation: cancellation
+                    )
+                )
+            }
+        }
+    }
+
+    private static func scan(
+        processIdentifier: pid_t,
+        cancellation: QQMusicScanCancellation
+    ) -> QQMusicTrackMetadata? {
+        guard !cancellation.isCancelled else { return nil }
+        let application = AXUIElementCreateApplication(processIdentifier)
+        setMessagingTimeout(on: application)
+
+        let windows = elements(application, attribute: kAXWindowsAttribute)
+        guard !windows.isEmpty else { return nil }
+
+        var stack = windows.reversed().map { ($0, 0) }
+        var visitedCount = 0
+        var trackText: String?
+        var playbackState: Bool?
+
+        while let (element, depth) = stack.popLast(),
+              visitedCount < maximumElementCount {
+            guard !cancellation.isCancelled else { return nil }
+            visitedCount += 1
+            setMessagingTimeout(on: element)
+
+            let node = nodeSnapshot(
+                of: element,
+                includeChildren: depth < maximumDepth
+            )
+            let values = node.textValues
+            if trackText == nil {
+                trackText = values.first(where: {
+                    $0.contains("歌曲名") && $0.contains("歌手名")
+                })
+            }
+
+            if let state = QQMusicMetadataParser.isPlaying(from: values) {
+                // A visible “暂停” action is stronger evidence than generic
+                // “播放” text elsewhere in the hierarchy.
+                if state || playbackState == nil {
+                    playbackState = state
+                }
+            }
+
+            if let trackText, playbackState == true,
+               let metadata = QQMusicMetadataParser.track(
+                   from: trackText,
+                   isPlaying: true
+               ) {
+                return metadata
+            }
+
+            for child in node.children.reversed() {
+                stack.append((child, depth + 1))
+            }
+        }
+
+        guard let trackText else { return nil }
+        return QQMusicMetadataParser.track(
+            from: trackText,
+            isPlaying: playbackState ?? false
+        )
+    }
+
+    private static func setMessagingTimeout(on element: AXUIElement) {
+        _ = AXUIElementSetMessagingTimeout(element, messagingTimeout)
+    }
+
+    private static func nodeSnapshot(
+        of element: AXUIElement,
+        includeChildren: Bool
+    ) -> NodeSnapshot {
+        var attributes = [
+            kAXTitleAttribute,
+            kAXDescriptionAttribute,
+            kAXIdentifierAttribute,
+            kAXValueAttribute,
+            kAXHelpAttribute
+        ] as [String]
+        if includeChildren {
+            attributes.insert(kAXChildrenAttribute, at: 0)
+        }
+
+        var rawValues: CFArray?
+        guard AXUIElementCopyMultipleAttributeValues(
+            element,
+            attributes as CFArray,
+            [],
+            &rawValues
+        ) == .success,
+        let values = rawValues as? [Any] else {
+            return NodeSnapshot(textValues: [], children: [])
+        }
+
+        let children: [AXUIElement]
+        let textStartIndex: Int
+        if includeChildren {
+            children = values.first as? [AXUIElement] ?? []
+            textStartIndex = 1
+        } else {
+            children = []
+            textStartIndex = 0
+        }
+
+        let textValues = values.dropFirst(textStartIndex).compactMap { value -> String? in
+            if let string = value as? String {
+                return string
+            }
+            if let string = value as? NSString {
+                return string as String
+            }
+            return nil
+        }.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        return NodeSnapshot(textValues: textValues, children: children)
+    }
+
+    private static func elements(
+        _ element: AXUIElement,
+        attribute: String
+    ) -> [AXUIElement] {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            element,
+            attribute as CFString,
+            &value
+        ) == .success,
+        let elements = value as? [AXUIElement] else {
+            return []
+        }
+        return elements
+    }
+}
+
+struct QQMusicAXScanKey: Equatable, Sendable {
+    let processIdentifier: pid_t
+    let title: String
+    let artist: String
+    let isPlaying: Bool
+    let shouldUseAXPlaybackState: Bool
+
+    init(processIdentifier: pid_t, snapshot: MediaSnapshot) {
+        self.processIdentifier = processIdentifier
+        title = Self.normalized(snapshot.title)
+        artist = Self.normalized(snapshot.artist)
+        isPlaying = snapshot.isPlaying
+        shouldUseAXPlaybackState = snapshot.bundleIdentifier == nil
+    }
+
+    private static func normalized(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+}
+
+enum QQMusicSnapshotEnricher {
+    static func merge(
+        _ snapshot: MediaSnapshot,
+        metadata: QQMusicTrackMetadata,
+        bundleIdentifier: String
+    ) -> MediaSnapshot? {
+        let snapshotTitle = normalized(snapshot.title)
+        let metadataTitle = normalized(metadata.title)
+        guard snapshotTitle.isEmpty || snapshotTitle == metadataTitle else {
+            return nil
+        }
+
+        return MediaSnapshot(
+            sourceName: "QQ 音乐",
+            bundleIdentifier: bundleIdentifier,
+            title: snapshot.title.isEmpty ? metadata.title : snapshot.title,
+            artist: snapshot.artist.isEmpty ? metadata.artist : snapshot.artist,
+            duration: snapshot.duration,
+            elapsed: snapshot.elapsed,
+            isPlaying: snapshot.bundleIdentifier == nil
+                ? metadata.isPlaying
+                : snapshot.isPlaying,
+            progressAnchorDate: snapshot.progressAnchorDate,
+            playbackRate: snapshot.playbackRate
+        )
+    }
+
+    private static func normalized(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
 }
 
 enum QQMusicMetadataParser {
@@ -58,6 +297,7 @@ enum QQMusicMetadataParser {
 final class MediaService {
     typealias SnapshotHandler = @MainActor (MediaSnapshot) -> Void
     typealias HealthHandler = @MainActor (ServiceHealth) -> Void
+    typealias QQMusicProcessIdentifierProvider = @MainActor () -> pid_t?
 
     private typealias NowPlayingCallback = @convention(block) (CFDictionary?) -> Void
     private typealias GetNowPlayingInfo = @convention(c) (
@@ -67,13 +307,39 @@ final class MediaService {
 
     private let onSnapshot: SnapshotHandler
     private let onHealth: HealthHandler
+    private let qqMusicScanner: any QQMusicAccessibilityScanning
+    private let qqMusicProcessIdentifier: QQMusicProcessIdentifierProvider
 
     private let qqMusicBundleIdentifier = "com.tencent.QQMusicMac"
+    private let qqMusicAXFailureRetryInterval: TimeInterval = 15
     private var mediaRemoteHandle: UnsafeMutableRawPointer?
     private var getNowPlayingInfo: GetNowPlayingInfo?
     private var appleScriptFallbackDisabled = false
     private var adapterBridgeHealthy = false
     private var stopping = false
+
+    private struct QQMusicAXRequest: Equatable {
+        let key: QQMusicAXScanKey
+    }
+
+    private struct QQMusicAXCache {
+        let key: QQMusicAXScanKey
+        let metadata: QQMusicTrackMetadata
+    }
+
+    private var qqMusicAXTask: Task<Void, Never>?
+    private var qqMusicAXCancellation: QQMusicScanCancellation?
+    private var qqMusicAXActiveRequest: QQMusicAXRequest?
+    private var qqMusicAXPendingRequest: QQMusicAXRequest?
+    private var qqMusicAXCache: QQMusicAXCache?
+    private var qqMusicAXLastCompletedKey: QQMusicAXScanKey?
+    private var qqMusicAXLastCompletedDate: Date?
+    private var qqMusicAXLatestSnapshot: MediaSnapshot?
+    private var qqMusicAXScanIdentifier = 0
+
+    private var qqMusicFallbackTask: Task<Void, Never>?
+    private var qqMusicFallbackCancellation: QQMusicScanCancellation?
+    private var qqMusicFallbackIdentifier = 0
 
     private lazy var adapterBridge = MediaRemoteAdapterBridge(
         onSnapshot: { [weak self] snapshot in
@@ -86,10 +352,18 @@ final class MediaService {
 
     init(
         onSnapshot: @escaping SnapshotHandler,
-        onHealth: @escaping HealthHandler
+        onHealth: @escaping HealthHandler,
+        qqMusicScanner: any QQMusicAccessibilityScanning = QQMusicAccessibilityScanner(),
+        qqMusicProcessIdentifier: @escaping QQMusicProcessIdentifierProvider = {
+            NSRunningApplication.runningApplications(
+                withBundleIdentifier: "com.tencent.QQMusicMac"
+            ).first?.processIdentifier
+        }
     ) {
         self.onSnapshot = onSnapshot
         self.onHealth = onHealth
+        self.qqMusicScanner = qqMusicScanner
+        self.qqMusicProcessIdentifier = qqMusicProcessIdentifier
         loadMediaRemote()
     }
 
@@ -110,6 +384,12 @@ final class MediaService {
         stopping = true
         adapterBridge.stop()
         adapterBridgeHealthy = false
+        resetQQMusicEnrichment()
+        qqMusicFallbackIdentifier &+= 1
+        qqMusicFallbackCancellation?.cancel()
+        qqMusicFallbackCancellation = nil
+        qqMusicFallbackTask?.cancel()
+        qqMusicFallbackTask = nil
         if let mediaRemoteHandle {
             dlclose(mediaRemoteHandle)
         }
@@ -136,9 +416,9 @@ final class MediaService {
         let callback: NowPlayingCallback = { [weak self] dictionary in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                let parsedSnapshot = self.parseMediaRemote(dictionary)
-                if let snapshot = self.resolvedMediaRemoteSnapshot(parsedSnapshot) {
-                    self.onSnapshot(snapshot)
+                if var snapshot = self.parseMediaRemote(dictionary) {
+                    snapshot.sourceName = self.sourceName(for: snapshot.bundleIdentifier)
+                    self.publish(snapshot)
                 } else {
                     // MediaRemote can briefly return an incomplete dictionary
                     // while a track is changing. Use the guarded fallback
@@ -153,21 +433,22 @@ final class MediaService {
         getNowPlayingInfo(.main, callback)
     }
 
-    private func receiveAdapterSnapshot(_ snapshot: MediaSnapshot) {
+    func receiveAdapterSnapshot(_ snapshot: MediaSnapshot) {
         guard !stopping else { return }
         if snapshot == .idle {
+            resetQQMusicEnrichment()
             onSnapshot(.idle)
             return
         }
         var resolved = snapshot
         resolved.sourceName = sourceName(for: snapshot.bundleIdentifier)
-        resolved = resolvedAdapterSnapshot(resolved)
-        onSnapshot(resolved)
+        publish(resolved)
     }
 
     private func adapterDidFail(_ reason: String) {
         guard !stopping else { return }
         adapterBridgeHealthy = false
+        resetQQMusicEnrichment()
         onHealth(.warning("媒体适配器异常：\(reason)；已切换系统播放桥接"))
         refreshDirect()
     }
@@ -273,14 +554,53 @@ final class MediaService {
     }
 
     private func refreshWithAppleScript() {
-        guard !appleScriptFallbackDisabled else {
-            onSnapshot(qqMusicSnapshot() ?? .idle)
+        guard qqMusicFallbackTask == nil else { return }
+        guard let processIdentifier = qqMusicProcessIdentifier() else {
+            refreshWithPlayerScripts()
             return
         }
 
-        if let snapshot = qqMusicSnapshot() {
-            onSnapshot(snapshot)
-        } else if let snapshot = appleMusicSnapshot() {
+        qqMusicFallbackIdentifier &+= 1
+        let identifier = qqMusicFallbackIdentifier
+        let scanner = qqMusicScanner
+        let cancellation = QQMusicScanCancellation()
+        qqMusicFallbackCancellation = cancellation
+        qqMusicFallbackTask = Task { @MainActor [weak self] in
+            let metadata = await scanner.trackMetadata(
+                processIdentifier: processIdentifier,
+                cancellation: cancellation
+            )
+            guard let self,
+                  !self.stopping,
+                  self.qqMusicFallbackIdentifier == identifier else {
+                return
+            }
+            self.qqMusicFallbackTask = nil
+            self.qqMusicFallbackCancellation = nil
+
+            if let metadata {
+                self.onSnapshot(MediaSnapshot(
+                    sourceName: "QQ 音乐",
+                    bundleIdentifier: self.qqMusicBundleIdentifier,
+                    title: metadata.title,
+                    artist: metadata.artist,
+                    duration: 0,
+                    elapsed: 0,
+                    isPlaying: metadata.isPlaying
+                ))
+            } else {
+                self.refreshWithPlayerScripts()
+            }
+        }
+    }
+
+    private func refreshWithPlayerScripts() {
+        guard !appleScriptFallbackDisabled else {
+            onSnapshot(.idle)
+            return
+        }
+
+        if let snapshot = appleMusicSnapshot() {
             onSnapshot(snapshot)
         } else if !appleScriptFallbackDisabled,
                   let snapshot = spotifySnapshot() {
@@ -290,155 +610,149 @@ final class MediaService {
         }
     }
 
-    private func resolvedMediaRemoteSnapshot(
-        _ snapshot: MediaSnapshot?
-    ) -> MediaSnapshot? {
-        guard let snapshot else {
-            return qqMusicSnapshot()
+    private func publish(_ snapshot: MediaSnapshot) {
+        let normalizedBundleIdentifier = snapshot.bundleIdentifier?.lowercased()
+        let isQQMusic = normalizedBundleIdentifier == qqMusicBundleIdentifier.lowercased()
+        let canBeUnidentifiedQQMusic = snapshot.bundleIdentifier == nil
+        // The adapter already provides authoritative progress and playback
+        // state. Avoid AX entirely when its QQ metadata is complete.
+        let needsAccessibilityEnrichment = canBeUnidentifiedQQMusic
+            || snapshot.title.isEmpty
+            || snapshot.artist.isEmpty
+
+        guard (isQQMusic || canBeUnidentifiedQQMusic),
+              needsAccessibilityEnrichment,
+              let processIdentifier = qqMusicProcessIdentifier() else {
+            resetQQMusicEnrichment()
+            onSnapshot(snapshot)
+            return
         }
 
-        // QQ Music publishes title/artist/progress through MediaRemote but
-        // omits the client bundle identifier. When its AX tree has the same
-        // track, use the button state and restore the source name without
-        // confusing another active media app.
-        guard snapshot.bundleIdentifier == nil,
-              let qqSnapshot = qqMusicSnapshot(),
-              normalizedMediaText(snapshot.title) == normalizedMediaText(qqSnapshot.title) else {
-            return snapshot
-        }
-
-        return MediaSnapshot(
-            sourceName: "QQ 音乐",
-            bundleIdentifier: qqMusicBundleIdentifier,
-            title: qqSnapshot.title,
-            artist: qqSnapshot.artist.isEmpty ? snapshot.artist : qqSnapshot.artist,
-            duration: snapshot.duration > 0 ? snapshot.duration : qqSnapshot.duration,
-            elapsed: snapshot.elapsed,
-            isPlaying: qqSnapshot.isPlaying,
-            progressAnchorDate: snapshot.progressAnchorDate,
-            playbackRate: snapshot.playbackRate
+        let key = QQMusicAXScanKey(
+            processIdentifier: processIdentifier,
+            snapshot: snapshot
         )
+        qqMusicAXLatestSnapshot = snapshot
+
+        if let cache = qqMusicAXCache,
+           cache.key == key,
+           let enriched = QQMusicSnapshotEnricher.merge(
+               snapshot,
+               metadata: cache.metadata,
+               bundleIdentifier: qqMusicBundleIdentifier
+           ) {
+            onSnapshot(enriched)
+        } else {
+            onSnapshot(snapshot)
+        }
+
+        scheduleQQMusicEnrichment(QQMusicAXRequest(key: key))
     }
 
-    private func resolvedAdapterSnapshot(_ snapshot: MediaSnapshot) -> MediaSnapshot {
-        guard snapshot.bundleIdentifier?.lowercased() == qqMusicBundleIdentifier.lowercased(),
-              let qqSnapshot = qqMusicSnapshot(),
-              normalizedMediaText(snapshot.title) == normalizedMediaText(qqSnapshot.title) else {
-            return snapshot
+    private func scheduleQQMusicEnrichment(_ request: QQMusicAXRequest) {
+        if qqMusicAXCache?.key == request.key {
+            return
+        }
+        if qqMusicAXLastCompletedKey == request.key,
+           let completedDate = qqMusicAXLastCompletedDate,
+           Date().timeIntervalSince(completedDate) < qqMusicAXFailureRetryInterval {
+            return
         }
 
-        // The adapter has a fresh elapsed/timestamp pair and authoritative
-        // playing state.  AX is only a metadata/action supplement, and must
-        // never replace that progress or state with QQ's position-less AX
-        // snapshot.
-        return MediaSnapshot(
-            sourceName: "QQ 音乐",
-            bundleIdentifier: qqMusicBundleIdentifier,
-            title: snapshot.title.isEmpty ? qqSnapshot.title : snapshot.title,
-            artist: snapshot.artist.isEmpty ? qqSnapshot.artist : snapshot.artist,
-            duration: snapshot.duration > 0 ? snapshot.duration : qqSnapshot.duration,
-            elapsed: snapshot.elapsed,
-            isPlaying: snapshot.isPlaying,
-            progressAnchorDate: snapshot.progressAnchorDate,
-            playbackRate: snapshot.playbackRate
-        )
-    }
-
-    private func qqMusicSnapshot() -> MediaSnapshot? {
-        guard let application = NSRunningApplication.runningApplications(
-            withBundleIdentifier: qqMusicBundleIdentifier
-        ).first else {
-            return nil
-        }
-
-        let appElement = AXUIElementCreateApplication(application.processIdentifier)
-        let windows = elements(appElement, attribute: kAXWindowsAttribute)
-        guard !windows.isEmpty else { return nil }
-        var actionTexts: [String] = []
-
-        for window in windows {
-            for element in axElements(in: window, maximumDepth: 8) {
-                let values = textValues(of: element)
-                // QQ exposes transport controls as AXUnknown on current
-                // builds, so inspect every element's title/description/etc.
-                // rather than restricting this pass to AXButton.
-                actionTexts.append(contentsOf: values)
+        if let activeRequest = qqMusicAXActiveRequest {
+            qqMusicAXPendingRequest = activeRequest == request ? nil : request
+            if activeRequest != request {
+                qqMusicAXCancellation?.cancel()
             }
+            return
         }
 
-        // The track row is encountered before the play button in QQ Music's
-        // AX tree, so resolve the state in a second pass after collecting all
-        // button labels.
-        guard let trackText = windows
-            .flatMap({ axElements(in: $0, maximumDepth: 8) })
-            .flatMap(textValues(of:))
-            .first(where: { $0.contains("歌曲名") && $0.contains("歌手名") }),
-              let metadata = QQMusicMetadataParser.track(
-                  from: trackText,
-                  isPlaying: QQMusicMetadataParser.isPlaying(from: actionTexts) ?? false
-              ) else {
-            return nil
-        }
-
-        return MediaSnapshot(
-            sourceName: "QQ 音乐",
-            bundleIdentifier: qqMusicBundleIdentifier,
-            title: metadata.title,
-            artist: metadata.artist,
-            duration: 0,
-            elapsed: 0,
-            isPlaying: metadata.isPlaying
-        )
+        beginQQMusicEnrichment(request)
     }
 
-    private func normalizedMediaText(_ text: String) -> String {
-        text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    private func beginQQMusicEnrichment(_ request: QQMusicAXRequest) {
+        guard qqMusicAXActiveRequest == nil else {
+            return
+        }
+        if qqMusicAXLastCompletedKey == request.key,
+           let completedDate = qqMusicAXLastCompletedDate,
+           Date().timeIntervalSince(completedDate) < qqMusicAXFailureRetryInterval {
+            return
+        }
+
+        qqMusicAXScanIdentifier &+= 1
+        let identifier = qqMusicAXScanIdentifier
+        let scanner = qqMusicScanner
+        let cancellation = QQMusicScanCancellation()
+        qqMusicAXActiveRequest = request
+        qqMusicAXCancellation = cancellation
+        qqMusicAXTask = Task { @MainActor [weak self] in
+            let metadata = await scanner.trackMetadata(
+                processIdentifier: request.key.processIdentifier,
+                cancellation: cancellation
+            )
+            self?.finishQQMusicEnrichment(
+                identifier: identifier,
+                request: request,
+                metadata: metadata
+            )
+        }
     }
 
-    private func axElements(
-        in root: AXUIElement,
-        maximumDepth: Int
-    ) -> [AXUIElement] {
-        guard maximumDepth > 0 else { return [root] }
-        var result = [root]
-        for child in elements(root, attribute: kAXChildrenAttribute) {
-            result.append(contentsOf: axElements(in: child, maximumDepth: maximumDepth - 1))
+    private func finishQQMusicEnrichment(
+        identifier: Int,
+        request: QQMusicAXRequest,
+        metadata: QQMusicTrackMetadata?
+    ) {
+        guard identifier == qqMusicAXScanIdentifier,
+              qqMusicAXActiveRequest == request else {
+            return
         }
-        return result
+
+        qqMusicAXTask = nil
+        qqMusicAXCancellation = nil
+        qqMusicAXActiveRequest = nil
+        qqMusicAXLastCompletedKey = request.key
+        qqMusicAXLastCompletedDate = Date()
+
+        if !stopping,
+           let metadata,
+           let latestSnapshot = qqMusicAXLatestSnapshot,
+           QQMusicAXScanKey(
+               processIdentifier: request.key.processIdentifier,
+               snapshot: latestSnapshot
+           ) == request.key,
+           let enriched = QQMusicSnapshotEnricher.merge(
+               latestSnapshot,
+               metadata: metadata,
+               bundleIdentifier: qqMusicBundleIdentifier
+           ) {
+            qqMusicAXCache = QQMusicAXCache(
+                key: request.key,
+                metadata: metadata
+            )
+            onSnapshot(enriched)
+        }
+
+        let pendingRequest = qqMusicAXPendingRequest
+        qqMusicAXPendingRequest = nil
+        if !stopping, let pendingRequest {
+            beginQQMusicEnrichment(pendingRequest)
+        }
     }
 
-    private func textValues(of element: AXUIElement) -> [String] {
-        [
-            string(element, attribute: kAXTitleAttribute),
-            string(element, attribute: kAXDescriptionAttribute),
-            string(element, attribute: kAXIdentifierAttribute),
-            string(element, attribute: kAXValueAttribute),
-            string(element, attribute: kAXHelpAttribute)
-        ].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-    }
-
-    private func elements(_ element: AXUIElement, attribute: String) -> [AXUIElement] {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success,
-              let elements = value as? [AXUIElement] else {
-            return []
-        }
-        return elements
-    }
-
-    private func string(_ element: AXUIElement, attribute: String) -> String? {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else {
-            return nil
-        }
-        if let string = value as? String {
-            return string
-        }
-        if let string = value as? NSString {
-            return string as String
-        }
-        return nil
+    private func resetQQMusicEnrichment() {
+        qqMusicAXScanIdentifier &+= 1
+        qqMusicAXCancellation?.cancel()
+        qqMusicAXCancellation = nil
+        qqMusicAXTask?.cancel()
+        qqMusicAXTask = nil
+        qqMusicAXActiveRequest = nil
+        qqMusicAXPendingRequest = nil
+        qqMusicAXCache = nil
+        qqMusicAXLastCompletedKey = nil
+        qqMusicAXLastCompletedDate = nil
+        qqMusicAXLatestSnapshot = nil
     }
 
     private func appleMusicSnapshot() -> MediaSnapshot? {

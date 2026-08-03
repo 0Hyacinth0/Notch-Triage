@@ -3,6 +3,56 @@ import XCTest
 
 @testable import NotchTriage
 
+private actor TestQQMusicAccessibilityScanner: QQMusicAccessibilityScanning {
+    private let metadata: QQMusicTrackMetadata?
+    private let delayNanoseconds: UInt64
+    private var invocationCount = 0
+
+    init(
+        metadata: QQMusicTrackMetadata?,
+        delayNanoseconds: UInt64 = 50_000_000
+    ) {
+        self.metadata = metadata
+        self.delayNanoseconds = delayNanoseconds
+    }
+
+    func trackMetadata(
+        processIdentifier: pid_t,
+        cancellation: QQMusicScanCancellation
+    ) async -> QQMusicTrackMetadata? {
+        invocationCount += 1
+        try? await Task.sleep(nanoseconds: delayNanoseconds)
+        return cancellation.isCancelled ? nil : metadata
+    }
+
+    func count() -> Int {
+        invocationCount
+    }
+}
+
+private actor SequencedQQMusicAccessibilityScanner: QQMusicAccessibilityScanning {
+    struct Response: Sendable {
+        let metadata: QQMusicTrackMetadata?
+        let delayNanoseconds: UInt64
+    }
+
+    private var responses: [Response]
+
+    init(responses: [Response]) {
+        self.responses = responses
+    }
+
+    func trackMetadata(
+        processIdentifier: pid_t,
+        cancellation: QQMusicScanCancellation
+    ) async -> QQMusicTrackMetadata? {
+        guard !responses.isEmpty else { return nil }
+        let response = responses.removeFirst()
+        try? await Task.sleep(nanoseconds: response.delayNanoseconds)
+        return cancellation.isCancelled ? nil : response.metadata
+    }
+}
+
 final class NotchTriageModelTests: XCTestCase {
     func testAppUpdateDownloadProgressFractionClampsUnknownNegativeAndExcess() {
         XCTAssertEqual(
@@ -195,6 +245,244 @@ final class NotchTriageModelTests: XCTestCase {
         XCTAssertEqual(QQMusicMetadataParser.isPlaying(from: ["播放"]), false)
         XCTAssertEqual(QQMusicMetadataParser.isPlaying(from: ["暂停"]), true)
         XCTAssertNil(QQMusicMetadataParser.isPlaying(from: ["播放列表"]))
+    }
+
+    func testQQMusicAXScanKeyIgnoresProgressButTracksMediaState() {
+        let anchor = Date(timeIntervalSince1970: 1_000)
+        let first = MediaSnapshot(
+            sourceName: "QQ 音乐",
+            bundleIdentifier: "com.tencent.QQMusicMac",
+            title: "Track",
+            artist: "Artist",
+            duration: 200,
+            elapsed: 10,
+            isPlaying: true,
+            progressAnchorDate: anchor,
+            playbackRate: 1
+        )
+        var progressed = first
+        progressed.elapsed = 120
+        progressed.progressAnchorDate = anchor.addingTimeInterval(110)
+
+        XCTAssertEqual(
+            QQMusicAXScanKey(processIdentifier: 42, snapshot: first),
+            QQMusicAXScanKey(processIdentifier: 42, snapshot: progressed)
+        )
+
+        var paused = progressed
+        paused.isPlaying = false
+        XCTAssertNotEqual(
+            QQMusicAXScanKey(processIdentifier: 42, snapshot: first),
+            QQMusicAXScanKey(processIdentifier: 42, snapshot: paused)
+        )
+
+        var nextTrack = progressed
+        nextTrack.title = "Next Track"
+        XCTAssertNotEqual(
+            QQMusicAXScanKey(processIdentifier: 42, snapshot: first),
+            QQMusicAXScanKey(processIdentifier: 42, snapshot: nextTrack)
+        )
+    }
+
+    func testQQMusicEnrichmentPreservesAdapterProgressAndPlaybackState() throws {
+        let anchor = Date(timeIntervalSince1970: 1_000)
+        let snapshot = MediaSnapshot(
+            sourceName: "QQ 音乐",
+            bundleIdentifier: "com.tencent.QQMusicMac",
+            title: "Track",
+            artist: "",
+            duration: 240,
+            elapsed: 91,
+            isPlaying: true,
+            progressAnchorDate: anchor,
+            playbackRate: 1.25
+        )
+        let metadata = QQMusicTrackMetadata(
+            title: "Track",
+            artist: "Artist from AX",
+            isPlaying: false
+        )
+
+        let enriched = try XCTUnwrap(QQMusicSnapshotEnricher.merge(
+            snapshot,
+            metadata: metadata,
+            bundleIdentifier: "com.tencent.QQMusicMac"
+        ))
+
+        XCTAssertEqual(enriched.artist, "Artist from AX")
+        XCTAssertEqual(enriched.duration, 240)
+        XCTAssertEqual(enriched.elapsed, 91)
+        XCTAssertEqual(enriched.isPlaying, true)
+        XCTAssertEqual(enriched.progressAnchorDate, anchor)
+        XCTAssertEqual(enriched.playbackRate, 1.25)
+    }
+
+    @MainActor
+    func testMediaServiceCoalescesHighFrequencyQQMusicAXScans() async {
+        let scanner = TestQQMusicAccessibilityScanner(
+            metadata: QQMusicTrackMetadata(
+                title: "Track",
+                artist: "Artist from AX",
+                isPlaying: true
+            ),
+            delayNanoseconds: 100_000_000
+        )
+        var received: [MediaSnapshot] = []
+        let service = MediaService(
+            onSnapshot: { received.append($0) },
+            onHealth: { _ in },
+            qqMusicScanner: scanner,
+            qqMusicProcessIdentifier: { 42 }
+        )
+
+        for elapsed in 0..<10 {
+            service.receiveAdapterSnapshot(MediaSnapshot(
+                sourceName: "QQ 音乐",
+                bundleIdentifier: "com.tencent.QQMusicMac",
+                title: "Track",
+                artist: "",
+                duration: 200,
+                elapsed: TimeInterval(elapsed),
+                isPlaying: true,
+                progressAnchorDate: Date(timeIntervalSince1970: TimeInterval(1_000 + elapsed)),
+                playbackRate: 1
+            ))
+        }
+
+        try? await Task.sleep(nanoseconds: 250_000_000)
+
+        let scannerInvocationCount = await scanner.count()
+        XCTAssertEqual(scannerInvocationCount, 1)
+        XCTAssertEqual(received.last?.artist, "Artist from AX")
+        XCTAssertEqual(received.last?.elapsed, 9)
+        XCTAssertEqual(received.last?.isPlaying, true)
+        service.stop()
+    }
+
+    @MainActor
+    func testMediaServiceSkipsAXForCompleteQQMusicAdapterSnapshot() async {
+        let scanner = TestQQMusicAccessibilityScanner(
+            metadata: QQMusicTrackMetadata(
+                title: "Track",
+                artist: "Unexpected AX Artist",
+                isPlaying: false
+            )
+        )
+        var received: [MediaSnapshot] = []
+        let service = MediaService(
+            onSnapshot: { received.append($0) },
+            onHealth: { _ in },
+            qqMusicScanner: scanner,
+            qqMusicProcessIdentifier: { 42 }
+        )
+
+        service.receiveAdapterSnapshot(MediaSnapshot(
+            sourceName: "QQ 音乐",
+            bundleIdentifier: "com.tencent.QQMusicMac",
+            title: "Track",
+            artist: "Adapter Artist",
+            duration: 200,
+            elapsed: 10,
+            isPlaying: true
+        ))
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        let scannerInvocationCount = await scanner.count()
+        XCTAssertEqual(scannerInvocationCount, 0)
+        XCTAssertEqual(received.count, 1)
+        XCTAssertEqual(received.last?.artist, "Adapter Artist")
+        XCTAssertEqual(received.last?.isPlaying, true)
+        service.stop()
+    }
+
+    @MainActor
+    func testMediaServiceDropsQQMusicAXResultAfterStop() async {
+        let scanner = TestQQMusicAccessibilityScanner(
+            metadata: QQMusicTrackMetadata(
+                title: "Track",
+                artist: "Late AX Artist",
+                isPlaying: true
+            ),
+            delayNanoseconds: 100_000_000
+        )
+        var received: [MediaSnapshot] = []
+        let service = MediaService(
+            onSnapshot: { received.append($0) },
+            onHealth: { _ in },
+            qqMusicScanner: scanner,
+            qqMusicProcessIdentifier: { 42 }
+        )
+
+        service.receiveAdapterSnapshot(MediaSnapshot(
+            sourceName: "QQ 音乐",
+            bundleIdentifier: "com.tencent.QQMusicMac",
+            title: "Track",
+            artist: "",
+            duration: 200,
+            elapsed: 10,
+            isPlaying: true
+        ))
+        service.stop()
+        try? await Task.sleep(nanoseconds: 200_000_000)
+
+        XCTAssertEqual(received.count, 1)
+        XCTAssertEqual(received.last?.artist, "")
+    }
+
+    @MainActor
+    func testMediaServiceDropsStaleQQMusicAXResultAfterTrackChange() async {
+        let scanner = SequencedQQMusicAccessibilityScanner(responses: [
+            .init(
+                metadata: QQMusicTrackMetadata(
+                    title: "Old Track",
+                    artist: "Old AX Artist",
+                    isPlaying: true
+                ),
+                delayNanoseconds: 80_000_000
+            ),
+            .init(
+                metadata: QQMusicTrackMetadata(
+                    title: "New Track",
+                    artist: "New AX Artist",
+                    isPlaying: true
+                ),
+                delayNanoseconds: 10_000_000
+            )
+        ])
+        var received: [MediaSnapshot] = []
+        let service = MediaService(
+            onSnapshot: { received.append($0) },
+            onHealth: { _ in },
+            qqMusicScanner: scanner,
+            qqMusicProcessIdentifier: { 42 }
+        )
+
+        service.receiveAdapterSnapshot(MediaSnapshot(
+            sourceName: "QQ 音乐",
+            bundleIdentifier: "com.tencent.QQMusicMac",
+            title: "Old Track",
+            artist: "",
+            duration: 200,
+            elapsed: 10,
+            isPlaying: true
+        ))
+        service.receiveAdapterSnapshot(MediaSnapshot(
+            sourceName: "QQ 音乐",
+            bundleIdentifier: "com.tencent.QQMusicMac",
+            title: "New Track",
+            artist: "",
+            duration: 240,
+            elapsed: 2,
+            isPlaying: true
+        ))
+        let newTrackStart = received.count - 1
+
+        try? await Task.sleep(nanoseconds: 200_000_000)
+
+        XCTAssertTrue(received[newTrackStart...].allSatisfy { $0.title == "New Track" })
+        XCTAssertEqual(received.last?.artist, "New AX Artist")
+        XCTAssertEqual(received.last?.elapsed, 2)
+        service.stop()
     }
 
     func testMediaSnapshotProgressUsesElapsedSecondsFromMediaRemote() {
