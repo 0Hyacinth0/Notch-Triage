@@ -19,6 +19,7 @@ enum NotificationSourceDetection {
     ]
 
     static let notificationMarkers = ["通知", "notification", "alert", "提醒"]
+    static let widgetMarkers = ["widget", "widget-local", "widgetkit"]
 
     static func detect(
         in texts: [String],
@@ -30,6 +31,7 @@ enum NotificationSourceDetection {
         let allCandidates = candidates + knownSources
 
         for candidate in uniqueCandidates(allCandidates).sorted(by: { $0.name.count > $1.name.count }) {
+            guard !isWidgetOrExtension(candidate) else { continue }
             let markers = [candidate.name, candidate.bundleIdentifier]
                 .compactMap { $0 }
             if values.contains(where: { value in
@@ -52,6 +54,19 @@ enum NotificationSourceDetection {
                 text.localizedCaseInsensitiveContains($0)
             }
         }
+    }
+
+    static func isWidgetOrExtension(_ candidate: NotificationSourceCandidate) -> Bool {
+        [candidate.name, candidate.bundleIdentifier]
+            .compactMap { $0 }
+            .contains(where: isWidgetOrExtension)
+    }
+
+    static func isWidgetOrExtension(_ text: String) -> Bool {
+        let normalized = text
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .localizedLowercase
+        return widgetMarkers.contains { normalized.contains($0) }
     }
 
     private static func uniqueCandidates(
@@ -361,8 +376,7 @@ final class NotificationBridge {
                     string(element, attribute: kAXDescriptionAttribute),
                     string(element, attribute: kAXIdentifierAttribute),
                     string(element, attribute: kAXValueAttribute),
-                    string(element, attribute: kAXHelpAttribute),
-                    string(element, attribute: kAXRoleDescriptionAttribute)
+                    string(element, attribute: kAXHelpAttribute)
                 ].compactMap { $0 }
             }
 

@@ -8,7 +8,10 @@ final class AppModel: ObservableObject {
         static let leftWingContent = "notch.leftWingContent"
         static let rightWingContent = "notch.rightWingContent"
         static let ringAppearance = "notch.ringAppearance"
-        static let notificationEyeStyle = "notch.notificationEyeStyle"
+        static let notificationPromptIcon = "notch.notificationPromptIcon"
+        static let notificationPromptColor = "notch.notificationPromptColor"
+        static let notificationPromptAnimation = "notch.notificationPromptAnimation"
+        static let legacyNotificationEyeStyle = "notch.notificationEyeStyle"
         static let lastUpdateCheck = "updates.lastSuccessfulCheck"
         static let lastPromptedVersion = "updates.lastPromptedVersion"
     }
@@ -59,11 +62,29 @@ final class AppModel: ObservableObject {
         }
     }
 
-    @Published var notificationEyeStyle: NotificationEyeStyle {
+    @Published var notificationPromptIcon: NotificationPromptIcon {
         didSet {
             UserDefaults.standard.set(
-                notificationEyeStyle.rawValue,
-                forKey: PreferenceKey.notificationEyeStyle
+                notificationPromptIcon.rawValue,
+                forKey: PreferenceKey.notificationPromptIcon
+            )
+        }
+    }
+
+    @Published var notificationPromptColor: NotificationPromptColor {
+        didSet {
+            UserDefaults.standard.set(
+                notificationPromptColor.rawValue,
+                forKey: PreferenceKey.notificationPromptColor
+            )
+        }
+    }
+
+    @Published var notificationPromptAnimation: NotificationPromptAnimation {
+        didSet {
+            UserDefaults.standard.set(
+                notificationPromptAnimation.rawValue,
+                forKey: PreferenceKey.notificationPromptAnimation
             )
         }
     }
@@ -91,6 +112,8 @@ final class AppModel: ObservableObject {
         notificationPulse != nil || !notificationSources.isEmpty
     }
 
+    @Published private(set) var notificationAnimationTick = 0
+
     var pulseTask: Task<Void, Never>?
     var systemHUDDismissTask: Task<Void, Never>?
     var hoverCollapseTask: Task<Void, Never>?
@@ -99,6 +122,7 @@ final class AppModel: ObservableObject {
     var settingsWindowTask: Task<Void, Never>?
     var settingsWindowOpener: (() -> Void)?
     private var accessibilityRequestTask: Task<Void, Never>?
+    private var notificationAnimationTask: Task<Void, Never>?
 
     func motion(_ animation: Animation) -> Animation {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
@@ -117,11 +141,29 @@ final class AppModel: ObservableObject {
                 forKey: PreferenceKey.rightWingContent
             ) ?? ""
         ) ?? .codex
-        notificationEyeStyle = NotificationEyeStyle(
+        let legacyPromptIcon: NotificationPromptIcon
+        switch UserDefaults.standard.string(
+            forKey: PreferenceKey.legacyNotificationEyeStyle
+        ) {
+        case "filled": legacyPromptIcon = .sparkles
+        case "circle": legacyPromptIcon = .sun
+        default: legacyPromptIcon = .sparkle
+        }
+        notificationPromptIcon = NotificationPromptIcon(
             rawValue: UserDefaults.standard.string(
-                forKey: PreferenceKey.notificationEyeStyle
+                forKey: PreferenceKey.notificationPromptIcon
             ) ?? ""
-        ) ?? .line
+        ) ?? legacyPromptIcon
+        notificationPromptColor = NotificationPromptColor(
+            rawValue: UserDefaults.standard.string(
+                forKey: PreferenceKey.notificationPromptColor
+            ) ?? ""
+        ) ?? .mint
+        notificationPromptAnimation = NotificationPromptAnimation(
+            rawValue: UserDefaults.standard.string(
+                forKey: PreferenceKey.notificationPromptAnimation
+            ) ?? ""
+        ) ?? .pulse
         if let data = UserDefaults.standard.data(forKey: PreferenceKey.ringAppearance),
            let savedAppearance = try? JSONDecoder().decode(
                RingAppearanceSettings.self,
@@ -130,6 +172,15 @@ final class AppModel: ObservableObject {
             ringAppearance = savedAppearance
         } else {
             ringAppearance = .default
+        }
+
+        notificationAnimationTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(1_200))
+                guard !Task.isCancelled, let self else { return }
+                guard self.notificationAttentionActive else { continue }
+                self.notificationAnimationTick &+= 1
+            }
         }
     }
 
@@ -495,9 +546,21 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func setNotificationEyeStyle(_ style: NotificationEyeStyle) {
+    func setNotificationPromptIcon(_ icon: NotificationPromptIcon) {
         withAnimation(motion(NotchDesign.Motion.value)) {
-            notificationEyeStyle = style
+            notificationPromptIcon = icon
+        }
+    }
+
+    func setNotificationPromptColor(_ color: NotificationPromptColor) {
+        withAnimation(motion(NotchDesign.Motion.value)) {
+            notificationPromptColor = color
+        }
+    }
+
+    func setNotificationPromptAnimation(_ animation: NotificationPromptAnimation) {
+        withAnimation(motion(NotchDesign.Motion.value)) {
+            notificationPromptAnimation = animation
         }
     }
 

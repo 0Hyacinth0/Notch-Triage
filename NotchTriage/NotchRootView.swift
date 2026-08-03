@@ -233,8 +233,7 @@ private func compactWingWidth(
 }
 
 private struct AttentionRing<Content: View>: View {
-    let showsEye: Bool
-    let eyeStyle: NotificationEyeStyle
+    @ObservedObject var model: AppModel
     let diameter: CGFloat
     @ViewBuilder let content: () -> Content
 
@@ -242,41 +241,83 @@ private struct AttentionRing<Content: View>: View {
         ZStack {
             content()
 
-            if showsEye {
-                NotificationEye(style: eyeStyle)
+            if model.notificationAttentionActive {
+                NotificationPrompt(model: model)
             }
         }
         .frame(width: diameter, height: diameter)
     }
 }
 
-private struct NotificationEye: View {
-    let style: NotificationEyeStyle
+private struct NotificationPrompt: View {
+    @ObservedObject var model: AppModel
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var isBlinking = false
+
+    private var phaseIsActive: Bool {
+        model.notificationAnimationTick.isMultiple(of: 2) == false
+    }
+
+    private var animation: Animation {
+        switch model.notificationPromptAnimation {
+        case .pulse: return .easeInOut(duration: 0.62)
+        case .float: return .easeInOut(duration: 0.76)
+        case .twinkle: return .easeInOut(duration: 0.46)
+        case .bounce: return .spring(response: 0.48, dampingFraction: 0.62)
+        }
+    }
 
     var body: some View {
-        Image(systemName: style.symbol)
-            .font(.system(size: 8, weight: .semibold))
-            .scaleEffect(x: 1, y: isBlinking ? 0.12 : 1)
-            .opacity(isBlinking ? 0.78 : 1)
-            .animation(.easeInOut(duration: 0.11), value: isBlinking)
+        Image(systemName: model.notificationPromptIcon.symbol)
+            .font(.system(size: 8.5, weight: .semibold))
+            .foregroundStyle(model.notificationPromptColor.color)
+            .scaleEffect(scale)
+            .opacity(opacity)
+            .rotationEffect(rotation)
+            .offset(y: verticalOffset)
+            .animation(
+                reduceMotion ? .linear(duration: 0.01) : animation,
+                value: model.notificationAnimationTick
+            )
             .accessibilityLabel("通知提示")
-            .task(id: reduceMotion) {
-                isBlinking = false
-                guard !reduceMotion else { return }
+    }
 
-                while !Task.isCancelled {
-                    try? await Task.sleep(for: .milliseconds(1_500))
-                    guard !Task.isCancelled else { return }
-                    isBlinking = true
+    private var scale: CGFloat {
+        guard !reduceMotion else { return 1 }
+        switch model.notificationPromptAnimation {
+        case .pulse: return phaseIsActive ? 1.18 : 0.94
+        case .float: return phaseIsActive ? 1.04 : 0.98
+        case .twinkle: return phaseIsActive ? 1.12 : 0.94
+        case .bounce: return phaseIsActive ? 1.18 : 0.92
+        }
+    }
 
-                    try? await Task.sleep(for: .milliseconds(110))
-                    guard !Task.isCancelled else { return }
-                    isBlinking = false
-                }
-            }
+    private var opacity: Double {
+        guard !reduceMotion else { return 0.92 }
+        switch model.notificationPromptAnimation {
+        case .pulse: return phaseIsActive ? 1 : 0.68
+        case .float: return phaseIsActive ? 0.92 : 0.78
+        case .twinkle: return phaseIsActive ? 1 : 0.58
+        case .bounce: return phaseIsActive ? 1 : 0.72
+        }
+    }
+
+    private var rotation: Angle {
+        guard !reduceMotion else { return .zero }
+        switch model.notificationPromptAnimation {
+        case .pulse: return .zero
+        case .float: return phaseIsActive ? .degrees(-3) : .degrees(3)
+        case .twinkle: return phaseIsActive ? .degrees(8) : .degrees(-8)
+        case .bounce: return .zero
+        }
+    }
+
+    private var verticalOffset: CGFloat {
+        guard !reduceMotion else { return 0 }
+        switch model.notificationPromptAnimation {
+        case .pulse, .twinkle, .bounce: return 0
+        case .float: return phaseIsActive ? -1.5 : 1.5
+        }
     }
 }
 
@@ -287,8 +328,7 @@ private struct CompactMediaContent: View {
 
     var body: some View {
         AttentionRing(
-            showsEye: model.notificationAttentionActive,
-            eyeStyle: model.notificationEyeStyle,
+            model: model,
             diameter: 22
         ) {
             MediaProgressRing(
@@ -355,8 +395,7 @@ private struct CompactBatteryContent: View {
 
     var body: some View {
         AttentionRing(
-            showsEye: model.notificationAttentionActive,
-            eyeStyle: model.notificationEyeStyle,
+            model: model,
             diameter: 22
         ) {
             UsageArc(
@@ -674,8 +713,7 @@ private struct LivingNotch: View {
 
     private var hoverMediaRing: some View {
         AttentionRing(
-            showsEye: model.notificationAttentionActive,
-            eyeStyle: model.notificationEyeStyle,
+            model: model,
             diameter: 20
         ) {
             MediaProgressRing(
@@ -689,8 +727,7 @@ private struct LivingNotch: View {
 
     private var hoverBatteryRing: some View {
         AttentionRing(
-            showsEye: model.notificationAttentionActive,
-            eyeStyle: model.notificationEyeStyle,
+            model: model,
             diameter: 20
         ) {
             UsageArc(
@@ -703,8 +740,7 @@ private struct LivingNotch: View {
 
     private func hoverCodexRing(_ primary: CodexLimitBucket) -> some View {
         AttentionRing(
-            showsEye: model.notificationAttentionActive,
-            eyeStyle: model.notificationEyeStyle,
+            model: model,
             diameter: 20
         ) {
             UsageArc(
@@ -741,8 +777,7 @@ private struct CompactCodexContent: View {
 
     var body: some View {
         AttentionRing(
-            showsEye: model.notificationAttentionActive,
-            eyeStyle: model.notificationEyeStyle,
+            model: model,
             diameter: 22
         ) {
             UsageArc(

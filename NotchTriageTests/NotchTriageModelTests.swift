@@ -143,14 +143,39 @@ final class NotchTriageModelTests: XCTestCase {
         )
     }
 
-    func testNotificationEyeStylesExposeStableSFSymbols() {
+    func testNotificationPromptOptionsExposeStableSymbolsAndValues() {
         XCTAssertEqual(
-            NotificationEyeStyle.allCases.map(\.symbol),
-            ["eye", "eye.fill", "eye.circle"]
+            NotificationPromptIcon.allCases.map(\.symbol),
+            ["sparkle", "sparkles", "bell.badge", "wand.and.stars", "leaf.fill", "heart.fill", "sun.max.fill"]
         )
         XCTAssertEqual(
-            Set(NotificationEyeStyle.allCases.map(\.id)).count,
-            NotificationEyeStyle.allCases.count
+            Set(NotificationPromptColor.allCases.map(\.id)).count,
+            NotificationPromptColor.allCases.count
+        )
+        XCTAssertEqual(
+            Set(NotificationPromptAnimation.allCases.map(\.id)).count,
+            NotificationPromptAnimation.allCases.count
+        )
+    }
+
+    func testNotificationSourceDetectionIgnoresWidgetExtensions() {
+        let widgetCandidate = NotificationSourceCandidate(
+            name: "CalendarWidgetExtension",
+            bundleIdentifier: "com.apple.calendar.widget"
+        )
+
+        XCTAssertTrue(NotificationSourceDetection.isWidgetOrExtension(widgetCandidate))
+        XCTAssertNil(
+            NotificationSourceDetection.detect(
+                in: ["CalendarWidgetExtension"],
+                candidates: [widgetCandidate]
+            )
+        )
+        XCTAssertNil(
+            NotificationSourceDetection.detect(
+                in: ["widget-local:weather", "WeatherWidget"],
+                candidates: []
+            )
         )
     }
 

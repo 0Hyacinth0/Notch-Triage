@@ -186,42 +186,70 @@ struct SettingsRootView: View {
             }
 
             SettingsGroup(title: "通知提示") {
-                HStack(alignment: .center, spacing: 12) {
-                    ZStack {
-                        Circle()
-                            .stroke(.tint, lineWidth: 2.5)
-                            .frame(width: 24, height: 24)
-                        Image(systemName: model.notificationEyeStyle.symbol)
-                            .font(.system(size: 8, weight: .semibold))
-                    }
-                    .frame(width: 20)
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("圆环提示眼睛")
-                            .font(.callout.weight(.medium))
-                        Text(model.notificationEyeStyle.subtitle)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Spacer(minLength: 12)
-
-                    Picker(
-                        "圆环提示眼睛",
-                        selection: Binding(
-                            get: { model.notificationEyeStyle },
-                            set: { model.setNotificationEyeStyle($0) }
-                        )
+                VStack(spacing: 12) {
+                    notificationPromptRow(
+                        icon: model.notificationPromptIcon.symbol,
+                        title: "提示图标",
+                        subtitle: model.notificationPromptIcon.subtitle
                     ) {
-                        ForEach(NotificationEyeStyle.allCases) { style in
-                            Text(style.title).tag(style)
+                        Picker(
+                            "提示图标",
+                            selection: Binding(
+                                get: { model.notificationPromptIcon },
+                                set: { model.setNotificationPromptIcon($0) }
+                            )
+                        ) {
+                            ForEach(NotificationPromptIcon.allCases) { icon in
+                                Text(icon.title).tag(icon)
+                            }
                         }
                     }
-                    .labelsHidden()
-                    .frame(width: 150)
+
+                    notificationPromptRow(
+                        icon: "circle.fill",
+                        title: "提示颜色",
+                        subtitle: model.notificationPromptColor.title,
+                        iconColor: model.notificationPromptColor.color
+                    ) {
+                        Picker(
+                            "提示颜色",
+                            selection: Binding(
+                                get: { model.notificationPromptColor },
+                                set: { model.setNotificationPromptColor($0) }
+                            )
+                        ) {
+                            ForEach(NotificationPromptColor.allCases) { color in
+                                HStack(spacing: 6) {
+                                    Circle()
+                                        .fill(color.color)
+                                        .frame(width: 9, height: 9)
+                                    Text(color.title)
+                                }
+                                .tag(color)
+                            }
+                        }
+                    }
+
+                    notificationPromptRow(
+                        icon: model.notificationPromptAnimation.symbol,
+                        title: "提示动画",
+                        subtitle: model.notificationPromptAnimation.subtitle
+                    ) {
+                        Picker(
+                            "提示动画",
+                            selection: Binding(
+                                get: { model.notificationPromptAnimation },
+                                set: { model.setNotificationPromptAnimation($0) }
+                            )
+                        ) {
+                            ForEach(NotificationPromptAnimation.allCases) { animation in
+                                Text(animation.title).tag(animation)
+                            }
+                        }
+                    }
                 }
 
-                Text("有通知或新提示时，当前显示的每个圆环中央都会出现眨眼提示；没有圆环的一侧不会显示。")
+                Text("有通知或新提示时，当前显示的每个圆环中央都会出现提示图标；两侧使用同一个节拍同步播放。没有圆环的一侧不会显示。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -239,6 +267,41 @@ struct SettingsRootView: View {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .stroke(.primary.opacity(0.08), lineWidth: 0.5)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func notificationPromptRow<PickerContent: View>(
+        icon: String,
+        title: String,
+        subtitle: String,
+        iconColor: Color = Color(nsColor: .controlAccentColor),
+        @ViewBuilder picker: () -> PickerContent
+    ) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(iconColor.opacity(0.14))
+                    .frame(width: 24, height: 24)
+                Image(systemName: icon)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(iconColor)
+            }
+            .frame(width: 20)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.callout.weight(.medium))
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 12)
+
+            picker()
+                .labelsHidden()
+                .frame(width: 150)
         }
     }
 

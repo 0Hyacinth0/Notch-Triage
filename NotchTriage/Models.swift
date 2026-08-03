@@ -303,34 +303,119 @@ struct RingAppearanceSettings: Codable, Equatable, Sendable {
     }
 }
 
-enum NotificationEyeStyle: String, CaseIterable, Codable, Identifiable, Sendable {
-    case line
-    case filled
-    case circle
+enum NotificationPromptIcon: String, CaseIterable, Codable, Identifiable, Sendable {
+    case sparkle
+    case sparkles
+    case bell
+    case wand
+    case leaf
+    case heart
+    case sun
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .line: return "线框眼睛"
-        case .filled: return "实心眼睛"
-        case .circle: return "圆框眼睛"
+        case .sparkle: return "微光"
+        case .sparkles: return "星芒"
+        case .bell: return "铃声"
+        case .wand: return "魔法"
+        case .leaf: return "叶片"
+        case .heart: return "心意"
+        case .sun: return "阳光"
         }
     }
 
     var subtitle: String {
         switch self {
-        case .line: return "轻量的 SF Symbols 线框"
-        case .filled: return "更醒目的实心提示"
-        case .circle: return "带外圈的提示图标"
+        case .sparkle: return "轻量、克制的单颗星光"
+        case .sparkles: return "更有存在感的星芒"
+        case .bell: return "清晰但不突兀的提醒"
+        case .wand: return "带一点趣味的魔法提示"
+        case .leaf: return "柔和自然的叶片"
+        case .heart: return "温和友好的心意"
+        case .sun: return "明亮温暖的阳光"
         }
     }
 
     var symbol: String {
         switch self {
-        case .line: return "eye"
-        case .filled: return "eye.fill"
-        case .circle: return "eye.circle"
+        case .sparkle: return "sparkle"
+        case .sparkles: return "sparkles"
+        case .bell: return "bell.badge"
+        case .wand: return "wand.and.stars"
+        case .leaf: return "leaf.fill"
+        case .heart: return "heart.fill"
+        case .sun: return "sun.max.fill"
+        }
+    }
+}
+
+enum NotificationPromptColor: String, CaseIterable, Codable, Identifiable, Sendable {
+    case mint
+    case sky
+    case violet
+    case rose
+    case amber
+    case white
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .mint: return "薄荷绿"
+        case .sky: return "晴空蓝"
+        case .violet: return "柔雾紫"
+        case .rose: return "玫瑰粉"
+        case .amber: return "琥珀金"
+        case .white: return "月光白"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .mint: return Color(red: 0.36, green: 0.96, blue: 0.74)
+        case .sky: return Color(red: 0.45, green: 0.78, blue: 1)
+        case .violet: return Color(red: 0.78, green: 0.58, blue: 1)
+        case .rose: return Color(red: 1, green: 0.57, blue: 0.76)
+        case .amber: return Color(red: 1, green: 0.78, blue: 0.34)
+        case .white: return Color(red: 0.96, green: 0.97, blue: 1)
+        }
+    }
+}
+
+enum NotificationPromptAnimation: String, CaseIterable, Codable, Identifiable, Sendable {
+    case pulse
+    case float
+    case twinkle
+    case bounce
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .pulse: return "轻柔呼吸"
+        case .float: return "上下漂浮"
+        case .twinkle: return "闪闪发光"
+        case .bounce: return "弹性点亮"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .pulse: return "缓慢放大与收回"
+        case .float: return "轻轻上下移动"
+        case .twinkle: return "透明度和角度变化"
+        case .bounce: return "更活泼的弹性动效"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .pulse: return "circle.dotted"
+        case .float: return "arrow.up.and.down"
+        case .twinkle: return "sparkles"
+        case .bounce: return "arrow.up"
         }
     }
 }
