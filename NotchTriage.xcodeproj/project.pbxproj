@@ -6,6 +6,11 @@
 	objectVersion = 71;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		NT00000000000000000000A3 /* MediaRemoteAdapter.framework in Embed MediaRemote Adapter */ = {isa = PBXBuildFile; fileRef = NT00000000000000000000A0 /* MediaRemoteAdapter.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		NT00000000000000000000A4 /* MediaRemoteAdapter Resources in Resources */ = {isa = PBXBuildFile; fileRef = NT00000000000000000000A1 /* MediaRemoteAdapter Resources */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		NT0000000000000000000057 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -16,9 +21,25 @@
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		NT00000000000000000000A2 /* Embed MediaRemote Adapter */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				NT00000000000000000000A3 /* MediaRemoteAdapter.framework in Embed MediaRemote Adapter */,
+			);
+			name = "Embed MediaRemote Adapter";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		NT0000000000000000000002 /* NotchTriage.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NotchTriage.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		NT0000000000000000000051 /* NotchTriageTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NotchTriageTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		NT00000000000000000000A0 /* MediaRemoteAdapter.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = Vendor/MediaRemoteAdapter/MediaRemoteAdapter.framework; sourceTree = "<group>"; };
+		NT00000000000000000000A1 /* MediaRemoteAdapter Resources */ = {isa = PBXFileReference; lastKnownFileType = folder; name = MediaRemoteAdapter; path = Vendor/MediaRemoteAdapter/MediaRemoteAdapter; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -49,6 +70,8 @@
 			children = (
 				NT0000000000000000000001 /* NotchTriage */,
 				NT0000000000000000000050 /* NotchTriageTests */,
+				NT00000000000000000000A0 /* MediaRemoteAdapter.framework */,
+				NT00000000000000000000A1 /* MediaRemoteAdapter Resources */,
 				NT0000000000000000000004 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -72,6 +95,7 @@
 				NT0000000000000000000010 /* Sources */,
 				NT0000000000000000000011 /* Frameworks */,
 				NT0000000000000000000012 /* Resources */,
+				NT00000000000000000000A2 /* Embed MediaRemote Adapter */,
 			);
 			buildRules = (
 			);
@@ -155,6 +179,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				NT00000000000000000000A4 /* MediaRemoteAdapter Resources in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -315,10 +340,10 @@
 				CODE_SIGN_ENTITLEMENTS = NotchTriage/NotchTriage.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 23;
+				CURRENT_PROJECT_VERSION = 24;
 				DEVELOPMENT_TEAM = VZ99K76PMS;
 				ENABLE_APP_SANDBOX = NO;
-				ENABLE_HARDENED_RUNTIME = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Notch Triage Debug";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
@@ -329,7 +354,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.2.3;
+				MARKETING_VERSION = 0.2.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.hyacinth.notchtriage.debug;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = NO;
@@ -348,7 +373,7 @@
 				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 23;
+				CURRENT_PROJECT_VERSION = 24;
 				DEVELOPMENT_TEAM = VZ99K76PMS;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -361,7 +386,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.2.3;
+				MARKETING_VERSION = 0.2.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.hyacinth.notchtriage;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = NO;

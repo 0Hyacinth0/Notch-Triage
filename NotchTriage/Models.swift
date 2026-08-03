@@ -607,10 +607,68 @@ struct MediaSnapshot: Equatable {
     var duration: TimeInterval
     var elapsed: TimeInterval
     var isPlaying: Bool
+    /// The point in time at which `elapsed` was observed by the media
+    /// provider.  A nil anchor intentionally keeps the snapshot's elapsed
+    /// value static (this is what the AppleScript/AX fallbacks provide).
+    var progressAnchorDate: Date?
+    /// Playback speed reported by the media provider.  Most players use 1x;
+    /// keeping this optional lets older/fallback providers omit the value.
+    var playbackRate: Double?
+
+    init(
+        sourceName: String,
+        bundleIdentifier: String?,
+        title: String,
+        artist: String,
+        duration: TimeInterval,
+        elapsed: TimeInterval,
+        isPlaying: Bool,
+        progressAnchorDate: Date? = nil,
+        playbackRate: Double? = nil
+    ) {
+        self.sourceName = sourceName
+        self.bundleIdentifier = bundleIdentifier
+        self.title = title
+        self.artist = artist
+        self.duration = duration
+        self.elapsed = elapsed
+        self.isPlaying = isPlaying
+        self.progressAnchorDate = progressAnchorDate
+        self.playbackRate = playbackRate
+    }
+
+    /// Compatibility alias for callers that use the adapter's `timestamp`
+    /// terminology.
+    var timestamp: Date? {
+        get { progressAnchorDate }
+        set { progressAnchorDate = newValue }
+    }
+
+    /// Returns the elapsed position at an injected point in time.  Injecting
+    /// `now` keeps progress calculations deterministic in unit tests and in
+    /// consumers that need to render a historical snapshot.
+    func estimatedElapsed(at now: Date = Date()) -> TimeInterval {
+        let base = max(0, elapsed)
+        let projected: TimeInterval
+        if isPlaying, let progressAnchorDate {
+            let elapsedSinceAnchor = max(0, now.timeIntervalSince(progressAnchorDate))
+            let rate = max(0, playbackRate ?? 1)
+            projected = base + elapsedSinceAnchor * rate
+        } else {
+            projected = base
+        }
+
+        guard duration > 0 else { return projected }
+        return min(duration, projected)
+    }
 
     var progress: Double {
+        progress(at: Date())
+    }
+
+    func progress(at now: Date = Date()) -> Double {
         guard duration > 0 else { return 0 }
-        return max(0, min(1, elapsed / duration))
+        return max(0, min(1, estimatedElapsed(at: now) / duration))
     }
 
     static let idle = MediaSnapshot(
@@ -620,7 +678,9 @@ struct MediaSnapshot: Equatable {
         artist: "",
         duration: 0,
         elapsed: 0,
-        isPlaying: false
+        isPlaying: false,
+        progressAnchorDate: nil,
+        playbackRate: nil
     )
 }
 

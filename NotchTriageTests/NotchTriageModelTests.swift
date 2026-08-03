@@ -41,6 +41,138 @@ final class NotchTriageModelTests: XCTestCase {
         XCTAssertEqual(makeBucket(windowMinutes: 90).windowLabel, "90 分钟")
     }
 
+    func testCodexUsageParserReadsCreditsAndEstimatesUSD() {
+        let message: [String: Any] = [
+            "result": [
+                "rateLimits": [
+                    "limitId": "codex",
+                    "primary": [
+                        "usedPercent": 42,
+                        "windowDurationMins": 10_080
+                    ],
+                    "credits": [
+                        "hasCredits": true,
+                        "unlimited": false,
+                        "balance": "2500.0"
+                    ]
+                ]
+            ]
+        ]
+
+        let snapshot = CodexUsageParser.parseMessage(message)
+
+        XCTAssertEqual(snapshot?.limits.first?.windowMinutes, 10_080)
+        XCTAssertEqual(snapshot?.credits?.credits, Decimal(2_500))
+        XCTAssertEqual(snapshot?.credits?.estimatedUSD, Decimal(100))
+    }
+
+    func testCodexUsageParserKeepsCreditsAcrossSparseUpdate() {
+        let previous = CodexCreditsBalance(
+            hasCredits: true,
+            unlimited: false,
+            balance: "125.5"
+        )
+        let sparseUpdate: [String: Any] = [
+            "method": "account/rateLimits/updated",
+            "params": [
+                "rateLimits": [
+                    "limitId": "codex",
+                    "primary": [
+                        "usedPercent": 10,
+                        "windowDurationMins": 10_080
+                    ]
+                ]
+            ]
+        ]
+
+        let snapshot = CodexUsageParser.parseMessage(
+            sparseUpdate,
+            previousCredits: previous
+        )
+
+        XCTAssertEqual(snapshot?.credits, previous)
+    }
+
+    func testCodexBalancePresentationCoversConnectionAndAccountStates() {
+        let connecting = CodexBalancePresentation(
+            credits: nil,
+            healthMessage: "正在读取 Codex"
+        )
+        XCTAssertEqual(
+            connecting.state,
+            .connecting(message: "正在读取 Codex")
+        )
+        XCTAssertEqual(connecting.estimatedUSDLabel, "正在连接")
+        XCTAssertEqual(connecting.creditsLabel, "正在读取 Codex")
+
+        let unlimited = CodexBalancePresentation(
+            credits: CodexCreditsBalance(
+                hasCredits: true,
+                unlimited: true,
+                balance: nil
+            ),
+            healthMessage: "ready"
+        )
+        XCTAssertEqual(unlimited.state, .unlimited)
+        XCTAssertEqual(unlimited.estimatedUSDLabel, "无限")
+        XCTAssertEqual(unlimited.creditsLabel, "credits 无上限")
+
+        let unavailable = CodexBalancePresentation(
+            credits: CodexCreditsBalance(
+                hasCredits: false,
+                unlimited: false,
+                balance: nil
+            ),
+            healthMessage: "ready"
+        )
+        XCTAssertEqual(unavailable.state, .unavailable)
+        XCTAssertEqual(unavailable.estimatedUSDLabel, "不可用")
+        XCTAssertEqual(unavailable.creditsLabel, "账户未启用 credits")
+
+        let unknown = CodexBalancePresentation(
+            credits: CodexCreditsBalance(
+                hasCredits: true,
+                unlimited: false,
+                balance: nil
+            ),
+            healthMessage: "ready"
+        )
+        XCTAssertEqual(unknown.state, .unknown)
+        XCTAssertEqual(unknown.estimatedUSDLabel, "余额未知")
+        XCTAssertEqual(unknown.creditsLabel, "credits 暂未返回")
+
+        let available = CodexBalancePresentation(
+            credits: CodexCreditsBalance(
+                hasCredits: true,
+                unlimited: false,
+                balance: "2500"
+            ),
+            healthMessage: "ready"
+        )
+        XCTAssertEqual(
+            available.state,
+            .available(estimatedUSD: Decimal(100), credits: Decimal(2_500))
+        )
+        XCTAssertTrue(available.estimatedUSDLabel.hasPrefix("≈ "))
+        XCTAssertTrue(available.creditsLabel.hasSuffix(" credits"))
+        XCTAssertEqual(available.hint, "按 25 credits ≈ US$1")
+    }
+
+    func testWeeklyCodexLimitPrefersSevenDaysThenLargestWindow() {
+        let short = makeBucket(id: "short", windowMinutes: 300)
+        let weekly = makeBucket(id: "weekly", windowMinutes: 10_080)
+        let long = makeBucket(id: "long", windowMinutes: 20_160)
+
+        XCTAssertEqual(
+            AppModel.weeklyCodexLimit(from: [short, long, weekly]),
+            weekly
+        )
+        XCTAssertEqual(
+            AppModel.weeklyCodexLimit(from: [short, long]),
+            long
+        )
+    }
+
     func testMediaSnapshotProgressClampsUnknownNegativeAndExcess() {
         XCTAssertEqual(makeSnapshot(duration: 0, elapsed: 0).progress, 0)
         XCTAssertEqual(makeSnapshot(duration: 100, elapsed: 25).progress, 0.25)
@@ -51,18 +183,132 @@ final class NotchTriageModelTests: XCTestCase {
     func testQQMusicMetadataParserReadsTrackAndPlaybackAction() {
         XCTAssertEqual(
             QQMusicMetadataParser.track(
-                from: "歌曲名：朝天门 - 歌手名：GAI周延",
+                from: "歌曲名：测试歌曲 - 歌手名：测试歌手",
                 isPlaying: true
             ),
             QQMusicTrackMetadata(
-                title: "朝天门",
-                artist: "GAI周延",
+                title: "测试歌曲",
+                artist: "测试歌手",
                 isPlaying: true
             )
         )
         XCTAssertEqual(QQMusicMetadataParser.isPlaying(from: ["播放"]), false)
         XCTAssertEqual(QQMusicMetadataParser.isPlaying(from: ["暂停"]), true)
         XCTAssertNil(QQMusicMetadataParser.isPlaying(from: ["播放列表"]))
+    }
+
+    func testMediaSnapshotProgressUsesElapsedSecondsFromMediaRemote() {
+        let snapshot = makeSnapshot(duration: 232, elapsed: 58)
+
+        XCTAssertEqual(snapshot.elapsed, 58)
+        XCTAssertEqual(snapshot.duration, 232)
+        XCTAssertEqual(snapshot.progress, 0.25, accuracy: 0.0001)
+    }
+
+    func testMediaSnapshotEstimatedElapsedUsesTimestampAndPlaybackRate() {
+        let anchor = Date(timeIntervalSince1970: 1_000)
+        let snapshot = MediaSnapshot(
+            sourceName: "Test",
+            bundleIdentifier: nil,
+            title: "Track",
+            artist: "Artist",
+            duration: 200,
+            elapsed: 40,
+            isPlaying: true,
+            progressAnchorDate: anchor,
+            playbackRate: 1.5
+        )
+
+        XCTAssertEqual(snapshot.estimatedElapsed(at: anchor.addingTimeInterval(4)), 46)
+        XCTAssertEqual(
+            snapshot.progress(at: anchor.addingTimeInterval(4)),
+            0.23,
+            accuracy: 0.0001
+        )
+    }
+
+    func testMediaSnapshotEstimatedElapsedPausedMissingFutureAndClamped() {
+        let anchor = Date(timeIntervalSince1970: 1_000)
+        let paused = MediaSnapshot(
+            sourceName: "Test",
+            bundleIdentifier: nil,
+            title: "Track",
+            artist: "Artist",
+            duration: 200,
+            elapsed: 40,
+            isPlaying: false,
+            progressAnchorDate: anchor,
+            playbackRate: 2
+        )
+        XCTAssertEqual(paused.estimatedElapsed(at: anchor.addingTimeInterval(100)), 40)
+
+        let missingAnchor = MediaSnapshot(
+            sourceName: "Test",
+            bundleIdentifier: nil,
+            title: "Track",
+            artist: "Artist",
+            duration: 200,
+            elapsed: 40,
+            isPlaying: true,
+            progressAnchorDate: nil,
+            playbackRate: 2
+        )
+        XCTAssertEqual(missingAnchor.estimatedElapsed(at: anchor.addingTimeInterval(100)), 40)
+
+        let future = MediaSnapshot(
+            sourceName: "Test",
+            bundleIdentifier: nil,
+            title: "Track",
+            artist: "Artist",
+            duration: 200,
+            elapsed: 40,
+            isPlaying: true,
+            progressAnchorDate: anchor.addingTimeInterval(20),
+            playbackRate: 2
+        )
+        XCTAssertEqual(future.estimatedElapsed(at: anchor), 40)
+
+        let clamped = MediaSnapshot(
+            sourceName: "Test",
+            bundleIdentifier: nil,
+            title: "Track",
+            artist: "Artist",
+            duration: 200,
+            elapsed: 40,
+            isPlaying: true,
+            progressAnchorDate: anchor,
+            playbackRate: 2
+        )
+        XCTAssertEqual(clamped.estimatedElapsed(at: anchor.addingTimeInterval(100)), 200)
+        XCTAssertEqual(clamped.progress(at: anchor.addingTimeInterval(100)), 1)
+    }
+
+    func testMediaRemoteAdapterParserReadsSnapshotAndIdleNull() {
+        let line = """
+        {"type":"data","diff":false,"payload":{"bundleIdentifier":"com.spotify.client","playing":true,"title":"Track","artist":"Artist","duration":240,"elapsedTime":20,"timestamp":"2026-08-04T12:00:00.000Z","playbackRate":1.5}}
+        """
+        let snapshot = MediaRemoteAdapterParser.parse(line: line)
+
+        XCTAssertEqual(snapshot?.bundleIdentifier, "com.spotify.client")
+        XCTAssertEqual(snapshot?.title, "Track")
+        XCTAssertEqual(snapshot?.artist, "Artist")
+        XCTAssertEqual(snapshot?.duration, 240)
+        XCTAssertEqual(snapshot?.elapsed, 20)
+        XCTAssertEqual(snapshot?.playbackRate, 1.5)
+        XCTAssertEqual(snapshot?.isPlaying, true)
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        XCTAssertEqual(
+            snapshot?.progressAnchorDate,
+            formatter.date(from: "2026-08-04T12:00:00.000Z")
+        )
+        XCTAssertTrue(
+            MediaRemoteAdapterParser.isEmptyPayload(
+                line: #"{"type":"data","diff":false,"payload":{}}"#
+            )
+        )
+        XCTAssertEqual(MediaRemoteAdapterParser.parse(line: "null"), .idle)
+        XCTAssertNil(MediaRemoteAdapterParser.parse(line: "not json"))
     }
 
     func testRingAppearanceDefaultFollowsSelectedTheme() {
@@ -202,11 +448,12 @@ final class NotchTriageModelTests: XCTestCase {
     }
 
     private func makeBucket(
+        id: String = "test",
         usedPercent: Double = 0,
         windowMinutes: Int = 60
     ) -> CodexLimitBucket {
         CodexLimitBucket(
-            id: "test",
+            id: id,
             name: "Test",
             usedPercent: usedPercent,
             windowMinutes: windowMinutes,

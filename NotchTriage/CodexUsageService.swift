@@ -3,9 +3,10 @@ import Foundation
 @MainActor
 final class CodexUsageService {
     typealias LimitsHandler = @MainActor ([CodexLimitBucket]) -> Void
+    typealias UsageHandler = @MainActor ([CodexLimitBucket], CodexCreditsBalance?) -> Void
     typealias HealthHandler = @MainActor (ServiceHealth) -> Void
 
-    private let onLimits: LimitsHandler
+    private let onUsage: UsageHandler
     private let onHealth: HealthHandler
 
     private var process: Process?
@@ -14,13 +15,44 @@ final class CodexUsageService {
     private var errorPipe: Pipe?
     private var readBuffer = Data()
     private var requestID = 1
+    private var latestCredits: CodexCreditsBalance?
+    private var latestLimits: [CodexLimitBucket] = []
 
     init(
+        onUsage: @escaping UsageHandler,
+        onHealth: @escaping HealthHandler
+    ) {
+        self.onUsage = onUsage
+        self.onHealth = onHealth
+    }
+
+    /// Backwards-compatible initializer for callers that only render rate
+    /// limits. New callers should use `onUsage` so credits and limits arrive in
+    /// one callback.
+    convenience init(
         onLimits: @escaping LimitsHandler,
         onHealth: @escaping HealthHandler
     ) {
-        self.onLimits = onLimits
-        self.onHealth = onHealth
+        self.init(
+            onUsage: { limits, _ in onLimits(limits) },
+            onHealth: onHealth
+        )
+    }
+
+    /// Forward the pure parser through the service type for lightweight unit
+    /// tests without constructing a process or touching the file system.
+    nonisolated static func parseMessage(
+        _ message: [String: Any],
+        previousCredits: CodexCreditsBalance? = nil
+    ) -> CodexUsageSnapshot? {
+        CodexUsageParser.parseMessage(message, previousCredits: previousCredits)
+    }
+
+    nonisolated static func parseRateLimits(
+        from payload: [String: Any],
+        previousCredits: CodexCreditsBalance? = nil
+    ) -> CodexUsageSnapshot {
+        CodexUsageParser.parseRateLimits(from: payload, previousCredits: previousCredits)
     }
 
     func start() {
@@ -157,95 +189,19 @@ final class CodexUsageService {
             return
         }
 
-        if let result = message["result"] as? [String: Any],
-           result["rateLimits"] != nil || result["rateLimitsByLimitId"] != nil {
-            onLimits(parseLimits(from: result))
-            return
+        if let snapshot = CodexUsageParser.parseMessage(
+            message,
+            previousCredits: latestCredits
+        ) {
+            let isSparseUpdate = message["method"] as? String
+                == "account/rateLimits/updated"
+            let limits = isSparseUpdate && snapshot.limits.isEmpty
+                ? latestLimits
+                : snapshot.limits
+            latestLimits = limits
+            latestCredits = snapshot.credits
+            onUsage(limits, snapshot.credits)
         }
-
-        if message["method"] as? String == "account/rateLimits/updated",
-           let params = message["params"] as? [String: Any] {
-            onLimits(parseLimits(from: params))
-        }
-    }
-
-    private func parseLimits(from payload: [String: Any]) -> [CodexLimitBucket] {
-        var buckets: [CodexLimitBucket] = []
-
-        if let byID = payload["rateLimitsByLimitId"] as? [String: Any] {
-            for (limitID, rawValue) in byID {
-                guard let rawBucket = rawValue as? [String: Any] else { continue }
-                buckets.append(contentsOf: parseBucket(rawBucket, fallbackID: limitID))
-            }
-        } else if let rawBucket = payload["rateLimits"] as? [String: Any] {
-            buckets.append(contentsOf: parseBucket(rawBucket, fallbackID: "codex"))
-        }
-
-        return buckets
-            .filter { $0.windowMinutes > 0 }
-            .sorted {
-                if $0.windowMinutes == $1.windowMinutes {
-                    return $0.id < $1.id
-                }
-                return $0.windowMinutes < $1.windowMinutes
-            }
-    }
-
-    private func parseBucket(
-        _ rawBucket: [String: Any],
-        fallbackID: String
-    ) -> [CodexLimitBucket] {
-        let limitID = rawBucket["limitId"] as? String ?? fallbackID
-        let displayName = rawBucket["limitName"] as? String ?? "Codex"
-        var result: [CodexLimitBucket] = []
-
-        if let primary = rawBucket["primary"] as? [String: Any],
-           let bucket = parseWindow(primary, id: "\(limitID)-primary", name: displayName) {
-            result.append(bucket)
-        }
-
-        if let secondary = rawBucket["secondary"] as? [String: Any],
-           let bucket = parseWindow(secondary, id: "\(limitID)-secondary", name: displayName) {
-            result.append(bucket)
-        }
-
-        return result
-    }
-
-    private func parseWindow(
-        _ raw: [String: Any],
-        id: String,
-        name: String
-    ) -> CodexLimitBucket? {
-        guard let usedPercent = number(raw["usedPercent"]),
-              let windowMinutesDouble = number(raw["windowDurationMins"]) else {
-            return nil
-        }
-
-        let resetDate = number(raw["resetsAt"]).map {
-            Date(timeIntervalSince1970: $0)
-        }
-
-        return CodexLimitBucket(
-            id: id,
-            name: name,
-            usedPercent: usedPercent,
-            windowMinutes: Int(windowMinutesDouble),
-            resetsAt: resetDate
-        )
-    }
-
-    private func number(_ value: Any?) -> Double? {
-        if let number = value as? NSNumber {
-            return number.doubleValue
-        }
-        if let double = value as? Double {
-            return double
-        }
-        if let integer = value as? Int {
-            return Double(integer)
-        }
-        return nil
     }
 
     private func findCodexExecutable() -> URL? {

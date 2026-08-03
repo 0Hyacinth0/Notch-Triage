@@ -31,18 +31,23 @@ enum QQMusicMetadataParser {
         )
     }
 
-    static func isPlaying(from buttonTexts: [String]) -> Bool? {
-        let normalized = buttonTexts.map {
+    static func isPlaying(from actionTexts: [String]) -> Bool? {
+        let normalized = actionTexts.map {
             $0.replacingOccurrences(of: "：", with: ":")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
         }
 
         // QQ Music exposes the action of the play/pause button rather than
         // a separate state value: “暂停” means the track is playing, while
         // “播放” means the track is paused.
-        if normalized.contains(where: { $0.contains("暂停") }) {
+        if normalized.contains(where: {
+            $0 == "暂停" || ($0.contains("暂停") && !$0.contains("列表"))
+        }) {
             return true
         }
-        if normalized.contains(where: { $0 == "播放" }) {
+        if normalized.contains(where: {
+            $0 == "播放" || ($0.hasPrefix("播放") && !$0.contains("列表"))
+        }) {
             return false
         }
         return nil
@@ -67,6 +72,17 @@ final class MediaService {
     private var mediaRemoteHandle: UnsafeMutableRawPointer?
     private var getNowPlayingInfo: GetNowPlayingInfo?
     private var appleScriptFallbackDisabled = false
+    private var adapterBridgeHealthy = false
+    private var stopping = false
+
+    private lazy var adapterBridge = MediaRemoteAdapterBridge(
+        onSnapshot: { [weak self] snapshot in
+            self?.receiveAdapterSnapshot(snapshot)
+        },
+        onFailure: { [weak self] reason in
+            self?.adapterDidFail(reason)
+        }
+    )
 
     init(
         onSnapshot: @escaping SnapshotHandler,
@@ -78,10 +94,22 @@ final class MediaService {
     }
 
     func start() {
-        refresh()
+        stopping = false
+        adapterBridgeHealthy = true
+        if adapterBridge.start() {
+            onHealth(.ready("已连接媒体适配器"))
+            return
+        }
+
+        adapterBridgeHealthy = false
+        onHealth(.warning("媒体适配器不可用，将使用系统播放桥接"))
+        refreshDirect()
     }
 
     func stop() {
+        stopping = true
+        adapterBridge.stop()
+        adapterBridgeHealthy = false
         if let mediaRemoteHandle {
             dlclose(mediaRemoteHandle)
         }
@@ -90,15 +118,16 @@ final class MediaService {
     }
 
     func refresh() {
-        // Hardened Runtime builds can receive “Operation not permitted” from
-        // MediaRemote even though the player exposes a complete AX tree.
-        // QQ Music is one of those clients, so prefer its direct AX snapshot
-        // whenever the client is running and exposes a track.
-        if let qqSnapshot = qqMusicSnapshot() {
-            onSnapshot(qqSnapshot)
-            return
+        if adapterBridgeHealthy {
+            if adapterBridge.isRunning {
+                return
+            }
+            adapterBridgeHealthy = false
         }
+        refreshDirect()
+    }
 
+    private func refreshDirect() {
         guard let getNowPlayingInfo else {
             refreshWithAppleScript()
             return
@@ -122,6 +151,25 @@ final class MediaService {
         }
 
         getNowPlayingInfo(.main, callback)
+    }
+
+    private func receiveAdapterSnapshot(_ snapshot: MediaSnapshot) {
+        guard !stopping else { return }
+        if snapshot == .idle {
+            onSnapshot(.idle)
+            return
+        }
+        var resolved = snapshot
+        resolved.sourceName = sourceName(for: snapshot.bundleIdentifier)
+        resolved = resolvedAdapterSnapshot(resolved)
+        onSnapshot(resolved)
+    }
+
+    private func adapterDidFail(_ reason: String) {
+        guard !stopping else { return }
+        adapterBridgeHealthy = false
+        onHealth(.warning("媒体适配器异常：\(reason)；已切换系统播放桥接"))
+        refreshDirect()
     }
 
     private func loadMediaRemote() {
@@ -154,6 +202,7 @@ final class MediaService {
         let duration = numberValue(in: info, suffix: "Duration") ?? 0
         let elapsed = numberValue(in: info, suffix: "ElapsedTime") ?? 0
         let rate = numberValue(in: info, suffix: "PlaybackRate") ?? 0
+        let timestamp = dateValue(in: info, suffix: "Timestamp")
         let bundleIdentifier =
             stringValue(in: info, suffix: "ClientBundleIdentifier")
             ?? stringValue(in: info, suffix: "ApplicationBundleIdentifier")
@@ -165,7 +214,9 @@ final class MediaService {
             artist: artist,
             duration: duration,
             elapsed: elapsed,
-            isPlaying: rate > 0
+            isPlaying: rate > 0,
+            progressAnchorDate: timestamp,
+            playbackRate: rate
         )
     }
 
@@ -185,6 +236,24 @@ final class MediaService {
         for (key, value) in dictionary where key.localizedCaseInsensitiveContains(suffix) {
             if let number = value as? NSNumber {
                 return number.doubleValue
+            }
+        }
+        return nil
+    }
+
+    private func dateValue(in dictionary: [String: Any], suffix: String) -> Date? {
+        for (key, value) in dictionary where key.localizedCaseInsensitiveContains(suffix) {
+            if let date = value as? Date {
+                return date
+            }
+            if let string = value as? String {
+                let formatter = ISO8601DateFormatter()
+                formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                if let date = formatter.date(from: string) {
+                    return date
+                }
+                formatter.formatOptions = [.withInternetDateTime]
+                return formatter.date(from: string)
             }
         }
         return nil
@@ -228,10 +297,10 @@ final class MediaService {
             return qqMusicSnapshot()
         }
 
-        // QQ Music currently publishes title/artist/progress through
-        // MediaRemote but omits the client bundle identifier. When its AX
-        // tree has the same track, use the button state and restore the
-        // source name without confusing another active media app.
+        // QQ Music publishes title/artist/progress through MediaRemote but
+        // omits the client bundle identifier. When its AX tree has the same
+        // track, use the button state and restore the source name without
+        // confusing another active media app.
         guard snapshot.bundleIdentifier == nil,
               let qqSnapshot = qqMusicSnapshot(),
               normalizedMediaText(snapshot.title) == normalizedMediaText(qqSnapshot.title) else {
@@ -245,7 +314,33 @@ final class MediaService {
             artist: qqSnapshot.artist.isEmpty ? snapshot.artist : qqSnapshot.artist,
             duration: snapshot.duration > 0 ? snapshot.duration : qqSnapshot.duration,
             elapsed: snapshot.elapsed,
-            isPlaying: qqSnapshot.isPlaying
+            isPlaying: qqSnapshot.isPlaying,
+            progressAnchorDate: snapshot.progressAnchorDate,
+            playbackRate: snapshot.playbackRate
+        )
+    }
+
+    private func resolvedAdapterSnapshot(_ snapshot: MediaSnapshot) -> MediaSnapshot {
+        guard snapshot.bundleIdentifier?.lowercased() == qqMusicBundleIdentifier.lowercased(),
+              let qqSnapshot = qqMusicSnapshot(),
+              normalizedMediaText(snapshot.title) == normalizedMediaText(qqSnapshot.title) else {
+            return snapshot
+        }
+
+        // The adapter has a fresh elapsed/timestamp pair and authoritative
+        // playing state.  AX is only a metadata/action supplement, and must
+        // never replace that progress or state with QQ's position-less AX
+        // snapshot.
+        return MediaSnapshot(
+            sourceName: "QQ 音乐",
+            bundleIdentifier: qqMusicBundleIdentifier,
+            title: snapshot.title.isEmpty ? qqSnapshot.title : snapshot.title,
+            artist: snapshot.artist.isEmpty ? qqSnapshot.artist : snapshot.artist,
+            duration: snapshot.duration > 0 ? snapshot.duration : qqSnapshot.duration,
+            elapsed: snapshot.elapsed,
+            isPlaying: snapshot.isPlaying,
+            progressAnchorDate: snapshot.progressAnchorDate,
+            playbackRate: snapshot.playbackRate
         )
     }
 
@@ -259,14 +354,15 @@ final class MediaService {
         let appElement = AXUIElementCreateApplication(application.processIdentifier)
         let windows = elements(appElement, attribute: kAXWindowsAttribute)
         guard !windows.isEmpty else { return nil }
-        var buttonTexts: [String] = []
+        var actionTexts: [String] = []
 
         for window in windows {
             for element in axElements(in: window, maximumDepth: 8) {
                 let values = textValues(of: element)
-                if string(element, attribute: kAXRoleAttribute) == kAXButtonRole as String {
-                    buttonTexts.append(contentsOf: values)
-                }
+                // QQ exposes transport controls as AXUnknown on current
+                // builds, so inspect every element's title/description/etc.
+                // rather than restricting this pass to AXButton.
+                actionTexts.append(contentsOf: values)
             }
         }
 
@@ -279,7 +375,7 @@ final class MediaService {
             .first(where: { $0.contains("歌曲名") && $0.contains("歌手名") }),
               let metadata = QQMusicMetadataParser.track(
                   from: trackText,
-                  isPlaying: QQMusicMetadataParser.isPlaying(from: buttonTexts) ?? false
+                  isPlaying: QQMusicMetadataParser.isPlaying(from: actionTexts) ?? false
               ) else {
             return nil
         }

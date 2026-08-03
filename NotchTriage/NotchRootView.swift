@@ -674,41 +674,84 @@ private struct LivingNotch: View {
             }
 
         case .codex:
-            HStack(spacing: 7) {
-                if let primary = model.codexLimits.first {
-                    if side == .left {
-                        hoverCodexRing(primary)
-                    }
-
-                    VStack(alignment: side == .left ? .leading : .trailing, spacing: 0) {
-                        Text("\(Int(primary.remainingPercent.rounded()))%")
-                            .font(.system(size: 10.5, weight: .bold, design: .rounded))
-                            .monospacedDigit()
-                            .contentTransition(.numericText())
-                        Text(primary.windowLabel)
-                            .font(.system(size: 8.5, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.48))
-                    }
-
-                    if side == .right {
-                        hoverCodexRing(primary)
-                    }
-                } else {
-                    if side == .left {
-                        hoverCodexFallbackIcon
-                    }
-                    Text("正在连接")
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.48))
-                    if side == .right {
-                        hoverCodexFallbackIcon
-                    }
-                }
+            switch model.codexDisplayMode {
+            case .weekly:
+                hoverWeeklyCodexStatus(side: side)
+            case .balance:
+                hoverBalanceCodexStatus(side: side)
             }
 
         case .hidden:
             EmptyView()
         }
+    }
+
+    private func hoverWeeklyCodexStatus(side: NotchWingSide) -> some View {
+        HStack(spacing: 7) {
+            if let primary = model.weeklyCodexLimit {
+                if side == .left {
+                    hoverCodexRing(primary)
+                }
+
+                VStack(alignment: side == .left ? .leading : .trailing, spacing: 0) {
+                    Text("\(Int(primary.remainingPercent.rounded()))%")
+                        .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .contentTransition(.numericText())
+                    Text(primary.windowLabel)
+                        .font(.system(size: 8.5, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.48))
+                }
+
+                if side == .right {
+                    hoverCodexRing(primary)
+                }
+            } else {
+                if side == .left {
+                    hoverCodexFallbackIcon
+                }
+                Text("正在连接")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.48))
+                if side == .right {
+                    hoverCodexFallbackIcon
+                }
+            }
+        }
+    }
+
+    private func hoverBalanceCodexStatus(side: NotchWingSide) -> some View {
+        let balance = CodexBalancePresentation(
+            credits: model.codexCredits,
+            healthMessage: model.codexHealth.message
+        )
+
+        return HStack(spacing: 7) {
+            if side == .left {
+                hoverCodexBalanceRing
+            }
+
+            VStack(alignment: side == .left ? .leading : .trailing, spacing: 0) {
+                Text(balance.estimatedUSDLabel)
+                    .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+                    .contentTransition(.numericText())
+                Text(balance.creditsLabel)
+                    .font(.system(size: 8.5, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.48))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+            }
+
+            if side == .right {
+                hoverCodexBalanceRing
+            }
+        }
+        .help(balance.accessibilityLabel)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(balance.accessibilityLabel)
     }
 
     private var hoverMediaRing: some View {
@@ -751,6 +794,24 @@ private struct LivingNotch: View {
         }
     }
 
+    private var hoverCodexBalanceRing: some View {
+        AttentionRing(
+            model: model,
+            diameter: 20
+        ) {
+            ZStack {
+                UsageArc(
+                    progress: 1,
+                    style: model.ringAppearance.style(for: .codex),
+                    lineWidth: 2.6
+                )
+
+                Image(systemName: "dollarsign")
+                    .font(.system(size: 9, weight: .bold, design: .rounded))
+            }
+        }
+    }
+
     private var hoverCodexFallbackIcon: some View {
         Image(systemName: "gauge.with.dots.needle.67percent")
             .font(.system(size: 11, weight: .semibold))
@@ -767,39 +828,190 @@ private struct LivingNotch: View {
     }
 }
 
+struct CodexBalancePresentation: Equatable {
+    enum State: Equatable {
+        case connecting(message: String)
+        case unlimited
+        case unavailable
+        case unknown
+        case available(estimatedUSD: Decimal, credits: Decimal)
+    }
+
+    let state: State
+
+    init(credits: CodexCreditsBalance?, healthMessage: String) {
+        guard let credits else {
+            let message = healthMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+            state = .connecting(
+                message: message.isEmpty ? "正在连接 Codex" : message
+            )
+            return
+        }
+
+        if credits.unlimited {
+            state = .unlimited
+        } else if !credits.hasCredits {
+            state = .unavailable
+        } else if let value = credits.credits,
+                  let estimatedUSD = credits.estimatedUSD {
+            state = .available(
+                estimatedUSD: estimatedUSD,
+                credits: value
+            )
+        } else {
+            state = .unknown
+        }
+    }
+
+    var estimatedUSDLabel: String {
+        switch state {
+        case .connecting:
+            return "正在连接"
+        case .unlimited:
+            return "无限"
+        case .unavailable:
+            return "不可用"
+        case .unknown:
+            return "余额未知"
+        case .available(let value, _):
+            let formatted = Self.usdFormatter.string(
+                from: NSDecimalNumber(decimal: value)
+            ) ?? "US$—"
+            return "≈ " + formatted
+        }
+    }
+
+    var creditsLabel: String {
+        switch state {
+        case .connecting(let message):
+            return message
+        case .unlimited:
+            return "credits 无上限"
+        case .unavailable:
+            return "账户未启用 credits"
+        case .unknown:
+            return "credits 暂未返回"
+        case .available(_, let value):
+            let formatted = Self.creditsFormatter.string(
+                from: NSDecimalNumber(decimal: value)
+            ) ?? "—"
+            return formatted + " credits"
+        }
+    }
+
+    var hint: String {
+        switch state {
+        case .available:
+            return "按 25 credits ≈ US$1"
+        default:
+            return "来自本机 Codex 会话"
+        }
+    }
+
+    var accessibilityLabel: String {
+        "Codex 余额，" + estimatedUSDLabel + "，" + creditsLabel
+    }
+
+    private static let usdFormatter: NumberFormatter = {
+        let formatter = NumberFormatter()
+        formatter.locale = Locale(identifier: "en_US")
+        formatter.numberStyle = .currency
+        formatter.currencyCode = "USD"
+        formatter.minimumFractionDigits = 2
+        formatter.maximumFractionDigits = 2
+        return formatter
+    }()
+
+    private static let creditsFormatter: NumberFormatter = {
+        let formatter = NumberFormatter()
+        formatter.locale = Locale.current
+        formatter.numberStyle = .decimal
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = 1
+        return formatter
+    }()
+}
+
 private struct CompactCodexContent: View {
     @ObservedObject var model: AppModel
     let limits: [CodexLimitBucket]
     let health: ServiceHealth
     let style: RingStyle
 
-    private var primary: CodexLimitBucket? { limits.first }
+    private var primary: CodexLimitBucket? {
+        AppModel.weeklyCodexLimit(from: limits)
+    }
+
+    private var balance: CodexBalancePresentation {
+        CodexBalancePresentation(
+            credits: model.codexCredits,
+            healthMessage: health.message
+        )
+    }
 
     var body: some View {
         AttentionRing(
             model: model,
             diameter: 22
         ) {
-            UsageArc(
-                progress: primary?.remainingFraction ?? 0,
-                style: style,
-                lineWidth: 3.2
-            )
+            switch model.codexDisplayMode {
+            case .weekly:
+                ZStack {
+                    UsageArc(
+                        progress: primary?.remainingFraction ?? 0,
+                        style: style,
+                        lineWidth: 3.2
+                    )
+                }
+            case .balance:
+                ZStack {
+                    UsageArc(
+                        progress: 1,
+                        style: style,
+                        lineWidth: 3.2
+                    )
+
+                    Image(systemName: "dollarsign")
+                        .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                }
+            }
         }
         .foregroundStyle(.white)
         .animation(NotchDesign.Motion.value, value: primary?.remainingPercent)
-        .help(exactLabel + " · " + (primary?.windowLabel ?? health.message))
+        .animation(NotchDesign.Motion.value, value: model.codexDisplayMode)
+        .help(helpLabel)
         .accessibilityLabel(
-            "ChatGPT 与 Codex 剩余额度 "
-                + exactLabel
-                + "，"
-                + (primary?.windowLabel ?? health.message)
+            accessibilityLabel
         )
     }
 
-    private var exactLabel: String {
+    private var helpLabel: String {
+        switch model.codexDisplayMode {
+        case .weekly:
+            return "ChatGPT 与 Codex 剩余额度 "
+                + weeklyLabel
+                + " · "
+                + (primary?.windowLabel ?? health.message)
+        case .balance:
+            return balance.accessibilityLabel + " · " + balance.hint
+        }
+    }
+
+    private var accessibilityLabel: String {
+        switch model.codexDisplayMode {
+        case .weekly:
+            return "ChatGPT 与 Codex 剩余额度 "
+                + weeklyLabel
+                + "，"
+                + (primary?.windowLabel ?? health.message)
+        case .balance:
+            return balance.accessibilityLabel
+        }
+    }
+
+    private var weeklyLabel: String {
         guard let primary else { return "—" }
-        return "\(Int(primary.remainingPercent.rounded()))%"
+        return String(Int(primary.remainingPercent.rounded())) + "%"
     }
 
 }
@@ -1339,7 +1551,7 @@ private struct CodexUsageCard: View {
     @ObservedObject var model: AppModel
 
     private var primary: CodexLimitBucket? {
-        model.codexLimits.first
+        model.weeklyCodexLimit
     }
 
     var body: some View {
@@ -1358,43 +1570,115 @@ private struct CodexUsageCard: View {
                 .help("刷新用量")
             }
 
-            HStack(spacing: 12) {
-                ZStack {
-                    UsageArc(
-                        progress: primary?.remainingFraction ?? 0,
-                        style: model.ringAppearance.style(for: .codex),
-                        lineWidth: 4
-                    )
+            Picker("Codex 显示", selection: $model.codexDisplayMode) {
+                Text("周额度").tag(AppModel.CodexDisplayMode.weekly)
+                Text("余额").tag(AppModel.CodexDisplayMode.balance)
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+            .controlSize(.mini)
 
-                    Text(percentLabel)
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                }
-                .frame(width: 53, height: 53)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(primary?.windowLabel ?? "正在连接")
-                        .font(.system(size: 11, weight: .semibold))
-                    Text("剩余额度")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-
-                    if let reset = primary?.resetsAt {
-                        Text(reset.formatted(date: .omitted, time: .shortened))
-                            .font(.caption2.monospacedDigit())
-                            .foregroundStyle(.tertiary)
-                    }
+            Group {
+                switch model.codexDisplayMode {
+                case .weekly:
+                    weeklyContent
+                case .balance:
+                    balanceContent
                 }
             }
         }
         .padding(12)
-        .frame(maxWidth: .infinity, minHeight: 116, alignment: .topLeading)
+        .frame(maxWidth: .infinity, minHeight: 154, alignment: .topLeading)
         .panelGroupSurface()
+    }
+
+    private var weeklyContent: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                UsageArc(
+                    progress: primary?.remainingFraction ?? 0,
+                    style: model.ringAppearance.style(for: .codex),
+                    lineWidth: 4
+                )
+
+                Text(percentLabel)
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+            }
+            .frame(width: 53, height: 53)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(primary?.windowLabel ?? "正在连接")
+                    .font(.system(size: 11, weight: .semibold))
+                Text("剩余额度")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+
+                if let reset = primary?.resetsAt {
+                    Text(reset.formatted(date: .omitted, time: .shortened))
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        }
+    }
+
+    private var balanceContent: some View {
+        HStack(spacing: 11) {
+            ZStack {
+                Circle()
+                    .fill(.tint.opacity(0.14))
+                Circle()
+                    .stroke(.tint.opacity(0.42), lineWidth: 1)
+                Image(systemName: "dollarsign")
+                    .font(.system(size: 17, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.tint)
+            }
+            .frame(width: 45, height: 45)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(estimatedUSDLabel)
+                    .font(.system(size: 13.5, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+                Text(creditsLabel)
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+                Text(balanceHint)
+                    .font(.system(size: 8.5, weight: .medium))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Codex credits 余额，\(estimatedUSDLabel)，\(creditsLabel)")
+    }
+
+    private var balancePresentation: CodexBalancePresentation {
+        CodexBalancePresentation(
+            credits: model.codexCredits,
+            healthMessage: model.codexHealth.message
+        )
     }
 
     private var percentLabel: String {
         guard let primary else { return "—" }
         return "\(Int(primary.remainingPercent.rounded()))"
+    }
+
+    private var estimatedUSDLabel: String {
+        balancePresentation.estimatedUSDLabel
+    }
+
+    private var creditsLabel: String {
+        balancePresentation.creditsLabel
+    }
+
+    private var balanceHint: String {
+        balancePresentation.hint
     }
 
 }
@@ -1477,13 +1761,17 @@ private struct NowPlayingStrip: View {
             Spacer()
 
             if snapshot != .idle {
-                Text(snapshot.elapsed.clockString)
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.secondary)
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    HStack(spacing: 10) {
+                        Text(snapshot.estimatedElapsed(at: context.date).clockString)
+                            .font(.caption2.monospacedDigit())
+                            .foregroundStyle(.secondary)
 
-                ProgressView(value: snapshot.progress)
-                    .progressViewStyle(.linear)
-                    .frame(width: 104)
+                        ProgressView(value: snapshot.progress(at: context.date))
+                            .progressViewStyle(.linear)
+                            .frame(width: 104)
+                    }
+                }
             }
         }
         .padding(.horizontal, 12)
@@ -1499,16 +1787,18 @@ private struct MediaProgressRing: View {
     let lineWidth: CGFloat
 
     var body: some View {
-        ZStack {
-            UsageArc(
-                progress: snapshot.progress,
-                style: style.withOpacity(snapshot.isPlaying ? 1 : 0.64),
-                lineWidth: lineWidth
-            )
-
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let progress = snapshot.progress(at: context.date)
+            ZStack {
+                UsageArc(
+                    progress: progress,
+                    style: style.withOpacity(snapshot.isPlaying ? 1 : 0.64),
+                    lineWidth: lineWidth
+                )
+            }
+            .animation(NotchDesign.Motion.value, value: progress)
         }
         .frame(width: diameter, height: diameter)
-        .animation(NotchDesign.Motion.value, value: snapshot.progress)
         .animation(NotchDesign.Motion.value, value: snapshot.isPlaying)
     }
 }

@@ -4,6 +4,20 @@ import SwiftUI
 
 @MainActor
 final class AppModel: ObservableObject {
+    enum CodexDisplayMode: String, CaseIterable, Codable, Identifiable, Sendable {
+        case weekly
+        case balance
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .weekly: return "每周限额"
+            case .balance: return "Credits 余额"
+            }
+        }
+    }
+
     enum PreferenceKey {
         static let leftWingContent = "notch.leftWingContent"
         static let rightWingContent = "notch.rightWingContent"
@@ -12,6 +26,7 @@ final class AppModel: ObservableObject {
         static let notificationPromptColor = "notch.notificationPromptColor"
         static let notificationPromptAnimation = "notch.notificationPromptAnimation"
         static let legacyNotificationEyeStyle = "notch.notificationEyeStyle"
+        static let codexDisplayMode = "notch.codexDisplayMode"
         static let lastUpdateCheck = "updates.lastSuccessfulCheck"
         static let lastPromptedVersion = "updates.lastPromptedVersion"
     }
@@ -24,6 +39,15 @@ final class AppModel: ObservableObject {
     @Published var notchWidth: CGFloat = 186
     @Published var media = MediaSnapshot.idle
     @Published var codexLimits: [CodexLimitBucket] = []
+    @Published var codexCredits: CodexCreditsBalance? = nil
+    @Published var codexDisplayMode: CodexDisplayMode {
+        didSet {
+            UserDefaults.standard.set(
+                codexDisplayMode.rawValue,
+                forKey: PreferenceKey.codexDisplayMode
+            )
+        }
+    }
     @Published var notificationSources: [NotificationSource] = []
     @Published var notificationPulse: NotificationPulse?
     @Published var systemHUD: SystemHUDSnapshot?
@@ -112,6 +136,33 @@ final class AppModel: ObservableObject {
         notificationPulse != nil || !notificationSources.isEmpty
     }
 
+    /// The one-week rolling bucket, falling back to the largest available
+    /// window when the server does not expose exactly 10,080 minutes.
+    var weeklyCodexLimit: CodexLimitBucket? {
+        Self.weeklyCodexLimit(from: codexLimits)
+    }
+
+    nonisolated static func weeklyCodexLimit(
+        from limits: [CodexLimitBucket]
+    ) -> CodexLimitBucket? {
+        let validLimits = limits.filter { $0.windowMinutes > 0 }
+        let weekly = validLimits.filter { $0.windowMinutes == 10_080 }
+        if let exact = weekly.min(by: preferredLimitOrder) {
+            return exact
+        }
+        return validLimits.max(by: preferredLimitOrder)
+    }
+
+    private nonisolated static func preferredLimitOrder(
+        _ lhs: CodexLimitBucket,
+        _ rhs: CodexLimitBucket
+    ) -> Bool {
+        if lhs.windowMinutes != rhs.windowMinutes {
+            return lhs.windowMinutes < rhs.windowMinutes
+        }
+        return lhs.id < rhs.id
+    }
+
     @Published private(set) var notificationAnimationTick = 0
 
     var pulseTask: Task<Void, Never>?
@@ -141,6 +192,11 @@ final class AppModel: ObservableObject {
                 forKey: PreferenceKey.rightWingContent
             ) ?? ""
         ) ?? .codex
+        codexDisplayMode = CodexDisplayMode(
+            rawValue: UserDefaults.standard.string(
+                forKey: PreferenceKey.codexDisplayMode
+            ) ?? ""
+        ) ?? .weekly
         let legacyPromptIcon: NotificationPromptIcon
         switch UserDefaults.standard.string(
             forKey: PreferenceKey.legacyNotificationEyeStyle
@@ -185,8 +241,9 @@ final class AppModel: ObservableObject {
     }
 
     private lazy var codexService = CodexUsageService(
-        onLimits: { [weak self] limits in
+        onUsage: { [weak self] limits, credits in
             self?.codexLimits = limits
+            self?.codexCredits = credits
             self?.applyHealth(.ready(
                 limits.isEmpty ? "当前没有返回限额桶" : "已读取 \(limits.count) 个动态限额桶"
             ), to: .codex)

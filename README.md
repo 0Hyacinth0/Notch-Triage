@@ -5,7 +5,7 @@
   <p>原生、轻量、常驻的 macOS 刘海工具，集中呈现 Codex 额度、媒体、电源、通知与系统 HUD。</p>
 
   <p>
-    <img src="https://img.shields.io/badge/version-0.2.3-25D9C5?style=flat-square" alt="Version 0.2.3">
+    <img src="https://img.shields.io/badge/version-0.2.4-25D9C5?style=flat-square" alt="Version 0.2.4">
     <img src="https://img.shields.io/badge/macOS-26%2B-000000?style=flat-square&amp;logo=apple&amp;logoColor=white" alt="macOS 26+">
     <img src="https://img.shields.io/badge/Swift-5-F05138?style=flat-square&amp;logo=swift&amp;logoColor=white" alt="Swift 5">
     <img src="https://img.shields.io/badge/UI-Liquid%20Glass-4B5563?style=flat-square" alt="Liquid Glass">
@@ -59,7 +59,7 @@
 | 模块 | 能力 | 说明 |
 | --- | --- | --- |
 | 刘海交互 | 静止、悬停预览、点击展开 | 窗口锚定屏幕顶边连续变形，左右内容按实体刘海镜像布局 |
-| Codex 状态 | ChatGPT / Codex 额度 | 通过本机 Codex App Server 读取账户实际返回的限额桶，不假设固定时间窗口 |
+| Codex 状态 | 周额度与 credits 余额 | 通过本机 Codex App Server 读取账户实际返回的限额桶与 credits；面板可切换周额度和美元估算余额 |
 | 系统 HUD | 音量、显示亮度、AirPods | 系统状态变化时以紧凑 HUD 进入刘海，展示完成后自动收起 |
 | 媒体中心 | 正在播放与播放进度 | 支持 Apple Music、Spotify、QQ 音乐、网易云音乐等系统媒体来源 |
 | 电源管理 | 电池健康、循环次数、实时功率 | 展示适配器、系统与电池之间的功率流；支持系统提供的充电上限档位 |
@@ -81,7 +81,7 @@
 1. 前往 [Releases](https://github.com/0Hyacinth0/Notch-Triage/releases/latest) 下载最新发布包。
 2. 将 `NotchTriage.app` 移入“应用程序”文件夹并启动。
 
-> 如果“应用程序”中同时存在 `NotchTriage.app` 与旧的 `Notch Triage.app`，请先退出两者，再用 v0.2.3 的 `NotchTriage.app` 覆盖并移除旧的空格命名副本，避免同一 Bundle ID 启动两个实例。
+> 如果“应用程序”中同时存在 `NotchTriage.app` 与旧的 `Notch Triage.app`，请先退出两者，再用 v0.2.4 的 `NotchTriage.app` 覆盖并移除旧的空格命名副本，避免同一 Bundle ID 启动两个实例。
 
 3. 根据需要授予辅助功能、Finder 自动化或登录项权限。
 4. 点击刘海区域打开面板，在“设置与更新”中配置左右翼内容和通知行为。
@@ -114,6 +114,7 @@
 - 清除通知、清空废纸篓等操作必须由用户在面板中明确触发。
 - 原生横幅仅在系统暴露 `AXCancel` 安全动作时尝试收起，否则保持原样。
 - 更新包会校验摘要、Bundle ID、版本与签名身份，不直接执行未经验证的下载内容。
+- Codex 状态只通过本机已登录的 App Server 会话读取；应用不读取 API Key、登录令牌，也不把 credits 余额写入诊断日志。
 - 后台服务共享节能调度器；面板收起后自动降频，锁屏和休眠期间暂停非必要刷新。
 
 ## 诊断与更新
@@ -168,10 +169,10 @@ DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer \
 
 1. 用 Xcode 打开 `NotchTriage.xcodeproj`，选择 `NotchTriage` Scheme。
 2. 首次运行时，在“系统设置 → 隐私与安全性 → 辅助功能”中允许调试版 App。
-3. 播放 Apple Music、Spotify、QQ 音乐或网易云音乐，检查左翼曲目与进度。
+3. 播放 Apple Music、Spotify、QQ 音乐或网易云音乐，检查左翼曲目与实时推进的进度；QQ 音乐还需验证暂停、拖动和切歌。
 4. 将鼠标移入连续黑色刘海区域检查悬停预览，再点击展开完整面板。
 5. 点击桌面或其他 App，确认完整面板自动收起。
-6. 检查 Codex 额度是否与 App Server 当前返回的数据一致。
+6. 在 Codex 卡片切换“周额度 / 余额”，检查周窗口和 credits 是否与 App Server 当前返回的数据一致。
 7. 配置“自动收起横幅”，并使用真实通知验证横幅与通知中心行为。
 8. 切换 80 / 85 / 90 / 95 / 100% 充电上限，验证系统返回状态；“充满”只应临时覆盖限制。
 9. 分别更改左右显示内容，收起并重启 App，确认设置保留。
@@ -184,7 +185,8 @@ DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer \
 
 ## 技术边界
 
-- 系统级 Now Playing 使用动态加载的 MediaRemote 桥接；QQ 音乐在 Hardened Runtime 下改用其 AX 播放器节点兜底，适合官网分发，不适合直接提交 Mac App Store。
+- 系统级 Now Playing 通过随包分发的 BSD 3-Clause `MediaRemoteAdapter` 读取曲目、时长、时间锚点与播放速率，并在界面端推算实时进度；QQ 音乐的 AX 播放器节点只作为元数据与状态兜底。该实现适合官网分发，不适合直接提交 Mac App Store。
+- Codex 美元余额是按 OpenAI 当前 `25 credits ≈ US$1` 关系换算的近似值；credits 原值来自本机 App Server，兑换关系变化时可能需要随版本更新。
 - macOS 27 手动充电上限来自系统 PowerUI 接口；旧系统自动降级为只读监控。
 - 通知中心没有公开的跨 App 管理 API，辅助功能层级可能随 macOS 更新而变化。
 - 当前未加入歌词、窗口切换、自动通知删除或旧系统视觉降级。
