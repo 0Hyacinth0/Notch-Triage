@@ -32,7 +32,8 @@ struct SettingsRootView: View {
                 }
             }
             .listStyle(.sidebar)
-            .frame(width: 210)
+            .frame(minWidth: 210, idealWidth: 210, maxWidth: 210)
+            .layoutPriority(1)
 
             Divider()
 
@@ -43,6 +44,7 @@ struct SettingsRootView: View {
                     .padding(.horizontal, 42)
                     .padding(.vertical, 34)
             }
+            .frame(minWidth: 569)
             .background(Color(nsColor: .windowBackgroundColor))
         }
         .frame(minWidth: 780, idealWidth: 860, minHeight: 540, idealHeight: 640)
