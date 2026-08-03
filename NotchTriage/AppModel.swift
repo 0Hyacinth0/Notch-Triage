@@ -7,6 +7,7 @@ final class AppModel: ObservableObject {
     enum PreferenceKey {
         static let leftWingContent = "notch.leftWingContent"
         static let rightWingContent = "notch.rightWingContent"
+        static let ringAppearance = "notch.ringAppearance"
         static let lastUpdateCheck = "updates.lastSuccessfulCheck"
         static let lastPromptedVersion = "updates.lastPromptedVersion"
     }
@@ -47,6 +48,13 @@ final class AppModel: ObservableObject {
                 rightWingContent.rawValue,
                 forKey: PreferenceKey.rightWingContent
             )
+        }
+    }
+
+    @Published var ringAppearance: RingAppearanceSettings {
+        didSet {
+            guard let data = try? JSONEncoder().encode(ringAppearance) else { return }
+            UserDefaults.standard.set(data, forKey: PreferenceKey.ringAppearance)
         }
     }
 
@@ -95,6 +103,15 @@ final class AppModel: ObservableObject {
                 forKey: PreferenceKey.rightWingContent
             ) ?? ""
         ) ?? .codex
+        if let data = UserDefaults.standard.data(forKey: PreferenceKey.ringAppearance),
+           let savedAppearance = try? JSONDecoder().decode(
+               RingAppearanceSettings.self,
+               from: data
+           ) {
+            ringAppearance = savedAppearance
+        } else {
+            ringAppearance = .default
+        }
     }
 
     private lazy var codexService = CodexUsageService(
@@ -450,6 +467,70 @@ final class AppModel: ObservableObject {
         withAnimation(motion(NotchDesign.Motion.value)) {
             leftWingContent = .media
             rightWingContent = .codex
+        }
+    }
+
+    func setRingTheme(_ theme: RingTheme) {
+        withAnimation(motion(NotchDesign.Motion.value)) {
+            ringAppearance.theme = theme
+        }
+    }
+
+    func resetRingAppearance() {
+        withAnimation(motion(NotchDesign.Motion.value)) {
+            ringAppearance = .default
+        }
+    }
+
+    func ringOverride(for metric: RingMetric) -> RingStyleOverride {
+        ringAppearance.override(for: metric)
+    }
+
+    func setRingOverrideEnabled(_ enabled: Bool, for metric: RingMetric) {
+        var updated = ringAppearance
+        switch metric {
+        case .battery: updated.battery.isEnabled = enabled
+        case .codex: updated.codex.isEnabled = enabled
+        case .media: updated.media.isEnabled = enabled
+        }
+        withAnimation(motion(NotchDesign.Motion.value)) {
+            ringAppearance = updated
+        }
+    }
+
+    func setRingGradientMode(_ mode: RingGradientMode, for metric: RingMetric) {
+        var updated = ringAppearance
+        switch metric {
+        case .battery: updated.battery.style.gradientMode = mode
+        case .codex: updated.codex.style.gradientMode = mode
+        case .media: updated.media.style.gradientMode = mode
+        }
+        ringAppearance = updated
+    }
+
+    func setRingColor(_ color: Color, for metric: RingMetric, component: RingColorComponent) {
+        var updated = ringAppearance
+        let ringColor = RingColor(color)
+        switch metric {
+        case .battery:
+            update(&updated.battery.style, color: ringColor, component: component)
+        case .codex:
+            update(&updated.codex.style, color: ringColor, component: component)
+        case .media:
+            update(&updated.media.style, color: ringColor, component: component)
+        }
+        ringAppearance = updated
+    }
+
+    private func update(
+        _ style: inout RingStyle,
+        color: RingColor,
+        component: RingColorComponent
+    ) {
+        switch component {
+        case .start: style.start = color
+        case .end: style.end = color
+        case .track: style.track = color
         }
     }
 

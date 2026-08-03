@@ -1,5 +1,307 @@
 import AppKit
 import Foundation
+import SwiftUI
+
+enum RingMetric: String, CaseIterable, Codable, Identifiable, Sendable {
+    case battery
+    case codex
+    case media
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .battery: return "电池"
+        case .codex: return "ChatGPT / Codex 额度"
+        case .media: return "正在播放"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .battery: return "battery.75"
+        case .codex: return "gauge.with.dots.needle.67percent"
+        case .media: return "music.note"
+        }
+    }
+}
+
+enum RingGradientMode: String, CaseIterable, Codable, Identifiable, Sendable {
+    case angular
+    case solid
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .angular: return "环形渐变"
+        case .solid: return "纯色"
+        }
+    }
+}
+
+enum RingColorComponent: String, CaseIterable, Identifiable, Sendable {
+    case start
+    case end
+    case track
+
+    var id: String { rawValue }
+}
+
+struct RingColor: Codable, Equatable, Sendable {
+    var red: Double
+    var green: Double
+    var blue: Double
+    var opacity: Double
+
+    init(red: Double, green: Double, blue: Double, opacity: Double = 1) {
+        self.red = red
+        self.green = green
+        self.blue = blue
+        self.opacity = opacity
+    }
+
+    init(_ color: Color) {
+        let nsColor = NSColor(color).usingColorSpace(.sRGB) ?? .white
+        self.init(
+            red: Double(nsColor.redComponent),
+            green: Double(nsColor.greenComponent),
+            blue: Double(nsColor.blueComponent),
+            opacity: Double(nsColor.alphaComponent)
+        )
+    }
+
+    var color: Color {
+        Color(
+            .sRGB,
+            red: red,
+            green: green,
+            blue: blue,
+            opacity: opacity
+        )
+    }
+
+    func withOpacity(_ value: Double) -> RingColor {
+        RingColor(
+            red: red,
+            green: green,
+            blue: blue,
+            opacity: max(0, min(1, opacity * value))
+        )
+    }
+
+    static let white = RingColor(red: 0.96, green: 0.97, blue: 1)
+    static let whiteTrack = RingColor(red: 1, green: 1, blue: 1, opacity: 0.16)
+}
+
+struct RingStyle: Codable, Equatable, Sendable {
+    var start: RingColor
+    var end: RingColor
+    var track: RingColor
+    var gradientMode: RingGradientMode
+
+    init(
+        start: RingColor,
+        end: RingColor,
+        track: RingColor = .whiteTrack,
+        gradientMode: RingGradientMode = .angular
+    ) {
+        self.start = start
+        self.end = end
+        self.track = track
+        self.gradientMode = gradientMode
+    }
+
+    func withOpacity(_ value: Double) -> RingStyle {
+        RingStyle(
+            start: start.withOpacity(value),
+            end: end.withOpacity(value),
+            track: track,
+            gradientMode: gradientMode
+        )
+    }
+
+    var shapeStyle: AnyShapeStyle {
+        switch gradientMode {
+        case .solid:
+            return AnyShapeStyle(start.color)
+        case .angular:
+            return AnyShapeStyle(
+                AngularGradient(
+                    gradient: Gradient(colors: [
+                        start.color,
+                        end.color,
+                        start.color
+                    ]),
+                    center: .center,
+                    startAngle: .degrees(-90),
+                    endAngle: .degrees(270)
+                )
+            )
+        }
+    }
+
+    static let white = RingStyle(
+        start: .white,
+        end: .white,
+        track: .whiteTrack,
+        gradientMode: .solid
+    )
+}
+
+struct RingStyleOverride: Codable, Equatable, Sendable {
+    var isEnabled = false
+    var style: RingStyle
+
+    init(style: RingStyle) {
+        self.style = style
+    }
+}
+
+enum RingTheme: String, CaseIterable, Codable, Identifiable, Sendable {
+    case system
+    case ocean
+    case sunset
+    case mint
+    case monochrome
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .system: return "系统默认"
+        case .ocean: return "深海蓝"
+        case .sunset: return "日落暖色"
+        case .mint: return "薄荷青"
+        case .monochrome: return "纯净单色"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .system: return "贴近 macOS 原生状态色"
+        case .ocean: return "冷静的蓝色渐变"
+        case .sunset: return "橙、粉与金色渐变"
+        case .mint: return "清透的青绿色渐变"
+        case .monochrome: return "黑色刘海上的纯白极简"
+        }
+    }
+
+    func style(for metric: RingMetric) -> RingStyle {
+        switch self {
+        case .system:
+            switch metric {
+            case .battery:
+                return RingStyle(
+                    start: RingColor(red: 0.20, green: 0.82, blue: 0.45),
+                    end: RingColor(red: 0.55, green: 0.96, blue: 0.72)
+                )
+            case .codex:
+                return RingStyle(
+                    start: RingColor(red: 0.36, green: 0.56, blue: 1),
+                    end: RingColor(red: 0.62, green: 0.78, blue: 1)
+                )
+            case .media:
+                return RingStyle(
+                    start: RingColor(red: 0.75, green: 0.44, blue: 1),
+                    end: RingColor(red: 1, green: 0.48, blue: 0.76)
+                )
+            }
+        case .ocean:
+            return oceanStyle(for: metric)
+        case .sunset:
+            switch metric {
+            case .battery:
+                return RingStyle(
+                    start: RingColor(red: 1, green: 0.38, blue: 0.16),
+                    end: RingColor(red: 1, green: 0.87, blue: 0.22)
+                )
+            case .codex:
+                return RingStyle(
+                    start: RingColor(red: 1, green: 0.26, blue: 0.42),
+                    end: RingColor(red: 1, green: 0.54, blue: 0.28)
+                )
+            case .media:
+                return RingStyle(
+                    start: RingColor(red: 0.98, green: 0.34, blue: 0.60),
+                    end: RingColor(red: 1, green: 0.72, blue: 0.30)
+                )
+            }
+        case .mint:
+            switch metric {
+            case .battery:
+                return RingStyle(
+                    start: RingColor(red: 0.14, green: 0.82, blue: 0.62),
+                    end: RingColor(red: 0.45, green: 1, blue: 0.78)
+                )
+            case .codex:
+                return RingStyle(
+                    start: RingColor(red: 0.18, green: 0.72, blue: 0.92),
+                    end: RingColor(red: 0.40, green: 0.96, blue: 0.86)
+                )
+            case .media:
+                return RingStyle(
+                    start: RingColor(red: 0.24, green: 0.62, blue: 1),
+                    end: RingColor(red: 0.30, green: 1, blue: 0.78)
+                )
+            }
+        case .monochrome:
+            return .white
+        }
+    }
+
+    private func oceanStyle(for metric: RingMetric) -> RingStyle {
+        switch metric {
+        case .battery:
+            return RingStyle(
+                start: RingColor(red: 0.16, green: 0.52, blue: 1),
+                end: RingColor(red: 0.22, green: 0.88, blue: 1)
+            )
+        case .codex:
+            return RingStyle(
+                start: RingColor(red: 0.32, green: 0.38, blue: 1),
+                end: RingColor(red: 0.36, green: 0.76, blue: 1)
+            )
+        case .media:
+            return RingStyle(
+                start: RingColor(red: 0.24, green: 0.72, blue: 1),
+                end: RingColor(red: 0.48, green: 0.92, blue: 1)
+            )
+        }
+    }
+}
+
+struct RingAppearanceSettings: Codable, Equatable, Sendable {
+    var theme: RingTheme
+    var battery: RingStyleOverride
+    var codex: RingStyleOverride
+    var media: RingStyleOverride
+
+    static let `default` = RingAppearanceSettings(
+        theme: .system,
+        battery: RingStyleOverride(style: RingTheme.system.style(for: .battery)),
+        codex: RingStyleOverride(style: RingTheme.system.style(for: .codex)),
+        media: RingStyleOverride(style: RingTheme.system.style(for: .media))
+    )
+
+    func style(for metric: RingMetric) -> RingStyle {
+        let override: RingStyleOverride
+        switch metric {
+        case .battery: override = battery
+        case .codex: override = codex
+        case .media: override = media
+        }
+        return override.isEnabled ? override.style : theme.style(for: metric)
+    }
+
+    func override(for metric: RingMetric) -> RingStyleOverride {
+        switch metric {
+        case .battery: return battery
+        case .codex: return codex
+        case .media: return media
+        }
+    }
+}
 
 enum NotchWingContent: String, CaseIterable, Identifiable {
     case battery

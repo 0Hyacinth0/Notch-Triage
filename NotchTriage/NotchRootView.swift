@@ -234,9 +234,15 @@ private func compactWingWidth(
 
 private struct CompactMediaContent: View {
     let snapshot: MediaSnapshot
+    let style: RingStyle
 
     var body: some View {
-        MediaProgressRing(snapshot: snapshot, diameter: 22, lineWidth: 3.2)
+        MediaProgressRing(
+            snapshot: snapshot,
+            style: style,
+            diameter: 22,
+            lineWidth: 3.2
+        )
             .frame(width: 37)
             .foregroundStyle(.white)
             .help(mediaHelp)
@@ -257,15 +263,22 @@ private struct CompactWingSlot: View {
         Group {
             switch content {
             case .battery:
-                CompactBatteryContent(snapshot: model.power)
+                CompactBatteryContent(
+                    snapshot: model.power,
+                    style: model.ringAppearance.style(for: .battery)
+                )
             case .codex:
                 CompactCodexContent(
                     limits: model.codexLimits,
-                    health: model.codexHealth
+                    health: model.codexHealth,
+                    style: model.ringAppearance.style(for: .codex)
                 )
             case .media:
                 if model.media != .idle {
-                    CompactMediaContent(snapshot: model.media)
+                    CompactMediaContent(
+                        snapshot: model.media,
+                        style: model.ringAppearance.style(for: .media)
+                    )
                 }
             case .hidden:
                 EmptyView()
@@ -279,14 +292,14 @@ private struct CompactWingSlot: View {
 
 private struct CompactBatteryContent: View {
     let snapshot: PowerSnapshot
+    let style: RingStyle
 
     var body: some View {
         ZStack {
             UsageArc(
                 progress: Double(snapshot.batteryPercent) / 100,
-                color: ringColor,
-                lineWidth: 3.2,
-                trackColor: .white.opacity(0.16)
+                style: ringStyle,
+                lineWidth: 3.2
             )
         }
         .frame(width: 22, height: 22)
@@ -296,11 +309,8 @@ private struct CompactBatteryContent: View {
         .accessibilityLabel(batteryHelp)
     }
 
-    private var ringColor: Color {
-        if snapshot.batteryPercent <= 20 { return .red }
-        if snapshot.isCharging { return .green }
-        if snapshot.isExternalPowerConnected { return .mint }
-        return .white.opacity(0.9)
+    private var ringStyle: RingStyle {
+        style
     }
 
     private var batteryHelp: String {
@@ -601,15 +611,19 @@ private struct LivingNotch: View {
     }
 
     private var hoverMediaRing: some View {
-        MediaProgressRing(snapshot: model.media, diameter: 20, lineWidth: 2.6)
+        MediaProgressRing(
+            snapshot: model.media,
+            style: model.ringAppearance.style(for: .media),
+            diameter: 20,
+            lineWidth: 2.6
+        )
     }
 
     private var hoverBatteryRing: some View {
         UsageArc(
             progress: Double(model.power.batteryPercent) / 100,
-            color: model.power.isCharging ? .green : .white.opacity(0.92),
-            lineWidth: 2.6,
-            trackColor: .white.opacity(0.16)
+            style: model.ringAppearance.style(for: .battery),
+            lineWidth: 2.6
         )
         .frame(width: 20, height: 20)
     }
@@ -617,9 +631,8 @@ private struct LivingNotch: View {
     private func hoverCodexRing(_ primary: CodexLimitBucket) -> some View {
         UsageArc(
             progress: primary.remainingFraction,
-            color: .white.opacity(0.92),
-            lineWidth: 2.6,
-            trackColor: .white.opacity(0.16)
+            style: model.ringAppearance.style(for: .codex),
+            lineWidth: 2.6
         )
         .frame(width: 20, height: 20)
     }
@@ -643,6 +656,7 @@ private struct LivingNotch: View {
 private struct CompactCodexContent: View {
     let limits: [CodexLimitBucket]
     let health: ServiceHealth
+    let style: RingStyle
 
     private var primary: CodexLimitBucket? { limits.first }
 
@@ -650,9 +664,8 @@ private struct CompactCodexContent: View {
         ZStack {
             UsageArc(
                 progress: primary?.remainingFraction ?? 0,
-                color: meterColor,
-                lineWidth: 3.2,
-                trackColor: .white.opacity(0.16)
+                style: style,
+                lineWidth: 3.2
             )
         }
         .frame(width: 22, height: 22)
@@ -672,14 +685,6 @@ private struct CompactCodexContent: View {
         return "\(Int(primary.remainingPercent.rounded()))%"
     }
 
-    private var meterColor: Color {
-        guard let primary else { return .gray }
-        switch primary.remainingPercent {
-        case ..<15: return .red
-        case ..<35: return .orange
-        default: return .white.opacity(0.92)
-        }
-    }
 }
 
 private struct ExpandedPanelSurface: View {
@@ -1240,7 +1245,7 @@ private struct CodexUsageCard: View {
                 ZStack {
                     UsageArc(
                         progress: primary?.remainingFraction ?? 0,
-                        color: usageColor,
+                        style: model.ringAppearance.style(for: .codex),
                         lineWidth: 4
                     )
 
@@ -1275,14 +1280,6 @@ private struct CodexUsageCard: View {
         return "\(Int(primary.remainingPercent.rounded()))"
     }
 
-    private var usageColor: Color {
-        guard let primary else { return .secondary }
-        switch primary.remainingPercent {
-        case ..<15: return .red
-        case ..<35: return .orange
-        default: return .primary
-        }
-    }
 }
 
 private struct TrashCompactCard: View {
@@ -1380,6 +1377,7 @@ private struct NowPlayingStrip: View {
 
 private struct MediaProgressRing: View {
     let snapshot: MediaSnapshot
+    let style: RingStyle
     let diameter: CGFloat
     let lineWidth: CGFloat
 
@@ -1387,11 +1385,8 @@ private struct MediaProgressRing: View {
         ZStack {
             UsageArc(
                 progress: snapshot.progress,
-                color: snapshot.isPlaying
-                    ? .white.opacity(0.96)
-                    : .white.opacity(0.62),
-                lineWidth: lineWidth,
-                trackColor: .white.opacity(0.16)
+                style: style.withOpacity(snapshot.isPlaying ? 1 : 0.64),
+                lineWidth: lineWidth
             )
 
         }
@@ -1403,7 +1398,7 @@ private struct MediaProgressRing: View {
 
 private struct UsageArc: View {
     let progress: Double
-    let color: Color
+    let foregroundStyle: AnyShapeStyle
     let lineWidth: CGFloat
     let trackColor: Color
 
@@ -1414,9 +1409,20 @@ private struct UsageArc: View {
         trackColor: Color = .primary.opacity(0.12)
     ) {
         self.progress = progress
-        self.color = color
+        self.foregroundStyle = AnyShapeStyle(color)
         self.lineWidth = lineWidth
         self.trackColor = trackColor
+    }
+
+    init(
+        progress: Double,
+        style: RingStyle,
+        lineWidth: CGFloat
+    ) {
+        self.progress = progress
+        self.foregroundStyle = style.shapeStyle
+        self.lineWidth = lineWidth
+        self.trackColor = style.track.color
     }
 
     var body: some View {
@@ -1426,7 +1432,7 @@ private struct UsageArc: View {
             Circle()
                 .trim(from: 0, to: progress)
                 .stroke(
-                    color,
+                    foregroundStyle,
                     style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
                 )
                 .rotationEffect(.degrees(-90))

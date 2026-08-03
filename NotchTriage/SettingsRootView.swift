@@ -126,6 +126,68 @@ struct SettingsRootView: View {
                 Spacer()
             }
             .buttonStyle(.borderless)
+
+            SettingsGroup(title: "圆环主题") {
+                HStack(alignment: .center, spacing: 12) {
+                    Image(systemName: "circle.lefthalf.filled")
+                        .foregroundStyle(.tint)
+                        .frame(width: 20)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("全局主题模板")
+                            .font(.callout.weight(.medium))
+                        Text(model.ringAppearance.theme.subtitle)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer(minLength: 12)
+
+                    Picker(
+                        "全局主题模板",
+                        selection: Binding(
+                            get: { model.ringAppearance.theme },
+                            set: { model.setRingTheme($0) }
+                        )
+                    ) {
+                        ForEach(RingTheme.allCases) { theme in
+                            Text(theme.title).tag(theme)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 150)
+                }
+
+                Divider()
+
+                HStack(spacing: 8) {
+                    ForEach(RingMetric.allCases) { metric in
+                        RingThemeSwatch(
+                            metric: metric,
+                            style: model.ringAppearance.style(for: metric)
+                        )
+                    }
+                    Spacer(minLength: 0)
+                }
+
+                Text("电池、额度和正在播放会统一使用这个模板；单独调整请展开高阶配置。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            DisclosureGroup {
+                AdvancedRingAppearanceView(model: model)
+                    .padding(.top, 6)
+            } label: {
+                Label("高阶圆环配置", systemImage: "slider.horizontal.2.square")
+                    .font(.callout.weight(.semibold))
+            }
+            .padding(14)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(.primary.opacity(0.08), lineWidth: 0.5)
+            }
         }
     }
 
@@ -572,5 +634,132 @@ private struct WingPreviewCard: View {
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
+private struct RingThemeSwatch: View {
+    let metric: RingMetric
+    let style: RingStyle
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .stroke(style.shapeStyle, lineWidth: 3)
+                .frame(width: 22, height: 22)
+            Text(metric.title)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+private struct AdvancedRingAppearanceView: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("开启单项覆盖后，该圆环不再跟随全局主题。颜色支持环形渐变，也可以切换为纯色。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            ForEach(RingMetric.allCases) { metric in
+                RingStyleEditor(model: model, metric: metric)
+
+                if metric != RingMetric.allCases.last {
+                    Divider()
+                }
+            }
+
+            Button {
+                model.resetRingAppearance()
+            } label: {
+                Label("恢复所有圆环默认", systemImage: "arrow.counterclockwise")
+            }
+            .buttonStyle(.borderless)
+        }
+    }
+}
+
+private struct RingStyleEditor: View {
+    @ObservedObject var model: AppModel
+    let metric: RingMetric
+
+    private var override: RingStyleOverride {
+        model.ringOverride(for: metric)
+    }
+
+    private var style: RingStyle {
+        override.style
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Toggle(isOn: Binding(
+                get: { override.isEnabled },
+                set: { model.setRingOverrideEnabled($0, for: metric) }
+            )) {
+                Label(metric.title, systemImage: metric.symbol)
+                    .font(.callout.weight(.medium))
+            }
+
+            HStack(spacing: 14) {
+                ColorPicker(
+                    "起始色",
+                    selection: colorBinding(.start),
+                    supportsOpacity: true
+                )
+                ColorPicker(
+                    "结束色",
+                    selection: colorBinding(.end),
+                    supportsOpacity: true
+                )
+                ColorPicker(
+                    "轨道",
+                    selection: colorBinding(.track),
+                    supportsOpacity: true
+                )
+            }
+            .disabled(!override.isEnabled)
+
+            HStack(spacing: 10) {
+                Text("渐变模板")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Picker(
+                    "渐变模板",
+                    selection: Binding(
+                        get: { style.gradientMode },
+                        set: { model.setRingGradientMode($0, for: metric) }
+                    )
+                ) {
+                    ForEach(RingGradientMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .controlSize(.small)
+                .disabled(!override.isEnabled)
+
+                Circle()
+                    .stroke(style.shapeStyle, lineWidth: 4)
+                    .frame(width: 24, height: 24)
+                    .opacity(override.isEnabled ? 1 : 0.45)
+            }
+        }
+    }
+
+    private func colorBinding(_ component: RingColorComponent) -> Binding<Color> {
+        Binding(
+            get: {
+                switch component {
+                case .start: return style.start.color
+                case .end: return style.end.color
+                case .track: return style.track.color
+                }
+            },
+            set: { model.setRingColor($0, for: metric, component: component) }
+        )
     }
 }
