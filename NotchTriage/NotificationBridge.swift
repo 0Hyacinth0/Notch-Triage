@@ -163,11 +163,10 @@ final class NotificationBridge {
         }
 
         let appElement = AXUIElementCreateApplication(notificationCenter.processIdentifier)
-        // NotificationCenter exposes widgets and notification cards through the
-        // same AX process. Do not discard a whole window because it contains a
-        // widget: on current macOS a window can contain both widget and card
-        // descendants. scanWindow filters pure widget windows after reading the
-        // complete AX text tree.
+        // NotificationCenter exposes desktop/sidebar widgets and notification
+        // cards through the same AX process. scanWindow walks the tree while
+        // skipping widget subtrees, so Calendar and other Widget Extensions do
+        // not become synthetic notifications.
         let windows = elements(appElement, attribute: kAXWindowsAttribute)
             .filter(isCandidateNotificationWindow)
         let scanned = windows.compactMap(scanWindow)
@@ -369,16 +368,7 @@ final class NotificationBridge {
     private func scanWindow(_ window: AXUIElement) -> ScannedNotification? {
         guard isCandidateNotificationWindow(window) else { return nil }
 
-        let texts = ([window] + descendants(of: window, maximumDepth: 5))
-            .flatMap { element -> [String] in
-                [
-                    string(element, attribute: kAXTitleAttribute),
-                    string(element, attribute: kAXDescriptionAttribute),
-                    string(element, attribute: kAXIdentifierAttribute),
-                    string(element, attribute: kAXValueAttribute),
-                    string(element, attribute: kAXHelpAttribute)
-                ].compactMap { $0 }
-            }
+        let texts = notificationTexts(in: window)
 
         guard let source = detectSource(in: texts) else { return nil }
         let frame = frame(of: window)
@@ -410,6 +400,54 @@ final class NotificationBridge {
         }
 
         return NotificationSourceDetection.detect(in: texts, candidates: candidates)
+    }
+
+    private func notificationTexts(in window: AXUIElement) -> [String] {
+        var texts = textValues(of: window)
+        appendNotificationTexts(
+            from: window,
+            maximumDepth: 5,
+            into: &texts
+        )
+        return texts
+    }
+
+    private func appendNotificationTexts(
+        from parent: AXUIElement,
+        maximumDepth: Int,
+        into texts: inout [String]
+    ) {
+        guard maximumDepth > 0 else { return }
+
+        for child in elements(parent, attribute: kAXChildrenAttribute) {
+            // A widget container owns all of its visual descendants. Skip the
+            // complete subtree instead of merely dropping its identifier: the
+            // Calendar widget can expose child text such as "日历" that would
+            // otherwise match the known Calendar notification source.
+            guard !isWidgetElement(child) else { continue }
+            texts.append(contentsOf: textValues(of: child))
+            appendNotificationTexts(
+                from: child,
+                maximumDepth: maximumDepth - 1,
+                into: &texts
+            )
+        }
+    }
+
+    private func textValues(of element: AXUIElement) -> [String] {
+        [
+            string(element, attribute: kAXTitleAttribute),
+            string(element, attribute: kAXDescriptionAttribute),
+            string(element, attribute: kAXIdentifierAttribute),
+            string(element, attribute: kAXValueAttribute),
+            string(element, attribute: kAXHelpAttribute)
+        ].compactMap { $0 }
+    }
+
+    private func isWidgetElement(_ element: AXUIElement) -> Bool {
+        textValues(of: element).contains {
+            NotificationSourceDetection.isWidgetOrExtension($0)
+        }
     }
 
     private func safelyDismissBanner(_ window: AXUIElement) {

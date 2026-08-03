@@ -177,6 +177,11 @@ final class NotchTriageModelTests: XCTestCase {
                 candidates: []
             )
         )
+        XCTAssertTrue(
+            NotificationSourceDetection.isWidgetOrExtension(
+                "widget-local:com.apple.iCal:CalendarWidgetExtension"
+            )
+        )
     }
 
     private func makeBucket(
