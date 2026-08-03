@@ -49,6 +49,13 @@ struct SettingsRootView: View {
         .onAppear {
             model.refreshLaunchAtLoginStatus()
         }
+        .alert(item: nonReleaseUpdatePrompt) { prompt in
+            Alert(
+                title: Text(prompt.title),
+                message: Text(prompt.message),
+                dismissButton: .default(Text("好"))
+            )
+        }
     }
 
     @ViewBuilder
@@ -352,7 +359,7 @@ struct SettingsRootView: View {
             SettingsGroup(title: "操作") {
                 HStack {
                     Button {
-                        model.handleUpdateMenuAction()
+                        model.handleSettingsUpdateAction()
                     } label: {
                         Label(updateButtonTitle, systemImage: model.updateStatus.symbol)
                     }
@@ -506,9 +513,25 @@ struct SettingsRootView: View {
 
     private var updateButtonTitle: String {
         if model.availableUpdate != nil {
-            return "安装更新"
+            return "下载并安装"
         }
         return model.updateStatus.isBusy ? model.updateStatus.menuTitle : "检查更新"
+    }
+
+    private var nonReleaseUpdatePrompt: Binding<AppUpdatePrompt?> {
+        Binding(
+            get: {
+                guard let prompt = model.updatePrompt, prompt.release == nil else {
+                    return nil
+                }
+                return prompt
+            },
+            set: { newValue in
+                guard newValue == nil,
+                      model.updatePrompt?.release == nil else { return }
+                model.updatePrompt = nil
+            }
+        )
     }
 
     private static func byteCount(_ value: Int64) -> String {

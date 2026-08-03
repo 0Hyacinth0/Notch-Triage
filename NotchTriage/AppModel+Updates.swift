@@ -3,6 +3,19 @@ import Foundation
 import SwiftUI
 
 extension AppModel {
+    /// The settings window owns its update flow. Unlike the compact notch menu,
+    /// it should start the download directly so progress remains visible in
+    /// the page where the user initiated the action.
+    func handleSettingsUpdateAction() {
+        guard !updateStatus.isBusy else { return }
+        if let availableUpdate {
+            updatePrompt = nil
+            installUpdate(availableUpdate)
+        } else {
+            checkForUpdates(manual: true)
+        }
+    }
+
     func handleUpdateMenuAction() {
         if let availableUpdate {
             UserDefaults.standard.set(
