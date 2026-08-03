@@ -102,6 +102,58 @@ final class NotchTriageModelTests: XCTestCase {
         }
     }
 
+    func testNotificationSourceDetectionRecognizesWeChatByBundleIdentifier() {
+        let source = NotificationSourceDetection.detect(
+            in: ["com.tencent.xinWeChat"],
+            candidates: []
+        )
+
+        XCTAssertEqual(
+            source,
+            NotificationSourceCandidate(
+                name: "微信",
+                bundleIdentifier: "com.tencent.xinWeChat"
+            )
+        )
+    }
+
+    func testNotificationSourceDetectionUsesKnownAppNameAndGenericFallback() {
+        XCTAssertEqual(
+            NotificationSourceDetection.detect(
+                in: ["微信", "新消息"],
+                candidates: []
+            ),
+            NotificationSourceCandidate(
+                name: "微信",
+                bundleIdentifier: "com.tencent.xinWeChat"
+            )
+        )
+        XCTAssertEqual(
+            NotificationSourceDetection.detect(
+                in: ["通知内容"],
+                candidates: []
+            ),
+            NotificationSourceCandidate(name: "系统通知", bundleIdentifier: nil)
+        )
+        XCTAssertNil(
+            NotificationSourceDetection.detect(
+                in: ["电池", "80% 已充电"],
+                candidates: []
+            )
+        )
+    }
+
+    func testNotificationEyeStylesExposeStableSFSymbols() {
+        XCTAssertEqual(
+            NotificationEyeStyle.allCases.map(\.symbol),
+            ["eye", "eye.fill", "eye.circle"]
+        )
+        XCTAssertEqual(
+            Set(NotificationEyeStyle.allCases.map(\.id)).count,
+            NotificationEyeStyle.allCases.count
+        )
+    }
+
     private func makeBucket(
         usedPercent: Double = 0,
         windowMinutes: Int = 60

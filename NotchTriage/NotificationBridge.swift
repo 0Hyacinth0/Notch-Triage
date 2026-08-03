@@ -2,6 +2,68 @@ import AppKit
 import ApplicationServices
 import Foundation
 
+struct NotificationSourceCandidate: Equatable, Sendable {
+    let name: String
+    let bundleIdentifier: String?
+}
+
+enum NotificationSourceDetection {
+    static let knownSources = [
+        NotificationSourceCandidate(name: "Codex", bundleIdentifier: "com.openai.chat"),
+        NotificationSourceCandidate(name: "ChatGPT", bundleIdentifier: "com.openai.chat"),
+        NotificationSourceCandidate(name: "微信", bundleIdentifier: "com.tencent.xinWeChat"),
+        NotificationSourceCandidate(name: "钉钉", bundleIdentifier: nil),
+        NotificationSourceCandidate(name: "QQ邮箱", bundleIdentifier: nil),
+        NotificationSourceCandidate(name: "日历", bundleIdentifier: "com.apple.iCal"),
+        NotificationSourceCandidate(name: "提醒事项", bundleIdentifier: "com.apple.reminders")
+    ]
+
+    static let notificationMarkers = ["通知", "notification", "alert", "提醒"]
+
+    static func detect(
+        in texts: [String],
+        candidates: [NotificationSourceCandidate]
+    ) -> NotificationSourceCandidate? {
+        let values = texts
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        let allCandidates = candidates + knownSources
+
+        for candidate in uniqueCandidates(allCandidates).sorted(by: { $0.name.count > $1.name.count }) {
+            let markers = [candidate.name, candidate.bundleIdentifier]
+                .compactMap { $0 }
+            if values.contains(where: { value in
+                markers.contains(where: { value.localizedCaseInsensitiveContains($0) })
+            }) {
+                return candidate
+            }
+        }
+
+        if containsNotificationMarker(in: values) {
+            return NotificationSourceCandidate(name: "系统通知", bundleIdentifier: nil)
+        }
+
+        return nil
+    }
+
+    static func containsNotificationMarker(in texts: [String]) -> Bool {
+        texts.contains { text in
+            notificationMarkers.contains {
+                text.localizedCaseInsensitiveContains($0)
+            }
+        }
+    }
+
+    private static func uniqueCandidates(
+        _ candidates: [NotificationSourceCandidate]
+    ) -> [NotificationSourceCandidate] {
+        candidates.reduce(into: []) { result, candidate in
+            guard !result.contains(candidate) else { return }
+            result.append(candidate)
+        }
+    }
+}
+
 @MainActor
 final class NotificationBridge {
     typealias SourcesHandler = @MainActor ([NotificationSource]) -> Void
@@ -86,11 +148,11 @@ final class NotificationBridge {
         }
 
         let appElement = AXUIElementCreateApplication(notificationCenter.processIdentifier)
-        // NotificationCenter exposes widgets (calendar, stocks, weather, battery)
-        // as AXWindow elements in the same process as the notification cards. The
-        // old scanner treated every one of those windows as a notification, which
-        // produced persistent "ghost" sources even when Notification Center was
-        // empty. Keep only visible, non-widget windows here.
+        // NotificationCenter exposes widgets and notification cards through the
+        // same AX process. Do not discard a whole window because it contains a
+        // widget: on current macOS a window can contain both widget and card
+        // descendants. scanWindow filters pure widget windows after reading the
+        // complete AX text tree.
         let windows = elements(appElement, attribute: kAXWindowsAttribute)
             .filter(isCandidateNotificationWindow)
         let scanned = windows.compactMap(scanWindow)
@@ -116,10 +178,10 @@ final class NotificationBridge {
         previousFingerprints = currentFingerprints
         onSources(aggregateSources(scanned))
 
-        if windows.isEmpty {
-            onHealth(.ready("通知桥已就绪，当前没有可见通知节点"))
+        if scanned.isEmpty {
+            onHealth(.ready("通知桥已就绪，当前没有可识别的通知节点"))
         } else {
-            onHealth(.ready("辅助功能权限有效；已镜像 \(windows.count) 个系统通知节点"))
+            onHealth(.ready("辅助功能权限有效；已镜像 \(scanned.count) 个系统通知节点"))
         }
     }
 
@@ -286,35 +348,21 @@ final class NotificationBridge {
               frame.height > 0 else {
             return false
         }
-
-        if bool(window, attribute: kAXHiddenAttribute) == true
-            || bool(window, attribute: kAXMinimizedAttribute) == true {
-            return false
-        }
-
-        // WidgetKit views are hosted inside NotificationCenter windows and carry
-        // a stable widget-local identifier. They are not notification cards and
-        // must never contribute to the notification source count.
-        let descendants = descendants(of: window, maximumDepth: 5)
-        if descendants.contains(where: { element in
-            string(element, attribute: kAXIdentifierAttribute)?
-                .hasPrefix("widget-local:") == true
-        }) {
-            return false
-        }
-
         return true
     }
 
     private func scanWindow(_ window: AXUIElement) -> ScannedNotification? {
         guard isCandidateNotificationWindow(window) else { return nil }
 
-        let texts = descendants(of: window, maximumDepth: 5)
+        let texts = ([window] + descendants(of: window, maximumDepth: 5))
             .flatMap { element -> [String] in
                 [
                     string(element, attribute: kAXTitleAttribute),
                     string(element, attribute: kAXDescriptionAttribute),
-                    string(element, attribute: kAXIdentifierAttribute)
+                    string(element, attribute: kAXIdentifierAttribute),
+                    string(element, attribute: kAXValueAttribute),
+                    string(element, attribute: kAXHelpAttribute),
+                    string(element, attribute: kAXRoleDescriptionAttribute)
                 ].compactMap { $0 }
             }
 
@@ -335,7 +383,7 @@ final class NotificationBridge {
         )
     }
 
-    private func detectSource(in texts: [String]) -> (name: String, bundleIdentifier: String?)? {
+    private func detectSource(in texts: [String]) -> NotificationSourceCandidate? {
         let candidates = NSWorkspace.shared.runningApplications.compactMap { app -> (String, String?)? in
             guard let name = app.localizedName,
                   name != "NotificationCenter",
@@ -343,45 +391,11 @@ final class NotificationBridge {
                 return nil
             }
             return (name, app.bundleIdentifier)
+        }.map {
+            NotificationSourceCandidate(name: $0.0, bundleIdentifier: $0.1)
         }
 
-        for candidate in candidates.sorted(by: { $0.0.count > $1.0.count }) {
-            if texts.contains(where: {
-                $0.localizedCaseInsensitiveContains(candidate.0)
-            }) {
-                return candidate
-            }
-        }
-
-        let knownSources: [(String, String?)] = [
-            ("Codex", "com.openai.chat"),
-            ("ChatGPT", "com.openai.chat"),
-            ("微信", "com.tencent.xinWeChat"),
-            ("钉钉", nil),
-            ("QQ邮箱", nil),
-            ("日历", "com.apple.iCal"),
-            ("提醒事项", "com.apple.reminders")
-        ]
-
-        for source in knownSources where texts.contains(where: {
-            $0.localizedCaseInsensitiveContains(source.0)
-        }) {
-            return source
-        }
-
-        // Only use the system fallback when the AX tree identifies the element
-        // as notification-like. Unknown arbitrary windows must not become a
-        // synthetic system notification.
-        let notificationMarkers = ["通知", "notification", "alert", "提醒"]
-        if texts.contains(where: { text in
-            notificationMarkers.contains(where: {
-                text.localizedCaseInsensitiveContains($0)
-            })
-        }) {
-            return ("系统通知", nil)
-        }
-
-        return nil
+        return NotificationSourceDetection.detect(in: texts, candidates: candidates)
     }
 
     private func safelyDismissBanner(_ window: AXUIElement) {

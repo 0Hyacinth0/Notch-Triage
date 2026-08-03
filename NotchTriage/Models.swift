@@ -303,6 +303,38 @@ struct RingAppearanceSettings: Codable, Equatable, Sendable {
     }
 }
 
+enum NotificationEyeStyle: String, CaseIterable, Codable, Identifiable, Sendable {
+    case line
+    case filled
+    case circle
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .line: return "线框眼睛"
+        case .filled: return "实心眼睛"
+        case .circle: return "圆框眼睛"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .line: return "轻量的 SF Symbols 线框"
+        case .filled: return "更醒目的实心提示"
+        case .circle: return "带外圈的提示图标"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .line: return "eye"
+        case .filled: return "eye.fill"
+        case .circle: return "eye.circle"
+        }
+    }
+}
+
 enum NotchWingContent: String, CaseIterable, Identifiable {
     case battery
     case codex

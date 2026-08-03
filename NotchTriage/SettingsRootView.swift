@@ -185,6 +185,47 @@ struct SettingsRootView: View {
                     .foregroundStyle(.secondary)
             }
 
+            SettingsGroup(title: "通知提示") {
+                HStack(alignment: .center, spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .stroke(.tint, lineWidth: 2.5)
+                            .frame(width: 24, height: 24)
+                        Image(systemName: model.notificationEyeStyle.symbol)
+                            .font(.system(size: 8, weight: .semibold))
+                    }
+                    .frame(width: 20)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("圆环提示眼睛")
+                            .font(.callout.weight(.medium))
+                        Text(model.notificationEyeStyle.subtitle)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer(minLength: 12)
+
+                    Picker(
+                        "圆环提示眼睛",
+                        selection: Binding(
+                            get: { model.notificationEyeStyle },
+                            set: { model.setNotificationEyeStyle($0) }
+                        )
+                    ) {
+                        ForEach(NotificationEyeStyle.allCases) { style in
+                            Text(style.title).tag(style)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 150)
+                }
+
+                Text("有通知或新提示时，当前显示的每个圆环中央都会出现眨眼提示；没有圆环的一侧不会显示。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             DisclosureGroup {
                 AdvancedRingAppearanceView(model: model)
                     .padding(.top, 6)

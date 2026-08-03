@@ -8,6 +8,7 @@ final class AppModel: ObservableObject {
         static let leftWingContent = "notch.leftWingContent"
         static let rightWingContent = "notch.rightWingContent"
         static let ringAppearance = "notch.ringAppearance"
+        static let notificationEyeStyle = "notch.notificationEyeStyle"
         static let lastUpdateCheck = "updates.lastSuccessfulCheck"
         static let lastPromptedVersion = "updates.lastPromptedVersion"
     }
@@ -58,6 +59,15 @@ final class AppModel: ObservableObject {
         }
     }
 
+    @Published var notificationEyeStyle: NotificationEyeStyle {
+        didSet {
+            UserDefaults.standard.set(
+                notificationEyeStyle.rawValue,
+                forKey: PreferenceKey.notificationEyeStyle
+            )
+        }
+    }
+
     @Published var codexHealth: ServiceHealth = .loading("正在连接 Codex")
     @Published var mediaHealth: ServiceHealth = .loading("正在读取系统播放状态")
     @Published var notificationHealth: ServiceHealth = .loading("正在检查辅助功能权限")
@@ -75,6 +85,10 @@ final class AppModel: ObservableObject {
         didSet {
             notificationService.autoDismissBanners = autoDismissBanners
         }
+    }
+
+    var notificationAttentionActive: Bool {
+        notificationPulse != nil || !notificationSources.isEmpty
     }
 
     var pulseTask: Task<Void, Never>?
@@ -103,6 +117,11 @@ final class AppModel: ObservableObject {
                 forKey: PreferenceKey.rightWingContent
             ) ?? ""
         ) ?? .codex
+        notificationEyeStyle = NotificationEyeStyle(
+            rawValue: UserDefaults.standard.string(
+                forKey: PreferenceKey.notificationEyeStyle
+            ) ?? ""
+        ) ?? .line
         if let data = UserDefaults.standard.data(forKey: PreferenceKey.ringAppearance),
            let savedAppearance = try? JSONDecoder().decode(
                RingAppearanceSettings.self,
@@ -473,6 +492,12 @@ final class AppModel: ObservableObject {
     func setRingTheme(_ theme: RingTheme) {
         withAnimation(motion(NotchDesign.Motion.value)) {
             ringAppearance.theme = theme
+        }
+    }
+
+    func setNotificationEyeStyle(_ style: NotificationEyeStyle) {
+        withAnimation(motion(NotchDesign.Motion.value)) {
+            notificationEyeStyle = style
         }
     }
 

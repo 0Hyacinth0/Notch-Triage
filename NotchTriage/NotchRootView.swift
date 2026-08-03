@@ -232,18 +232,73 @@ private func compactWingWidth(
     }
 }
 
+private struct AttentionRing<Content: View>: View {
+    let showsEye: Bool
+    let eyeStyle: NotificationEyeStyle
+    let diameter: CGFloat
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        ZStack {
+            content()
+
+            if showsEye {
+                NotificationEye(style: eyeStyle)
+            }
+        }
+        .frame(width: diameter, height: diameter)
+    }
+}
+
+private struct NotificationEye: View {
+    let style: NotificationEyeStyle
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isBlinking = false
+
+    var body: some View {
+        Image(systemName: style.symbol)
+            .font(.system(size: 8, weight: .semibold))
+            .scaleEffect(x: 1, y: isBlinking ? 0.12 : 1)
+            .opacity(isBlinking ? 0.78 : 1)
+            .animation(.easeInOut(duration: 0.11), value: isBlinking)
+            .accessibilityLabel("通知提示")
+            .task(id: reduceMotion) {
+                isBlinking = false
+                guard !reduceMotion else { return }
+
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .milliseconds(1_500))
+                    guard !Task.isCancelled else { return }
+                    isBlinking = true
+
+                    try? await Task.sleep(for: .milliseconds(110))
+                    guard !Task.isCancelled else { return }
+                    isBlinking = false
+                }
+            }
+    }
+}
+
 private struct CompactMediaContent: View {
+    @ObservedObject var model: AppModel
     let snapshot: MediaSnapshot
     let style: RingStyle
 
     var body: some View {
-        MediaProgressRing(
-            snapshot: snapshot,
-            style: style,
-            diameter: 22,
-            lineWidth: 3.2
-        )
-            .frame(width: 37)
+        AttentionRing(
+            showsEye: model.notificationAttentionActive,
+            eyeStyle: model.notificationEyeStyle,
+            diameter: 22
+        ) {
+            MediaProgressRing(
+                snapshot: snapshot,
+                style: style,
+                diameter: 22,
+                lineWidth: 3.2
+            )
+        }
+            .frame(width: 37, height: 37)
             .foregroundStyle(.white)
             .help(mediaHelp)
             .accessibilityLabel(mediaHelp)
@@ -264,11 +319,13 @@ private struct CompactWingSlot: View {
             switch content {
             case .battery:
                 CompactBatteryContent(
+                    model: model,
                     snapshot: model.power,
                     style: model.ringAppearance.style(for: .battery)
                 )
             case .codex:
                 CompactCodexContent(
+                    model: model,
                     limits: model.codexLimits,
                     health: model.codexHealth,
                     style: model.ringAppearance.style(for: .codex)
@@ -276,6 +333,7 @@ private struct CompactWingSlot: View {
             case .media:
                 if model.media != .idle {
                     CompactMediaContent(
+                        model: model,
                         snapshot: model.media,
                         style: model.ringAppearance.style(for: .media)
                     )
@@ -291,18 +349,22 @@ private struct CompactWingSlot: View {
 }
 
 private struct CompactBatteryContent: View {
+    @ObservedObject var model: AppModel
     let snapshot: PowerSnapshot
     let style: RingStyle
 
     var body: some View {
-        ZStack {
+        AttentionRing(
+            showsEye: model.notificationAttentionActive,
+            eyeStyle: model.notificationEyeStyle,
+            diameter: 22
+        ) {
             UsageArc(
                 progress: Double(snapshot.batteryPercent) / 100,
                 style: ringStyle,
                 lineWidth: 3.2
             )
         }
-        .frame(width: 22, height: 22)
         .foregroundStyle(.white)
         .animation(NotchDesign.Motion.value, value: snapshot.updatedAt)
         .help(batteryHelp)
@@ -611,30 +673,46 @@ private struct LivingNotch: View {
     }
 
     private var hoverMediaRing: some View {
-        MediaProgressRing(
-            snapshot: model.media,
-            style: model.ringAppearance.style(for: .media),
-            diameter: 20,
-            lineWidth: 2.6
-        )
+        AttentionRing(
+            showsEye: model.notificationAttentionActive,
+            eyeStyle: model.notificationEyeStyle,
+            diameter: 20
+        ) {
+            MediaProgressRing(
+                snapshot: model.media,
+                style: model.ringAppearance.style(for: .media),
+                diameter: 20,
+                lineWidth: 2.6
+            )
+        }
     }
 
     private var hoverBatteryRing: some View {
-        UsageArc(
-            progress: Double(model.power.batteryPercent) / 100,
-            style: model.ringAppearance.style(for: .battery),
-            lineWidth: 2.6
-        )
-        .frame(width: 20, height: 20)
+        AttentionRing(
+            showsEye: model.notificationAttentionActive,
+            eyeStyle: model.notificationEyeStyle,
+            diameter: 20
+        ) {
+            UsageArc(
+                progress: Double(model.power.batteryPercent) / 100,
+                style: model.ringAppearance.style(for: .battery),
+                lineWidth: 2.6
+            )
+        }
     }
 
     private func hoverCodexRing(_ primary: CodexLimitBucket) -> some View {
-        UsageArc(
-            progress: primary.remainingFraction,
-            style: model.ringAppearance.style(for: .codex),
-            lineWidth: 2.6
-        )
-        .frame(width: 20, height: 20)
+        AttentionRing(
+            showsEye: model.notificationAttentionActive,
+            eyeStyle: model.notificationEyeStyle,
+            diameter: 20
+        ) {
+            UsageArc(
+                progress: primary.remainingFraction,
+                style: model.ringAppearance.style(for: .codex),
+                lineWidth: 2.6
+            )
+        }
     }
 
     private var hoverCodexFallbackIcon: some View {
@@ -654,6 +732,7 @@ private struct LivingNotch: View {
 }
 
 private struct CompactCodexContent: View {
+    @ObservedObject var model: AppModel
     let limits: [CodexLimitBucket]
     let health: ServiceHealth
     let style: RingStyle
@@ -661,14 +740,17 @@ private struct CompactCodexContent: View {
     private var primary: CodexLimitBucket? { limits.first }
 
     var body: some View {
-        ZStack {
+        AttentionRing(
+            showsEye: model.notificationAttentionActive,
+            eyeStyle: model.notificationEyeStyle,
+            diameter: 22
+        ) {
             UsageArc(
                 progress: primary?.remainingFraction ?? 0,
                 style: style,
                 lineWidth: 3.2
             )
         }
-        .frame(width: 22, height: 22)
         .foregroundStyle(.white)
         .animation(NotchDesign.Motion.value, value: primary?.remainingPercent)
         .help(exactLabel + " · " + (primary?.windowLabel ?? health.message))
