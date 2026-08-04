@@ -4,21 +4,41 @@ import SwiftUI
 /// The notch panel only exposes a single entry point so the panel does not
 /// become a dense, nested menu as more options are added.
 struct SettingsRootView: View {
-    private enum Destination: Hashable {
+    private enum Destination: String, Hashable {
         case appearance
         case behavior
         case permissions
         case updates
         case diagnostics
         case about
+
+        var title: String {
+            switch self {
+            case .appearance: return "外观"
+            case .behavior: return "行为"
+            case .permissions: return "权限"
+            case .updates: return "更新"
+            case .diagnostics: return "诊断"
+            case .about: return "关于"
+            }
+        }
     }
 
     @ObservedObject var model: AppModel
-    @State private var selection: Destination? = .appearance
+    let onPaneChange: @MainActor (String) -> Void
+    @AppStorage("NotchTriage.Settings.selectedPane") private var selectedPane = "appearance"
+
+    init(
+        model: AppModel,
+        onPaneChange: @escaping @MainActor (String) -> Void = { _ in }
+    ) {
+        self.model = model
+        self.onPaneChange = onPaneChange
+    }
 
     var body: some View {
         HStack(spacing: 0) {
-            List(selection: $selection) {
+            List(selection: selectionBinding) {
                 Section("Notch Triage") {
                     sidebarItem("外观", symbol: "rectangle.on.rectangle", destination: .appearance)
                     sidebarItem("行为", symbol: "slider.horizontal.3", destination: .behavior)
@@ -51,6 +71,11 @@ struct SettingsRootView: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .onAppear {
             model.refreshLaunchAtLoginStatus()
+            onPaneChange(currentDestination.title)
+        }
+        .onChange(of: selectedPane) { _, rawValue in
+            let destination = Destination(rawValue: rawValue) ?? .appearance
+            onPaneChange(destination.title)
         }
         .alert(item: nonReleaseUpdatePrompt) { prompt in
             Alert(
@@ -59,6 +84,21 @@ struct SettingsRootView: View {
                 dismissButton: .default(Text("好"))
             )
         }
+    }
+
+    private var selectionBinding: Binding<Destination?> {
+        Binding(
+            get: {
+                Destination(rawValue: selectedPane) ?? .appearance
+            },
+            set: { destination in
+                selectedPane = (destination ?? .appearance).rawValue
+            }
+        )
+    }
+
+    private var currentDestination: Destination {
+        Destination(rawValue: selectedPane) ?? .appearance
     }
 
     @ViewBuilder
@@ -73,7 +113,7 @@ struct SettingsRootView: View {
 
     @ViewBuilder
     private var detailView: some View {
-        switch selection ?? .appearance {
+        switch currentDestination {
         case .appearance:
             appearancePage
         case .behavior:

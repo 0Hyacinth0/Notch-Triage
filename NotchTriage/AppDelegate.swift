@@ -42,41 +42,66 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ) -> Bool {
         false
     }
+
+    func showNotchPanel() {
+        panelController?.show()
+    }
+}
+
+@MainActor
+private final class SettingsWindowTitleSink {
+    weak var window: NSWindow?
+
+    func update(for paneTitle: String) {
+        window?.title = "Notch Triage 设置 — \(paneTitle)"
+    }
 }
 
 @MainActor
 final class SettingsWindowController: NSObject, NSWindowDelegate {
     private let window: NSWindow
+    private let titleSink: SettingsWindowTitleSink
 
     init(model: AppModel) {
-        let hostingView = NSHostingView(rootView: SettingsRootView(model: model))
-        window = NSWindow(
+        let titleSink = SettingsWindowTitleSink()
+        let settingsWindow = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 860, height: 640),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
+        let hostingView = NSHostingView(
+            rootView: SettingsRootView(
+                model: model,
+                onPaneChange: { [weak titleSink] paneTitle in
+                    titleSink?.update(for: paneTitle)
+                }
+            )
+        )
+        settingsWindow.contentView = hostingView
+        window = settingsWindow
+        self.titleSink = titleSink
         super.init()
 
-        window.title = "Notch Triage 设置"
+        titleSink.window = window
+        titleSink.update(for: "外观")
         window.titleVisibility = .visible
         window.isReleasedWhenClosed = false
         window.isMovableByWindowBackground = true
         window.minSize = NSSize(width: 780, height: 540)
-        window.contentView = hostingView
         window.delegate = self
-        window.setFrameAutosaveName("NotchTriage.SettingsWindow")
+        let frameAutosaveName = "NotchTriage.SettingsWindow"
+        if !window.setFrameUsingName(frameAutosaveName) {
+            window.center()
+        }
+        window.setFrameAutosaveName(frameAutosaveName)
         window.standardWindowButton(.zoomButton)?.isEnabled = false
         window.standardWindowButton(.miniaturizeButton)?.isEnabled = false
     }
 
     func show() {
         NSApp.activate(ignoringOtherApps: true)
-        if !window.isVisible {
-            window.center()
-        }
         window.makeKeyAndOrderFront(nil)
-        window.orderFrontRegardless()
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
