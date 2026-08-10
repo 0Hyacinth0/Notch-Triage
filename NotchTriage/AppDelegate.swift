@@ -10,7 +10,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panelController: NotchPanelController?
     private var settingsWindowController: SettingsWindowController?
 
+    nonisolated static func shouldStartAppServices(
+        environment: [String: String]
+    ) -> Bool {
+        environment["XCTestConfigurationFilePath"] == nil
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // The hosted XCTest runner launches the app executable but does not
+        // guarantee a graceful applicationWillTerminate callback. Starting
+        // long-lived media helpers there would orphan them when the test host
+        // exits, so pure model tests keep the app shell dormant.
+        guard Self.shouldStartAppServices(
+            environment: ProcessInfo.processInfo.environment
+        ) else { return }
+
         // SwiftUI can opt accessory apps into AppKit automatic termination
         // when no conventional window is visible. The notch panel is meant
         // to remain resident even while collapsed, so keep the process alive.
@@ -120,11 +134,7 @@ final class NotchPanelController {
     private var frameAnimationTimer: Timer?
     private var globalMouseMonitor: Any?
     private var localMouseMonitor: Any?
-
-    private let panelWidth: CGFloat = 560
-    private let hoveredHeight: CGFloat = 74
-    private let expandedGap: CGFloat = 16
-    private let expandedPanelHeight: CGFloat = 460
+    private var outsideCollapseTask: Task<Void, Never>?
 
     init(model: AppModel) {
         self.model = model
@@ -133,7 +143,7 @@ final class NotchPanelController {
             contentRect: NSRect(
                 x: 0,
                 y: 0,
-                width: panelWidth,
+                width: NotchLayout.panelWidth,
                 height: model.menuBarHeight
             ),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -157,14 +167,34 @@ final class NotchPanelController {
 
         installOutsideClickMonitors()
 
-        Publishers.CombineLatest4(
-            model.$isExpanded.removeDuplicates(),
-            model.$isHoveringNotch.removeDuplicates(),
-            model.$isPanelClosing.removeDuplicates(),
-            model.$isNotchCanvasExpanded.removeDuplicates()
-        )
-            .sink { [weak self] _, _, _, _ in
+        model.$panelState
+            .map { $0.windowGeometryPhase }
+            .removeDuplicates()
+            .sink { [weak self] _ in
                 self?.scheduleResize(animated: true)
+            }
+            .store(in: &cancellables)
+
+        model.$panelState
+            .map(\.isPresentingFileDropTarget)
+            .removeDuplicates()
+            .filter { $0 }
+            .sink { [weak self] _ in
+                self?.outsideCollapseTask?.cancel()
+                self?.outsideCollapseTask = nil
+            }
+            .store(in: &cancellables)
+
+        model.$fileDropInFlightSessionID
+            .removeDuplicates()
+            .compactMap { $0 }
+            .sink { [weak self] _ in
+                // A fast drop can be accepted before SwiftUI has mounted the
+                // visible DropTarget. Cancel the mouse-up dismissal as soon
+                // as the accepted session is marked, rather than relying on
+                // the target override to appear first.
+                self?.outsideCollapseTask?.cancel()
+                self?.outsideCollapseTask = nil
             }
             .store(in: &cancellables)
 
@@ -177,6 +207,7 @@ final class NotchPanelController {
 
     deinit {
         scheduledResizeTask?.cancel()
+        outsideCollapseTask?.cancel()
         frameAnimationTimer?.invalidate()
         if let globalMouseMonitor {
             NSEvent.removeMonitor(globalMouseMonitor)
@@ -188,10 +219,7 @@ final class NotchPanelController {
 
     func show() {
         resize(
-            expanded: model.isExpanded,
-            hovering: model.isHoveringNotch,
-            closing: model.isPanelClosing,
-            canvasExpanded: model.isNotchCanvasExpanded,
+            state: model.panelState,
             animated: false
         )
         panel.orderFrontRegardless()
@@ -207,60 +235,62 @@ final class NotchPanelController {
             try? await Task.sleep(for: .milliseconds(16))
             guard !Task.isCancelled, let self else { return }
             self.resize(
-                expanded: self.model.isExpanded,
-                hovering: self.model.isHoveringNotch,
-                closing: self.model.isPanelClosing,
-                canvasExpanded: self.model.isNotchCanvasExpanded,
+                state: self.model.panelState,
                 animated: animated
             )
         }
     }
 
     private func resize(
-        expanded: Bool,
-        hovering: Bool,
-        closing: Bool,
-        canvasExpanded: Bool,
+        state: PanelState,
         animated: Bool
     ) {
         guard let screen = preferredScreen() else { return }
         let shouldAnimate = animated
             && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
 
-        let menuBarHeight = max(
-            32,
-            screen.frame.maxY - screen.visibleFrame.maxY
+        let menuBarHeight = NotchLayout.menuBarHeight(
+            screenFrame: screen.frame,
+            visibleFrame: screen.visibleFrame
         )
         let notchWidth = resolvedNotchWidth(on: screen)
 
         model.menuBarHeight = menuBarHeight
         model.notchWidth = notchWidth
 
-        let height: CGFloat
-        if closing {
-            // Keep the canvas expanded while SwiftUI fades the surface out.
-            // Shrinking a window that still contains the fixed-height panel
-            // creates a constraint re-entry crash on macOS 27.
-            height = hoveredHeight
-                + expandedGap
-                + expandedPanelHeight
-        } else if expanded {
-            height = hoveredHeight
-                + expandedGap
-                + expandedPanelHeight
-        } else if hovering || canvasExpanded {
-            height = max(menuBarHeight, hoveredHeight)
-        } else {
-            height = menuBarHeight
-        }
-        let frame = NSRect(
-            x: screen.frame.midX - panelWidth / 2,
-            y: screen.frame.maxY - height,
-            width: panelWidth,
-            height: height
+        let leftWingWidth = NotchLayout.compactWingWidth(
+            for: model.leftWingContent,
+            media: model.media
+        )
+        let rightWingWidth = NotchLayout.compactWingWidth(
+            for: model.rightWingContent,
+            media: model.media
         )
 
-        // Hover animation runs entirely inside a stationary 74 pt canvas.
+        // The resize is deferred by one display interval above. During close,
+        // windowGeometryPhase points directly at the final compact/Peek frame
+        // while SwiftUI keeps the workspace mounted until the animation ends.
+        let geometry = NotchLayout.geometry(
+            screenFrame: screen.frame,
+            menuBarHeight: menuBarHeight,
+            phase: state.windowGeometryPhase,
+            compactSurfaceWidth: NotchLayout.compactSurfaceWidth(
+                leftWingWidth: leftWingWidth,
+                notchWidth: notchWidth,
+                rightWingWidth: rightWingWidth
+            ),
+            compactSurfaceHorizontalOffset: NotchLayout.compactSurfaceHorizontalOffset(
+                leftWingWidth: leftWingWidth,
+                rightWingWidth: rightWingWidth
+            )
+        )
+        let frame = geometry.windowFrame
+        let expanded = state.isExpanded
+        let hovering = state.isHoveringNotch
+        let closing = state.isPanelClosing
+        let canvasExpanded = state.isNotchCanvasExpanded
+
+        // Hover animation runs entirely inside a stationary Peek canvas.
         // Growing that canvas immediately avoids compositor lag between the
         // window frame and SwiftUI's black surface. The canvas is collapsed
         // only after SwiftUI reports logical animation completion.
@@ -284,7 +314,7 @@ final class NotchPanelController {
 
         resizeRevision += 1
         let revision = resizeRevision
-        let wasExpanded = panel.frame.height > hoveredHeight + 40
+        let wasExpanded = panel.frame.height > NotchLayout.hoveredHeight + 40
 
         frameAnimationTimer?.invalidate()
         frameAnimationTimer = nil
@@ -377,10 +407,11 @@ final class NotchPanelController {
             matching: [.leftMouseDown, .rightMouseDown]
         ) { [weak self] _ in
             // A global monitor only receives clicks delivered to other apps,
-            // so every event here is unambiguously outside this panel.
+            // so every event here begins outside this panel. Delay dismissal
+            // until mouse-up: an active Finder drag may still enter the notch,
+            // in which case the drop target or accepted session cancels it.
             Task { @MainActor [weak self] in
-                guard let self, self.model.isExpanded else { return }
-                self.model.collapseExpanded()
+                self?.scheduleGlobalOutsideCollapse()
             }
         }
 
@@ -401,6 +432,25 @@ final class NotchPanelController {
         }
     }
 
+    private func scheduleGlobalOutsideCollapse() {
+        outsideCollapseTask?.cancel()
+        outsideCollapseTask = Task { @MainActor [weak self] in
+            while NSEvent.pressedMouseButtons != 0 {
+                try? await Task.sleep(for: .milliseconds(40))
+                guard !Task.isCancelled else { return }
+            }
+            guard !Task.isCancelled,
+                  let self,
+                  self.model.isExpanded,
+                  self.model.pendingFileDropSessionID == nil,
+                  !self.model.isFileDropInFlight,
+                  !self.model.panelState.isPresentingFileDropTarget else {
+                return
+            }
+            self.model.collapseExpanded()
+        }
+    }
+
     private func collapseIfNeeded(at screenPoint: NSPoint) {
         guard model.isExpanded,
               !expandedSurfaceFrame.contains(screenPoint) else {
@@ -410,30 +460,21 @@ final class NotchPanelController {
     }
 
     private var expandedSurfaceFrame: NSRect {
-        let visibleHeight = hoveredHeight + expandedGap + expandedPanelHeight
-        return NSRect(
-            x: panel.frame.midX - 260,
-            y: panel.frame.maxY - visibleHeight,
-            width: 520,
-            height: visibleHeight
-        )
+        NotchLayout.workspaceVisibleSurfaceFrame(in: panel.frame)
     }
 
     private func resolvedNotchWidth(on screen: NSScreen) -> CGFloat {
-        guard screen.safeAreaInsets.top > 0,
-              let leftArea = screen.auxiliaryTopLeftArea,
-              let rightArea = screen.auxiliaryTopRightArea else {
-            return 168
+        let measuredWidth: CGFloat?
+        if let leftArea = screen.auxiliaryTopLeftArea,
+           let rightArea = screen.auxiliaryTopRightArea {
+            measuredWidth = rightArea.minX - leftArea.maxX
+        } else {
+            measuredWidth = nil
         }
-
-        let leftEdge = leftArea.maxX
-        let rightEdge = rightArea.minX
-        let measuredWidth = rightEdge - leftEdge
-
-        guard measuredWidth.isFinite, measuredWidth > 100 else {
-            return 186
-        }
-        return measuredWidth
+        return NotchLayout.resolvedNotchWidth(
+            hasSafeArea: screen.safeAreaInsets.top > 0,
+            measuredWidth: measuredWidth
+        )
     }
 
     private func preferredScreen() -> NSScreen? {

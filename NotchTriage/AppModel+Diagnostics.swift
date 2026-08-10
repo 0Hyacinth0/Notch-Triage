@@ -26,10 +26,14 @@ extension AppModel {
     }
 
     func copyDiagnosticReport() {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(diagnosticReport, forType: .string)
-        diagnostics.recordLifecycle("诊断报告已复制到剪贴板")
+        if writeClipboardPayload(.text(diagnosticReport)) {
+            diagnostics.recordLifecycle("诊断报告已复制到剪贴板")
+        } else {
+            diagnostics.recordLifecycle(
+                "诊断报告复制失败",
+                level: .warning
+            )
+        }
     }
 
     var diagnosticReport: String {
@@ -67,11 +71,19 @@ extension AppModel {
         refreshScheduler.setSuspended(paused)
 
         if paused {
-            systemHUDDismissTask?.cancel()
-            systemHUD = nil
+            fileDropActivationTask?.cancel()
+            fileDropExitTask?.cancel()
+            fileDropSafetyTask?.cancel()
+            fileShelfAddTask?.cancel()
+            cancelFileDropInFlight()
+            pendingFileDropSessionID = nil
+            sendPanelEvent(.activitySuspended)
             systemHUDService.stop()
+            setClipboardHistoryPaused(true)
         } else {
+            sendPanelEvent(.activityResumed)
             systemHUDService.start()
+            setClipboardHistoryPaused(false)
         }
 
         diagnostics.recordLifecycle(

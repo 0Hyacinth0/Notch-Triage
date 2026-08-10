@@ -367,6 +367,93 @@ struct SettingsRootView: View {
                 }
             }
 
+            SettingsGroup(title: "操作提示") {
+                HStack(alignment: .center, spacing: 12) {
+                    SettingsRowLabel(
+                        title: "展开面板指引",
+                        subtitle: model.expandHintPolicy.didExpandPanel
+                            ? "已学会点击展开；可重新显示前 3 次悬停提示。"
+                            : "尚未完成引导，已显示 \(model.expandHintPolicy.impressionCount)/3 次。",
+                        symbol: "chevron.down.circle"
+                    )
+
+                    Spacer(minLength: 12)
+
+                    Button("重新显示") {
+                        model.resetExpandHint()
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+
+            SettingsGroup(title: "剪贴板历史") {
+                HStack(alignment: .center, spacing: 12) {
+                    SettingsRowLabel(
+                        title: model.clipboardHistoryEnabled
+                            ? (model.isClipboardMonitoringActive ? "正在监控" : "监控已暂停或受阻")
+                            : "默认关闭",
+                        subtitle: "只记录白名单内容并保存在本机；无法保证识别所有密码或令牌。",
+                        symbol: model.clipboardHistoryEnabled ? "clipboard.fill" : "clipboard"
+                    )
+
+                    Spacer(minLength: 12)
+
+                    Button(model.clipboardHistoryEnabled ? "停止并保留" : "启用") {
+                        if model.clipboardHistoryEnabled {
+                            model.disableClipboardHistory(clearHistory: false)
+                        } else {
+                            model.enableClipboardHistory()
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(model.clipboardHistoryEnabled ? .secondary : .accentColor)
+                }
+
+                Divider()
+
+                HStack(spacing: 12) {
+                    SettingsRowLabel(
+                        title: "保留期限",
+                        subtitle: model.clipboardRetentionPolicy.privacyDescription,
+                        symbol: "clock.arrow.circlepath"
+                    )
+                    Spacer(minLength: 12)
+                    Picker(
+                        "保留期限",
+                        selection: Binding(
+                            get: { model.clipboardRetentionPolicy },
+                            set: { model.setClipboardRetentionPolicy($0) }
+                        )
+                    ) {
+                        ForEach(ClipboardRetentionPolicy.allCases) { policy in
+                            Text(policy.title).tag(policy)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 150)
+                }
+
+                if let notice = model.clipboardAccessNotice {
+                    Divider()
+                    Text(notice)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Divider()
+
+                HStack {
+                    Text("清空历史不会更改当前系统剪贴板。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 12)
+                    Button("清空历史", role: .destructive) {
+                        model.clearClipboardHistory()
+                    }
+                    .disabled(model.clipboardHistoryItems.isEmpty)
+                }
+            }
+
             SettingsGroup(title: "登录项") {
                 HStack(alignment: .center, spacing: 12) {
                     Toggle(

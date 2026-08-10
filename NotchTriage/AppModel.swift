@@ -27,14 +27,34 @@ final class AppModel: ObservableObject {
         static let notificationPromptAnimation = "notch.notificationPromptAnimation"
         static let legacyNotificationEyeStyle = "notch.notificationEyeStyle"
         static let codexDisplayMode = "notch.codexDisplayMode"
+        static let workspaceSection = "notch.workspace.lastSection"
+        static let didExpandPanel = "notch.onboarding.didExpandPanel"
+        static let expandHintImpressions = "notch.onboarding.expandHintImpressions"
+        static let clipboardHistoryEnabled = "notch.clipboard.historyEnabled"
+        static let clipboardRetentionPolicy = "notch.clipboard.retentionPolicy"
         static let lastUpdateCheck = "updates.lastSuccessfulCheck"
         static let lastPromptedVersion = "updates.lastPromptedVersion"
     }
 
-    @Published var isExpanded = false
-    @Published var isPanelClosing = false
-    @Published var isNotchCanvasExpanded = false
-    @Published var isHoveringNotch = false
+    @Published private(set) var panelState = PanelState()
+    @Published var workspaceSection: WorkspaceSection {
+        didSet {
+            UserDefaults.standard.set(
+                workspaceSection.rawValue,
+                forKey: PreferenceKey.workspaceSection
+            )
+        }
+    }
+    @Published private(set) var expandHintPolicy: ExpandHintPolicy
+    @Published private(set) var isExpandHintVisibleForCurrentHover = false
+    @Published private(set) var fileShelfItems: [FileShelfItem] = []
+    @Published private(set) var fileShelfFeedback: String?
+    @Published private(set) var clipboardHistoryEnabled: Bool
+    @Published private(set) var clipboardRetentionPolicy: ClipboardRetentionPolicy
+    @Published private(set) var clipboardHistoryItems: [ClipboardHistoryItem] = []
+    @Published private(set) var clipboardFeedback: String?
+    @Published private(set) var clipboardAccessNotice: String?
+    @Published private(set) var isClipboardMonitoringActive = false
     @Published var menuBarHeight: CGFloat = 37
     @Published var notchWidth: CGFloat = 186
     @Published var media = MediaSnapshot.idle
@@ -50,7 +70,6 @@ final class AppModel: ObservableObject {
     }
     @Published var notificationSources: [NotificationSource] = []
     @Published var notificationPulse: NotificationPulse?
-    @Published var systemHUD: SystemHUDSnapshot?
     @Published var trashCount: Int?
     @Published var power = PowerSnapshot.empty
     @Published var chargeLimit = ChargeLimitSnapshot.unavailable
@@ -170,10 +189,86 @@ final class AppModel: ObservableObject {
     var hoverCollapseTask: Task<Void, Never>?
     var panelCloseTask: Task<Void, Never>?
     var updateTask: Task<Void, Never>?
+    var updatePromptPresentationTask: Task<Void, Never>?
     var settingsWindowTask: Task<Void, Never>?
+    var fileDropActivationTask: Task<Void, Never>?
+    var fileDropExitTask: Task<Void, Never>?
+    var fileDropSafetyTask: Task<Void, Never>?
+    var fileShelfAddTask: Task<Void, Never>?
+    var fileShelfMaintenanceTask: Task<Void, Never>?
+    var fileShelfFeedbackTask: Task<Void, Never>?
+    var clipboardStoreTask: Task<Void, Never>?
+    var clipboardFeedbackTask: Task<Void, Never>?
+    var pendingFileDropSessionID: UUID?
+    /// The drag session whose accepted payload is still being persisted.
+    ///
+    /// This is deliberately separate from `pendingFileDropSessionID`: the
+    /// latter only covers the AppKit drag-enter/activation window, while this
+    /// session remains live until the async shelf mutation has settled.
+    @Published private(set) var fileDropInFlightSessionID: UUID?
     var settingsWindowOpener: (() -> Void)?
     private var accessibilityRequestTask: Task<Void, Never>?
     private var notificationAnimationTask: Task<Void, Never>?
+    private var acceptsSystemHUDEvents = false
+    let fileShelfStore = FileShelfStore()
+    let clipboardStore: ClipboardStore
+    let pasteboardAccess = GeneralPasteboardAccess()
+    var clipboardMonitor: ClipboardMonitor?
+    var clipboardLifecycleGeneration: UInt64 = 0
+    var areApplicationServicesRunning = false
+
+    func replacePanelState(_ state: PanelState) {
+        panelState = state
+    }
+
+    func replaceFileShelfItems(_ items: [FileShelfItem]) {
+        fileShelfItems = items
+    }
+
+    func replaceFileShelfFeedback(_ feedback: String?) {
+        fileShelfFeedback = feedback
+    }
+
+    func replaceClipboardHistoryItems(_ items: [ClipboardHistoryItem]) {
+        clipboardHistoryItems = items
+    }
+
+    func replaceClipboardFeedback(_ feedback: String?) {
+        clipboardFeedback = feedback
+    }
+
+    func replaceClipboardHistoryEnabled(_ enabled: Bool) {
+        clipboardHistoryEnabled = enabled
+    }
+
+    func replaceClipboardRetentionPolicy(_ policy: ClipboardRetentionPolicy) {
+        clipboardRetentionPolicy = policy
+    }
+
+    func replaceClipboardAccessNotice(_ notice: String?) {
+        clipboardAccessNotice = notice
+    }
+
+    func replaceClipboardMonitoringActive(_ active: Bool) {
+        isClipboardMonitoringActive = active
+    }
+
+    var isFileDropInFlight: Bool {
+        fileDropInFlightSessionID != nil
+    }
+
+    func beginFileDropInFlight(sessionID: UUID) {
+        fileDropInFlightSessionID = sessionID
+    }
+
+    func finishFileDropInFlight(sessionID: UUID) {
+        guard fileDropInFlightSessionID == sessionID else { return }
+        fileDropInFlightSessionID = nil
+    }
+
+    func cancelFileDropInFlight() {
+        fileDropInFlightSessionID = nil
+    }
 
     func motion(_ animation: Animation) -> Animation {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
@@ -182,23 +277,47 @@ final class AppModel: ObservableObject {
     }
 
     init() {
+        let defaults = UserDefaults.standard
+        workspaceSection = WorkspaceSection.restored(
+            from: defaults.string(forKey: PreferenceKey.workspaceSection)
+        )
+        expandHintPolicy = ExpandHintPolicy(
+            persistedImpressionCount: defaults.integer(
+                forKey: PreferenceKey.expandHintImpressions
+            ),
+            didExpandPanel: defaults.bool(
+                forKey: PreferenceKey.didExpandPanel
+            )
+        )
+        clipboardHistoryEnabled = defaults.bool(
+            forKey: PreferenceKey.clipboardHistoryEnabled
+        )
+        let restoredClipboardRetentionPolicy = ClipboardRetentionPolicy(
+            rawValue: defaults.string(
+                forKey: PreferenceKey.clipboardRetentionPolicy
+            ) ?? ""
+        ) ?? .session
+        clipboardRetentionPolicy = restoredClipboardRetentionPolicy
+        clipboardStore = ClipboardStore(
+            retentionPolicy: restoredClipboardRetentionPolicy
+        )
         leftWingContent = NotchWingContent(
-            rawValue: UserDefaults.standard.string(
+            rawValue: defaults.string(
                 forKey: PreferenceKey.leftWingContent
             ) ?? ""
         ) ?? .media
         rightWingContent = NotchWingContent(
-            rawValue: UserDefaults.standard.string(
+            rawValue: defaults.string(
                 forKey: PreferenceKey.rightWingContent
             ) ?? ""
         ) ?? .codex
         codexDisplayMode = CodexDisplayMode(
-            rawValue: UserDefaults.standard.string(
+            rawValue: defaults.string(
                 forKey: PreferenceKey.codexDisplayMode
             ) ?? ""
         ) ?? .weekly
         let legacyPromptIcon: NotificationPromptIcon
-        switch UserDefaults.standard.string(
+        switch defaults.string(
             forKey: PreferenceKey.legacyNotificationEyeStyle
         ) {
         case "filled": legacyPromptIcon = .sparkles
@@ -206,21 +325,21 @@ final class AppModel: ObservableObject {
         default: legacyPromptIcon = .sparkle
         }
         notificationPromptIcon = NotificationPromptIcon(
-            rawValue: UserDefaults.standard.string(
+            rawValue: defaults.string(
                 forKey: PreferenceKey.notificationPromptIcon
             ) ?? ""
         ) ?? legacyPromptIcon
         notificationPromptColor = NotificationPromptColor(
-            rawValue: UserDefaults.standard.string(
+            rawValue: defaults.string(
                 forKey: PreferenceKey.notificationPromptColor
             ) ?? ""
         ) ?? .mint
         notificationPromptAnimation = NotificationPromptAnimation(
-            rawValue: UserDefaults.standard.string(
+            rawValue: defaults.string(
                 forKey: PreferenceKey.notificationPromptAnimation
             ) ?? ""
         ) ?? .pulse
-        if let data = UserDefaults.standard.data(forKey: PreferenceKey.ringAppearance),
+        if let data = defaults.data(forKey: PreferenceKey.ringAppearance),
            let savedAppearance = try? JSONDecoder().decode(
                RingAppearanceSettings.self,
                from: data
@@ -371,29 +490,47 @@ final class AppModel: ObservableObject {
     }
 
     func start() {
+        areApplicationServicesRunning = true
         codexService.start()
         mediaService.start()
         notificationService.autoDismissBanners = autoDismissBanners
         notificationService.start(promptForAccessibility: true)
         trashService.start()
         powerService.start()
+        acceptsSystemHUDEvents = true
         systemHUDService.start()
         refreshLaunchAtLoginStatus()
         refreshScheduler.start()
         activityMonitor.start()
+        startClipboardHistoryLifecycle()
         checkForUpdates(manual: false)
         diagnostics.recordLifecycle("应用服务已启动；后台刷新由统一调度器管理")
     }
 
     func stop() {
+        areApplicationServicesRunning = false
+        stopClipboardHistoryLifecycle()
+        acceptsSystemHUDEvents = false
         activityMonitor.stop()
         refreshScheduler.stop()
         pulseTask?.cancel()
+        notificationAnimationTask?.cancel()
         systemHUDDismissTask?.cancel()
         hoverCollapseTask?.cancel()
         panelCloseTask?.cancel()
         updateTask?.cancel()
+        updatePromptPresentationTask?.cancel()
         settingsWindowTask?.cancel()
+        fileDropActivationTask?.cancel()
+        fileDropExitTask?.cancel()
+        fileDropSafetyTask?.cancel()
+        fileShelfAddTask?.cancel()
+        fileShelfMaintenanceTask?.cancel()
+        fileShelfFeedbackTask?.cancel()
+        clipboardStoreTask?.cancel()
+        clipboardFeedbackTask?.cancel()
+        cancelFileDropInFlight()
+        pendingFileDropSessionID = nil
         accessibilityRequestTask?.cancel()
         codexService.stop()
         mediaService.stop()
@@ -401,21 +538,30 @@ final class AppModel: ObservableObject {
         trashService.stop()
         powerService.stop()
         systemHUDService.stop()
+        fileShelfItems.removeAll()
+        fileShelfFeedback = nil
+        Task { [fileShelfStore] in
+            _ = await fileShelfStore.removeAll()
+        }
+        sendPanelEvent(.reset)
         diagnostics.recordLifecycle("应用服务已停止")
     }
 
     func toggleExpanded() {
-        guard !isPanelClosing else { return }
+        guard !panelState.blocksOrdinaryPanelInput,
+              !isPanelClosing else { return }
         if isExpanded {
             collapseExpanded()
             return
         }
 
-        hoverCollapseTask?.cancel()
-        panelCloseTask?.cancel()
-        isNotchCanvasExpanded = true
-        isExpanded = true
-        isHoveringNotch = false
+        markExpandHintLearned()
+        sendPanelEvent(.workspaceOpened)
+        if let updatePrompt, updatePrompt.release != nil {
+            sendPanelEvent(
+                .releaseUpdatePromptPresented(id: updatePrompt.id)
+            )
+        }
         refreshScheduler.setInteractive(true)
         notificationService.refreshNow()
         trashService.refresh()
@@ -423,35 +569,11 @@ final class AppModel: ObservableObject {
     }
 
     func collapseExpanded() {
-        guard isExpanded, !isPanelClosing else { return }
-        hoverCollapseTask?.cancel()
-        isNotchCanvasExpanded = true
-        isPanelClosing = true
+        guard isExpanded,
+              !isPanelClosing,
+              !panelState.blocksOrdinaryPanelInput else { return }
+        sendPanelEvent(.workspaceCloseRequested)
         refreshScheduler.setInteractive(false)
-
-        panelCloseTask?.cancel()
-        panelCloseTask = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(340))
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                guard let self else { return }
-                withAnimation(self.motion(NotchDesign.Motion.panelClose)) {
-                    self.isExpanded = false
-                    self.isPanelClosing = false
-                    self.isHoveringNotch = false
-                }
-            }
-
-            try? await Task.sleep(for: .milliseconds(320))
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                guard let self,
-                      !self.isExpanded,
-                      !self.isPanelClosing,
-                      !self.isHoveringNotch else { return }
-                self.isNotchCanvasExpanded = false
-            }
-        }
     }
 
     func requestAccessibility() {
@@ -582,6 +704,15 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func setWorkspaceSection(_ section: WorkspaceSection) {
+        withAnimation(motion(NotchDesign.Motion.sectionChange)) {
+            workspaceSection = section
+        }
+        if section == .shelf {
+            refreshFileShelfAvailability()
+        }
+    }
+
     func swapWingContents() {
         let previousLeft = leftWingContent
         withAnimation(motion(NotchDesign.Motion.value)) {
@@ -680,35 +811,59 @@ final class AppModel: ObservableObject {
     }
 
     func setNotchHovered(_ hovered: Bool) {
-        guard !isExpanded else { return }
-        hoverCollapseTask?.cancel()
-
         if hovered {
-            isNotchCanvasExpanded = true
+            let isValidHintHover = !isExpanded
+                && !isPanelClosing
+                && !isHoveringNotch
+                && pendingFileDropSessionID == nil
+                && panelState.presentationOverride == nil
+                && systemHUD == nil
             withAnimation(motion(NotchDesign.Motion.hover)) {
-                isHoveringNotch = true
+                sendPanelEvent(.pointerEntered)
             }
-            return
+            if isValidHintHover, isHoveringNotch {
+                recordValidExpandHintHover()
+            }
+        } else {
+            isExpandHintVisibleForCurrentHover = false
+            sendPanelEvent(.pointerExited)
         }
+    }
 
-        hoverCollapseTask = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(130))
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                guard let self, !self.isExpanded else { return }
-                withAnimation(
-                    self.motion(NotchDesign.Motion.hover),
-                    completionCriteria: .logicallyComplete
-                ) {
-                    self.isHoveringNotch = false
-                } completion: {
-                    guard !self.isExpanded,
-                          !self.isPanelClosing,
-                          !self.isHoveringNotch else { return }
-                    self.isNotchCanvasExpanded = false
-                }
-            }
-        }
+    func resetExpandHint() {
+        var policy = expandHintPolicy
+        policy.reset()
+        expandHintPolicy = policy
+        isExpandHintVisibleForCurrentHover = false
+        persistExpandHintPolicy()
+    }
+
+    private func recordValidExpandHintHover() {
+        var policy = expandHintPolicy
+        let shouldShow = policy.recordValidHover()
+        expandHintPolicy = policy
+        isExpandHintVisibleForCurrentHover = shouldShow
+        persistExpandHintPolicy()
+    }
+
+    private func markExpandHintLearned() {
+        var policy = expandHintPolicy
+        policy.markExpanded()
+        expandHintPolicy = policy
+        isExpandHintVisibleForCurrentHover = false
+        persistExpandHintPolicy()
+    }
+
+    private func persistExpandHintPolicy() {
+        let defaults = UserDefaults.standard
+        defaults.set(
+            expandHintPolicy.impressionCount,
+            forKey: PreferenceKey.expandHintImpressions
+        )
+        defaults.set(
+            expandHintPolicy.didExpandPanel,
+            forKey: PreferenceKey.didExpandPanel
+        )
     }
 
     func quitApplication() {
@@ -716,6 +871,7 @@ final class AppModel: ObservableObject {
     }
 
     func openSettings() {
+        guard panelState.presentationOverride != .installingUpdate else { return }
         let shouldWaitForPanel = isExpanded || isPanelClosing
         if isExpanded {
             collapseExpanded()
@@ -762,10 +918,8 @@ final class AppModel: ObservableObject {
     }
 
     private func showSystemHUD(_ snapshot: SystemHUDSnapshot) {
-        guard !isPanelClosing else { return }
-        systemHUDDismissTask?.cancel()
-        isNotchCanvasExpanded = true
-
+        guard acceptsSystemHUDEvents,
+              !isBackgroundRefreshPaused else { return }
         let isContinuousUpdate = systemHUD?.kind == snapshot.kind
 
         withAnimation(
@@ -775,30 +929,7 @@ final class AppModel: ObservableObject {
                     : NotchDesign.Motion.panelOpen
             )
         ) {
-            systemHUD = snapshot
-        }
-
-        let visibility: Duration = snapshot.kind == .airPods
-            ? .milliseconds(2_600)
-            : .milliseconds(1_650)
-        systemHUDDismissTask = Task { [weak self] in
-            try? await Task.sleep(for: visibility)
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                guard let self else { return }
-                withAnimation(
-                    self.motion(NotchDesign.Motion.panelClose),
-                    completionCriteria: .logicallyComplete
-                ) {
-                    self.systemHUD = nil
-                } completion: {
-                    guard !self.isExpanded,
-                          !self.isPanelClosing,
-                          !self.isHoveringNotch,
-                          self.systemHUD == nil else { return }
-                    self.isNotchCanvasExpanded = false
-                }
-            }
+            sendPanelEvent(.hudReceived(snapshot))
         }
     }
 }

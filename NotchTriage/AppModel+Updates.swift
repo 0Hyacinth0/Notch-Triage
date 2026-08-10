@@ -9,7 +9,7 @@ extension AppModel {
     func handleSettingsUpdateAction() {
         guard !updateStatus.isBusy else { return }
         if let availableUpdate {
-            updatePrompt = nil
+            dismissUpdatePrompt()
             installUpdate(availableUpdate)
         } else {
             checkForUpdates(manual: true)
@@ -17,6 +17,7 @@ extension AppModel {
     }
 
     func handleUpdateMenuAction() {
+        guard !updateStatus.isBusy else { return }
         if let availableUpdate {
             UserDefaults.standard.set(
                 availableUpdate.version,
@@ -87,6 +88,7 @@ extension AppModel {
         guard !updateStatus.isBusy else { return }
         let currentAppURL = Bundle.main.bundleURL.standardizedFileURL
         guard isInstalledApplication(currentAppURL) else {
+            dismissUpdatePrompt()
             updatePrompt = AppUpdatePrompt(
                 title: "无法自动安装",
                 message: "请先将 NotchTriage.app 移到“应用程序”文件夹，再从那里运行并检查更新。",
@@ -95,6 +97,9 @@ extension AppModel {
             return
         }
 
+        withAnimation(motion(NotchDesign.Motion.panelOpen)) {
+            sendPanelEvent(.installStarted)
+        }
         updateStatus = .downloading(release.version)
         updateDownloadProgress = AppUpdateDownloadProgress(
             receivedBytes: 0,
@@ -141,9 +146,11 @@ extension AppModel {
                 NSApp.terminate(nil)
             } catch is CancellationError {
                 updateDownloadProgress = nil
+                sendPanelEvent(.installFinished)
             } catch {
                 updateDownloadProgress = nil
                 updateStatus = .failed(error.localizedDescription)
+                sendPanelEvent(.installFinished)
                 updatePrompt = AppUpdatePrompt(
                     title: "更新安装失败",
                     message: error.localizedDescription,
@@ -184,24 +191,16 @@ extension AppModel {
                 != release.version else { return }
         defaults.set(release.version, forKey: PreferenceKey.lastPromptedVersion)
 
-        hoverCollapseTask?.cancel()
-        panelCloseTask?.cancel()
-        isNotchCanvasExpanded = true
         withAnimation(motion(NotchDesign.Motion.panelOpen)) {
-            isExpanded = true
-            isPanelClosing = false
-            isHoveringNotch = false
-        }
-
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(240))
-            guard let self,
-                  self.availableUpdate?.version == release.version else { return }
-            self.presentUpdatePrompt(for: release)
+            sendPanelEvent(
+                .automaticUpdateWorkspaceRequested(
+                    releaseVersion: release.version
+                )
+            )
         }
     }
 
-    private func presentUpdatePrompt(for release: AppRelease) {
+    func presentUpdatePrompt(for release: AppRelease) {
         let summary = release.notes
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let abbreviatedNotes = summary.count > 320
@@ -211,11 +210,25 @@ extension AppModel {
             ? "确认后将下载、验证并安装更新，然后重启 Notch Triage。"
             : abbreviatedNotes
                 + "\n\n确认后将下载、验证并安装更新，然后重启 Notch Triage。"
-        updatePrompt = AppUpdatePrompt(
+        let prompt = AppUpdatePrompt(
             title: "发现 \(release.displayVersion)",
             message: message,
             release: release
         )
+        updatePrompt = prompt
+        sendPanelEvent(.releaseUpdatePromptPresented(id: prompt.id))
+    }
+
+    func dismissUpdatePrompt() {
+        if case .releaseUpdatePrompt(let id) = panelState.presentationOverride {
+            sendPanelEvent(.releaseUpdatePromptDismissed(id: id))
+        }
+        updatePrompt = nil
+    }
+
+    func installPresentedUpdate(_ release: AppRelease) {
+        dismissUpdatePrompt()
+        installUpdate(release)
     }
 
     private func isNewerVersion(_ candidate: String, than current: String) -> Bool {

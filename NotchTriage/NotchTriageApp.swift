@@ -24,6 +24,16 @@ struct NotchTriageApp: App {
                 Button("显示刘海面板") {
                     appDelegate.showNotchPanel()
                 }
+
+                Divider()
+
+                Button("打开文件暂存架") {
+                    appDelegate.model.showWorkspace(section: .shelf)
+                }
+
+                Button("打开剪贴板") {
+                    appDelegate.model.showWorkspace(section: .clipboard)
+                }
             }
         }
     }

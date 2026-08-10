@@ -3,10 +3,10 @@ import SwiftUI
 
 struct NotchRootView: View {
     @ObservedObject var model: AppModel
-    private let hoveredNotchHeight: CGFloat = 74
+    private let hoveredNotchHeight = NotchLayout.hoveredHeight
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: NotchLayout.expandedGap) {
             collapsedBar
                 .frame(height: compactHeight)
 
@@ -32,6 +32,7 @@ struct NotchRootView: View {
             || model.isExpanded
             || model.isPanelClosing
             || model.systemHUD != nil
+            || model.panelState.isPresentingFileDropTarget
             ? hoveredNotchHeight
             : model.menuBarHeight
     }
@@ -59,15 +60,18 @@ struct NotchRootView: View {
     }
 
     private var compactAlignmentOffset: CGFloat {
-        let leftWidth = compactWingWidth(
+        let leftWidth = NotchLayout.compactWingWidth(
             for: model.leftWingContent,
             media: model.media
         )
-        let rightWidth = compactWingWidth(
+        let rightWidth = NotchLayout.compactWingWidth(
             for: model.rightWingContent,
             media: model.media
         )
-        return (rightWidth - leftWidth) / 2
+        return NotchLayout.compactSurfaceHorizontalOffset(
+            leftWingWidth: leftWidth,
+            rightWingWidth: rightWidth
+        )
     }
 }
 
@@ -214,22 +218,6 @@ private final class HoverTrackingView: NSView {
 private enum NotchWingSide: Equatable {
     case left
     case right
-}
-
-private func compactWingWidth(
-    for content: NotchWingContent,
-    media: MediaSnapshot
-) -> CGFloat {
-    switch content {
-    case .battery, .codex:
-        // The 27 pt ring sits in a 37 pt square slot, leaving roughly
-        // 5 pt on every side on the built-in display's 37 pt menu bar.
-        return 37
-    case .media:
-        return media == .idle ? 0 : 37
-    case .hidden:
-        return 0
-    }
 }
 
 private struct AttentionRing<Content: View>: View {
@@ -430,24 +418,25 @@ private struct LivingNotch: View {
     @ObservedObject var model: AppModel
     let hoveredHeight: CGFloat
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    private let shoulderRadius: CGFloat = 6
+    private let shoulderRadius = NotchLayout.shoulderRadius
 
     private var hovering: Bool {
         model.isHoveringNotch
             || model.isExpanded
             || model.isPanelClosing
             || model.systemHUD != nil
+            || model.panelState.isPresentingFileDropTarget
     }
 
     private var leftWidth: CGFloat {
-        compactWingWidth(
+        NotchLayout.compactWingWidth(
             for: model.leftWingContent,
             media: model.media
         )
     }
 
     private var rightWidth: CGFloat {
-        compactWingWidth(
+        NotchLayout.compactWingWidth(
             for: model.rightWingContent,
             media: model.media
         )
@@ -457,12 +446,26 @@ private struct LivingNotch: View {
         leftWidth + model.notchWidth + rightWidth
     }
 
+    private var compactSurfaceWidth: CGFloat {
+        NotchLayout.compactSurfaceWidth(
+            leftWingWidth: leftWidth,
+            notchWidth: model.notchWidth,
+            rightWingWidth: rightWidth
+        )
+    }
+
     private var width: CGFloat {
-        compactWidth + shoulderRadius * 2
+        compactSurfaceWidth
     }
 
     private var height: CGFloat {
         hovering ? hoveredHeight : min(model.menuBarHeight, 40)
+    }
+
+    private var showsHoverPreview: Bool {
+        hovering
+            && model.systemHUD == nil
+            && !model.panelState.isPresentingFileDropTarget
     }
 
     private var notificationCount: Int {
@@ -484,8 +487,18 @@ private struct LivingNotch: View {
         .overlay {
             hoverPreview
                 .frame(width: compactWidth, height: height)
-                .opacity(hovering && model.systemHUD == nil ? 1 : 0)
-                .accessibilityHidden(!hovering || model.systemHUD != nil)
+                .opacity(showsHoverPreview ? 1 : 0)
+                .accessibilityHidden(!showsHoverPreview)
+        }
+        .overlay {
+            if let target = model.panelState.fileDropTarget {
+                FileDropTargetContent(acceptance: target.acceptance)
+                    .frame(
+                        width: max(0, width - NotchLayout.shoulderRadius * 2),
+                        height: height
+                    )
+                    .transition(.opacity.combined(with: .scale(scale: 0.97)))
+            }
         }
         .overlay {
             if let snapshot = model.systemHUD {
@@ -499,6 +512,27 @@ private struct LivingNotch: View {
             }
         }
         .contentShape(Rectangle())
+        .background {
+            NotchFileDropTarget(
+                onDragEntered: { sessionID, urls, itemCount in
+                    model.fileDragEntered(
+                        sessionID: sessionID,
+                        urls: urls,
+                        itemCount: itemCount
+                    )
+                },
+                onDragExited: { sessionID in
+                    model.fileDragExited(sessionID: sessionID)
+                },
+                onDrop: { sessionID, urls, itemCount in
+                    model.performFileDrop(
+                        sessionID: sessionID,
+                        urls: urls,
+                        itemCount: itemCount
+                    )
+                }
+            )
+        }
         .foregroundStyle(.white)
         .animation(
             reduceMotion ? .linear(duration: 0.01) : NotchDesign.Motion.hover,
@@ -515,7 +549,8 @@ private struct LivingNotch: View {
             .frame(width: leftWidth, height: height)
 
             ZStack {
-                if let pulse = model.notificationPulse {
+                if model.panelState.canShowNotificationPulse,
+                   let pulse = model.notificationPulse {
                     SourceIcon(
                         bundleIdentifier: pulse.bundleIdentifier,
                         fallback: "bell.fill"
@@ -608,11 +643,22 @@ private struct LivingNotch: View {
                     .font(.system(size: 8.5, weight: .bold))
                     .foregroundStyle(.white.opacity(0.72))
 
-                Text("展开")
+                Text(
+                    model.isExpandHintVisibleForCurrentHover
+                        ? "点击展开"
+                        : "展开"
+                )
                     .font(.system(size: 7.5, weight: .medium))
                     .foregroundStyle(.white.opacity(0.44))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
         }
+        .accessibilityLabel(
+            model.isExpandHintVisibleForCurrentHover
+                ? "点击展开详细面板"
+                : "展开详细面板"
+        )
     }
 
     @ViewBuilder
@@ -932,6 +978,78 @@ struct CodexBalancePresentation: Equatable {
     }()
 }
 
+private struct FileDropTargetContent: View {
+    let acceptance: FileDropAcceptance
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: symbol)
+                .font(.system(size: 19, weight: .semibold))
+                .foregroundStyle(tint)
+                .frame(width: 38, height: 38)
+                .background(tint.opacity(0.14), in: .rect(cornerRadius: 11))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white)
+                Text(subtitle)
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.58))
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 38)
+        .padding(.bottom, 10)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var symbol: String {
+        switch acceptance {
+        case .accepted:
+            return "tray.and.arrow.down.fill"
+        case .partial:
+            return "exclamationmark.triangle.fill"
+        case .rejected:
+            return "circle.slash"
+        }
+    }
+
+    private var tint: Color {
+        switch acceptance {
+        case .accepted:
+            return .mint
+        case .partial:
+            return .yellow
+        case .rejected:
+            return .red
+        }
+    }
+
+    private var title: String {
+        switch acceptance {
+        case .accepted(let count):
+            return "松手加入 \(count) 项"
+        case .partial(let acceptedCount, let rejectedCount, _):
+            return "\(acceptedCount) 项可加入 · \(rejectedCount) 项跳过"
+        case .rejected:
+            return "不能加入暂存架"
+        }
+    }
+
+    private var subtitle: String {
+        switch acceptance {
+        case .accepted:
+            return "只保存引用，不会移动或复制原文件"
+        case .partial(_, _, let reason), .rejected(_, let reason):
+            return reason
+        }
+    }
+}
+
 private struct CompactCodexContent: View {
     @ObservedObject var model: AppModel
     let limits: [CodexLimitBucket]
@@ -1045,11 +1163,25 @@ private struct ExpandedPanelSurface: View {
                 }
             }
             .onChange(of: model.isPanelClosing) { _, closing in
-                guard closing else { return }
-                withAnimation(reduceMotion ? .linear(duration: 0.12) : NotchDesign.Motion.panelClose) {
-                    isVisible = false
+                if closing {
+                    withAnimation(
+                        reduceMotion
+                            ? .linear(duration: 0.12)
+                            : NotchDesign.Motion.panelClose
+                    ) {
+                        isVisible = false
+                    }
+                } else if model.isExpanded {
+                    withAnimation(
+                        reduceMotion
+                            ? .linear(duration: 0.12)
+                            : NotchDesign.Motion.panelOpen
+                    ) {
+                        isVisible = true
+                    }
                 }
             }
+            .allowsHitTesting(!model.isPanelClosing)
     }
 }
 
@@ -1062,16 +1194,10 @@ private struct ExpandedPanel: View {
         static let upperContentHeight: CGFloat = 288
     }
 
-    private enum Section: Hashable {
-        case power
-        case triage
-    }
-
     @ObservedObject var model: AppModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var confirmClearNotifications = false
     @State private var confirmEmptyTrash = false
-    @State private var section: Section = .power
 
     private var notificationCount: Int {
         model.notificationSources.reduce(0) { $0 + $1.count }
@@ -1087,24 +1213,30 @@ private struct ExpandedPanel: View {
                         .frame(maxWidth: 380)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .transition(.opacity)
-                } else if section == .power {
+                } else if model.workspaceSection == .power {
                     PowerDashboardView(model: model)
                         .transition(.opacity)
-                } else if section == .triage {
+                } else if model.workspaceSection == .notifications {
                     triageDashboard
                         .transition(.opacity)
+                } else if model.workspaceSection == .shelf {
+                    FileShelfView(model: model)
+                        .transition(.opacity)
                 } else {
-                    triageDashboard
+                    ClipboardHistoryView(model: model)
                         .transition(.opacity)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .padding(Layout.outerInset)
-        .frame(width: 520, height: 460)
+        .frame(
+            width: NotchLayout.expandedPanelWidth,
+            height: NotchLayout.expandedPanelHeight
+        )
         .animation(
             reduceMotion ? .linear(duration: 0.10) : NotchDesign.Motion.sectionChange,
-            value: section
+            value: model.workspaceSection
         )
         .animation(
             reduceMotion ? .linear(duration: 0.10) : NotchDesign.Motion.sectionChange,
@@ -1113,15 +1245,15 @@ private struct ExpandedPanel: View {
         .overlay {
             if let prompt = model.updatePrompt,
                let release = prompt.release,
+               model.panelState.isPresentingReleaseUpdatePrompt,
                !model.updateStatus.isBusy {
                 UpdateAvailableOverlay(
                     release: release,
                     onInstall: {
-                        model.updatePrompt = nil
-                        model.installUpdate(release)
+                        model.installPresentedUpdate(release)
                     },
                     onDismiss: {
-                        model.updatePrompt = nil
+                        model.dismissUpdatePrompt()
                     }
                 )
                 .transition(
@@ -1264,38 +1396,37 @@ private struct ExpandedPanel: View {
     private var header: some View {
         HStack(spacing: 10) {
             HStack(spacing: 7) {
-                Image(systemName: sectionSymbol)
+                Image(systemName: model.workspaceSection.symbol)
                     .font(.system(size: 12, weight: .semibold))
                     .contentTransition(.symbolEffect(.replace))
-                Text(sectionTitle)
+                Text(model.workspaceSection.title)
                     .font(.system(size: 14, weight: .semibold))
 
-                Text("\(notificationCount)")
-                    .font(.caption2.monospacedDigit().weight(.bold))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(.primary.opacity(0.1), in: Capsule())
-                    .opacity(section == .triage && notificationCount > 0 ? 1 : 0)
-                    .accessibilityHidden(section != .triage || notificationCount == 0)
+                if model.workspaceSection == .notifications,
+                   notificationCount > 0 {
+                    Text("\(notificationCount)")
+                        .font(.caption2.monospacedDigit().weight(.bold))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(.primary.opacity(0.1), in: Capsule())
+                }
             }
-            .frame(width: 104, alignment: .leading)
+            .frame(width: 88, alignment: .leading)
 
             Spacer(minLength: 8)
 
             GlassEffectContainer(spacing: 8) {
                 HStack(spacing: 8) {
-                    Picker("面板", selection: $section) {
-                        Image(systemName: "bolt.fill")
-                            .accessibilityLabel("电源")
-                            .tag(Section.power)
-                        Image(systemName: "bell.fill")
-                            .accessibilityLabel("通知")
-                            .tag(Section.triage)
+                    Picker("工作区", selection: workspaceSectionBinding) {
+                        ForEach(WorkspaceSection.allCases) { section in
+                            Label(section.title, systemImage: section.symbol)
+                                .tag(section)
+                        }
                     }
                     .labelsHidden()
                     .pickerStyle(.segmented)
                     .controlSize(.small)
-                    .frame(width: 76)
+                    .frame(width: 300)
 
                     Button {
                         model.openSettings()
@@ -1310,22 +1441,19 @@ private struct ExpandedPanel: View {
                     .accessibilityLabel("打开设置")
                 }
             }
+            .disabled(
+                model.updateStatus.isBusy
+                    || model.panelState.blocksOrdinaryPanelInput
+            )
         }
         .frame(height: 28)
     }
 
-    private var sectionTitle: String {
-        switch section {
-        case .power: return "电源"
-        case .triage: return "通知"
-        }
-    }
-
-    private var sectionSymbol: String {
-        switch section {
-        case .power: return "bolt.fill"
-        case .triage: return "bell.fill"
-        }
+    private var workspaceSectionBinding: Binding<WorkspaceSection> {
+        Binding(
+            get: { model.workspaceSection },
+            set: { model.setWorkspaceSection($0) }
+        )
     }
 
     private var triageDashboard: some View {

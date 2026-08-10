@@ -2,10 +2,10 @@
   <img src="./docs/assets/notch-triage-logo.png" alt="Notch Triage Logo" width="132" height="132">
   <h1>Notch Triage</h1>
   <p><strong>把 MacBook 刘海变成真正有用的系统状态与效率中心。</strong></p>
-  <p>原生、轻量、常驻的 macOS 刘海工具，集中呈现 Codex 额度、媒体、电源、通知与系统 HUD。</p>
+  <p>原生、轻量、常驻的 macOS 刘海工具，集中呈现系统状态，并提供文件暂存与隐私优先的剪贴板历史。</p>
 
   <p>
-    <img src="https://img.shields.io/badge/version-26.8.4.2327-25D9C5?style=flat-square" alt="Version 26.8.4.2327">
+    <img src="https://img.shields.io/badge/version-26.8.10.2030-25D9C5?style=flat-square" alt="Version 26.8.10.2030">
     <img src="https://img.shields.io/badge/macOS-26%2B-000000?style=flat-square&amp;logo=apple&amp;logoColor=white" alt="macOS 26+">
     <img src="https://img.shields.io/badge/Swift-5-F05138?style=flat-square&amp;logo=swift&amp;logoColor=white" alt="Swift 5">
     <img src="https://img.shields.io/badge/UI-Liquid%20Glass-4B5563?style=flat-square" alt="Liquid Glass">
@@ -64,6 +64,8 @@
 | 媒体中心 | 正在播放与播放进度 | 支持 Apple Music、Spotify、QQ 音乐、网易云音乐等系统媒体来源 |
 | 电源管理 | 电池健康、循环次数、实时功率 | 展示适配器、系统与电池之间的功率流；支持系统提供的充电上限档位 |
 | 通知与废纸篓 | 通知来源、横幅处理、圆环提示图标、废纸篓操作 | 通知桥不保存正文；有通知时每个可见圆环显示可切换图标、颜色和动画的提示；Widget Extension 不计入通知；危险操作需要用户明确确认 |
+| 文件暂存架 | 拖入、拖出、打开、Finder 定位与会话暂存 | 最多保留 20 个本地文件或文件夹引用；清空只删除引用，不移动、复制或删除原文件 |
+| 剪贴板历史 | 文本、图片与本地文件 URL | 默认关闭，用户明确启用后才监控；支持会话、1 天和 7 天保留期限，并可重新复制或随时清空 |
 | 稳定性 | 节能调度、休眠感知、诊断面板 | 锁屏、熄屏或休眠时暂停非必要刷新，唤醒后自动恢复 |
 | 更新 | GitHub Release 自动更新 | 下载后校验 SHA-256、Bundle ID、版本与签名 Team ID，再原子替换并重启 |
 
@@ -73,7 +75,7 @@
 
 1. **静止**：刘海保持紧凑，只呈现必要状态。
 2. **悬停**：展开为无回弹的快速预览，精确数值和媒体信息随即出现。
-3. **点击**：打开完整 Liquid Glass 面板，集中管理通知、电源、诊断和设置。
+3. **点击**：打开完整 Liquid Glass 工作区，在电源、通知、暂存和剪贴板四个分区间切换。
 4. **离开**：点击桌面或其他 App 后自动收起；面板内菜单和确认弹窗不会误触关闭。
 
 ## 安装与首次运行
@@ -81,10 +83,10 @@
 1. 前往 [Releases](https://github.com/0Hyacinth0/Notch-Triage/releases/latest) 下载最新发布包。
 2. 将 `NotchTriage.app` 移入“应用程序”文件夹并启动。
 
-> 如果“应用程序”中同时存在 `NotchTriage.app` 与旧的 `Notch Triage.app`，请先退出两者，再用 v26.8.4.2327 的 `NotchTriage.app` 覆盖并移除旧的空格命名副本，避免同一 Bundle ID 启动两个实例。
+> 如果“应用程序”中同时存在 `NotchTriage.app` 与旧的 `Notch Triage.app`，请先退出两者，再用 v26.8.10.2030 的 `NotchTriage.app` 覆盖并移除旧的空格命名副本，避免同一 Bundle ID 启动两个实例。
 
-3. 根据需要授予辅助功能、Finder 自动化或登录项权限。
-4. 点击刘海区域打开面板，在“设置与更新”中配置左右翼内容和通知行为。
+3. 根据需要授予辅助功能、Finder 自动化、剪贴板访问或登录项权限。
+4. 点击刘海区域打开面板；剪贴板历史保持默认关闭，只有点击“启用剪贴板历史”后才开始监控新内容。
 
 > Notch Triage 当前定位为 GitHub / 官网分发的 macOS 工具，不面向 Mac App Store。
 
@@ -95,6 +97,7 @@
 | 辅助功能 | 识别系统横幅，并仅在系统提供安全取消动作时尝试收起 | 按需 |
 | Finder 自动化 | 读取废纸篓聚合数量、执行经用户确认的清空操作 | 按需 |
 | 登录项 | 使用系统 `SMAppService` 实现开机启动 | 可选 |
+| 剪贴板访问 | 仅在用户启用 Clipboard History 后读取新复制的白名单内容 | 可选，默认关闭 |
 
 应用不会安装 root helper。请求辅助功能权限前，面板会先完整收起，再打开系统设置；“修复权限”也只会重置 Notch Triage 自身的授权记录。
 
@@ -115,6 +118,10 @@
 - 原生横幅仅在系统暴露 `AXCancel` 安全动作时尝试收起，否则保持原样。
 - 更新包会校验摘要、Bundle ID、版本与签名身份，不直接执行未经验证的下载内容。
 - Codex 状态只通过本机已登录的 App Server 会话读取；应用不读取 API Key、登录令牌，也不把 credits 余额写入诊断日志。
+- 文件暂存架只保存本地 URL 引用；移除或清空暂存架不会操作原文件。
+- 剪贴板历史默认关闭，只记录纯文本、PNG/JPEG/TIFF 图片和本地文件 URL；已知 concealed、transient、自动生成及敏感声明会被跳过，但无法保证识别所有第三方密码或令牌。
+- 会话模式不落盘；1 天和 7 天模式仅写入本机 Application Support。关闭监控、删除历史或清空历史都不会更改当前系统剪贴板。
+- 诊断报告复制、文件复制和“重新复制”使用同一自写回抑制，不会被再次收录为新历史；剪贴板正文不会进入诊断日志或网络请求。
 - 后台服务共享节能调度器；面板收起后自动降频，锁屏和休眠期间暂停非必要刷新。
 
 ## 诊断与更新
@@ -180,6 +187,8 @@ DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer \
 11. 在诊断页确认六项服务状态与最近检查时间更新，并测试复制诊断报告。
 12. 启用“开机时启动”；如果系统要求批准，检查登录项设置入口。
 13. 使用“设置与更新 → 退出 Notch Triage”正常结束应用。
+14. 从 Finder 和至少两个第三方 App 拖入/拖出单个与多个文件，确认取消、失败和超限后面板不会卡在拖放状态，且原文件不受影响。
+15. 在默认关闭状态确认 Clipboard History 不读取内容；启用后验证文本、图片和文件 URL、系统访问提示、重新复制、自写抑制、锁屏暂停、三种保留期限及“清空历史不清系统剪贴板”。
 
 </details>
 
@@ -189,6 +198,7 @@ DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer \
 - Codex 美元余额是按 OpenAI 当前 `25 credits ≈ US$1` 关系换算的近似值；credits 原值来自本机 App Server，兑换关系变化时可能需要随版本更新。
 - macOS 27 手动充电上限来自系统 PowerUI 接口；旧系统自动降级为只读监控。
 - 通知中心没有公开的跨 App 管理 API，辅助功能层级可能随 macOS 更新而变化。
+- 剪贴板敏感类型过滤基于已知声明和保守白名单，不能替代密码管理器自身的安全控制。
 - 当前未加入歌词、窗口切换、自动通知删除或旧系统视觉降级。
 
 ## 项目链接
