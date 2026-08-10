@@ -28,8 +28,6 @@ final class AppModel: ObservableObject {
         static let legacyNotificationEyeStyle = "notch.notificationEyeStyle"
         static let codexDisplayMode = "notch.codexDisplayMode"
         static let workspaceSection = "notch.workspace.lastSection"
-        static let didExpandPanel = "notch.onboarding.didExpandPanel"
-        static let expandHintImpressions = "notch.onboarding.expandHintImpressions"
         static let clipboardHistoryEnabled = "notch.clipboard.historyEnabled"
         static let clipboardRetentionPolicy = "notch.clipboard.retentionPolicy"
         static let lastUpdateCheck = "updates.lastSuccessfulCheck"
@@ -45,8 +43,6 @@ final class AppModel: ObservableObject {
             )
         }
     }
-    @Published private(set) var expandHintPolicy: ExpandHintPolicy
-    @Published private(set) var isExpandHintVisibleForCurrentHover = false
     @Published private(set) var fileShelfItems: [FileShelfItem] = []
     @Published private(set) var fileShelfFeedback: String?
     @Published private(set) var clipboardHistoryEnabled: Bool
@@ -280,14 +276,6 @@ final class AppModel: ObservableObject {
         let defaults = UserDefaults.standard
         workspaceSection = WorkspaceSection.restored(
             from: defaults.string(forKey: PreferenceKey.workspaceSection)
-        )
-        expandHintPolicy = ExpandHintPolicy(
-            persistedImpressionCount: defaults.integer(
-                forKey: PreferenceKey.expandHintImpressions
-            ),
-            didExpandPanel: defaults.bool(
-                forKey: PreferenceKey.didExpandPanel
-            )
         )
         clipboardHistoryEnabled = defaults.bool(
             forKey: PreferenceKey.clipboardHistoryEnabled
@@ -555,7 +543,6 @@ final class AppModel: ObservableObject {
             return
         }
 
-        markExpandHintLearned()
         sendPanelEvent(.workspaceOpened)
         if let updatePrompt, updatePrompt.release != nil {
             sendPanelEvent(
@@ -812,58 +799,12 @@ final class AppModel: ObservableObject {
 
     func setNotchHovered(_ hovered: Bool) {
         if hovered {
-            let isValidHintHover = !isExpanded
-                && !isPanelClosing
-                && !isHoveringNotch
-                && pendingFileDropSessionID == nil
-                && panelState.presentationOverride == nil
-                && systemHUD == nil
             withAnimation(motion(NotchDesign.Motion.hover)) {
                 sendPanelEvent(.pointerEntered)
             }
-            if isValidHintHover, isHoveringNotch {
-                recordValidExpandHintHover()
-            }
         } else {
-            isExpandHintVisibleForCurrentHover = false
             sendPanelEvent(.pointerExited)
         }
-    }
-
-    func resetExpandHint() {
-        var policy = expandHintPolicy
-        policy.reset()
-        expandHintPolicy = policy
-        isExpandHintVisibleForCurrentHover = false
-        persistExpandHintPolicy()
-    }
-
-    private func recordValidExpandHintHover() {
-        var policy = expandHintPolicy
-        let shouldShow = policy.recordValidHover()
-        expandHintPolicy = policy
-        isExpandHintVisibleForCurrentHover = shouldShow
-        persistExpandHintPolicy()
-    }
-
-    private func markExpandHintLearned() {
-        var policy = expandHintPolicy
-        policy.markExpanded()
-        expandHintPolicy = policy
-        isExpandHintVisibleForCurrentHover = false
-        persistExpandHintPolicy()
-    }
-
-    private func persistExpandHintPolicy() {
-        let defaults = UserDefaults.standard
-        defaults.set(
-            expandHintPolicy.impressionCount,
-            forKey: PreferenceKey.expandHintImpressions
-        )
-        defaults.set(
-            expandHintPolicy.didExpandPanel,
-            forKey: PreferenceKey.didExpandPanel
-        )
     }
 
     func quitApplication() {

@@ -643,22 +643,14 @@ private struct LivingNotch: View {
                     .font(.system(size: 8.5, weight: .bold))
                     .foregroundStyle(.white.opacity(0.72))
 
-                Text(
-                    model.isExpandHintVisibleForCurrentHover
-                        ? "点击展开"
-                        : "展开"
-                )
+                Text("点击展开")
                     .font(.system(size: 7.5, weight: .medium))
                     .foregroundStyle(.white.opacity(0.44))
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
         }
-        .accessibilityLabel(
-            model.isExpandHintVisibleForCurrentHover
-                ? "点击展开详细面板"
-                : "展开详细面板"
-        )
+        .accessibilityLabel("点击展开详细面板")
     }
 
     @ViewBuilder

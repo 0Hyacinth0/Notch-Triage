@@ -7,10 +7,10 @@
 ## 实施记录（2026-08-10）
 
 - Phase 0 已落地：`PanelState` reducer、过期 effect revision、统一 `NotchLayout`、AppKit 16ms resize 合并/120Hz frame timer 与 outside-click 投影均已接入；Clipboard 正文未被技术探针读取。
-- Phase 1 的 Workspace 导航、前三次上下文提示和设置重置入口已落地；116pt 双卡 Peek 经真实反馈后已撤回，当前按产品决定恢复 v26.8.4.2327 的 74pt 三栏 Peek 与旧版动画，电源与通知旧内容映射完整保留。
+- Phase 1 的 Workspace 导航和永久“点击展开”提示已落地；116pt 双卡 Peek 经真实反馈后已撤回，当前按产品决定恢复 v26.8.4.2327 的 74pt 三栏 Peek 与旧版动画，电源与通知旧内容映射完整保留。
 - Phase 2 代码已落地：会话级 actor 存储、20 项上限、去重/失效状态、AppKit 文件拖放目标、文件选择器、拖出、打开、Finder 定位、复制、移除和清空；不会移动、复制或删除原文件。
 - Phase 3 代码已落地：Clipboard History 默认关闭，显式启用后按 500ms `changeCount` 变化读取文本、PNG/JPEG/TIFF 与本地文件 URL；支持会话/1 天/7 天、50 项/24 MiB 清理、自写回抑制、暂停恢复与异步缩略图。
-- 自动验证当前通过 96 项测试及 Debug arm64 构建；加入 Phase 3 后的 Release universal 也已重跑，`x86_64 + arm64` 架构和严格签名校验通过。Finder/第三方拖放、外接显示器和目标 macOS 首次剪贴板访问提示仍是发布门槛，不以自动测试替代。
+- 自动验证当前通过 88 项测试及 Debug arm64 构建；加入 Phase 3 后的 Release universal 也已重跑，`x86_64 + arm64` 架构和严格签名校验通过。Finder/第三方拖放、外接显示器和目标 macOS 首次剪贴板访问提示仍是发布门槛，不以自动测试替代。
 
 ## 1. 结论
 
@@ -24,7 +24,7 @@ Notch Triage 不应直接变成一个堆叠功能的工具箱。下一阶段采�
 开发顺序固定为：
 
 1. 面板状态重构，不改变现有功能。
-2. 悬浮面板 2.0 与首次展开指引。
+2. 悬浮面板 2.0 与永久展开指引。
 3. 文件暂存架 MVP。
 4. 剪贴板历史 MVP。
 5. 跨显示器、辅助功能、性能和隐私验收。
@@ -34,7 +34,7 @@ Notch Triage 不应直接变成一个堆叠功能的工具箱。下一阶段采�
 | 原始反馈 | 真正问题 | 产品响应 |
 | --- | --- | --- |
 | 悬浮区域小、布局局促 | 曾尝试 116pt 卡片式 Peek，但收起动画和视觉体量不符合预期 | 保留 74pt 紧凑三栏 Peek，通过中央“点击展开”提示引导进入完整 Workspace |
-| 不知道可以点击展开 | 交互缺乏稳定的 disclosure affordance | 首次上下文提示 + 永久保留的展开箭头 + 整体点击反馈 |
+| 不知道可以点击展开 | 交互缺乏稳定的 disclosure affordance | 永久显示“点击展开”与展开箭头 |
 | 需要文件拖动暂存 | 用户希望在跨 App 工作流中临时“接住”文件 | 增加会话级文件 Shelf，支持拖入、拖出和替代操作 |
 | 需要剪贴板 | 用户希望重复使用刚复制的内容 | 增加隐私优先、显式开启的本地 Clipboard History |
 
@@ -253,21 +253,14 @@ outside-click monitor、SwiftUI surface、AppKit panel frame 和 DropTarget 命�
 
 ### 5.3 展开指引
 
-新手提示采用上下文式教学，不使用首次启动弹窗。Apple HIG 建议教学尽量可交互，并把针对某个区域的说明放在该区域附近；disclosure 控件也应紧邻其展开的内容。
+展开提示采用永久的上下文指引，不使用首次启动弹窗。Apple HIG 建议把针对某个区域的说明放在该区域附近；disclosure 控件也应紧邻其展开的内容。
 
 逻辑：
 
-1. 用户从未成功展开过面板时，前 3 次有效 Hover 显示 `⌄ 点击展开详细面板`。
-2. 成功展开一次后立即标记为已学习，后续只显示永久的小箭头/把手。
-3. 有通知时同时显示通知 badge 与展开箭头，二者不互相替换。
-4. HUD、拖放和 closing 状态不计入提示曝光次数。
-5. “设置 → 行为”提供“重新显示操作提示”。
-6. 整块 Peek 表面可点击；按下、释放和展开分别给出轻微视觉反馈。
-
-建议偏好键：
-
-- `notch.onboarding.didExpandPanel`
-- `notch.onboarding.expandHintImpressions`
+1. 每次普通 Hover 都显示 `⌄ 点击展开`，不按次数或是否曾展开而隐藏。
+2. 有通知时优先显示通知 badge；无通知时显示永久展开指引。
+3. HUD、拖放和 closing 状态继续使用各自的瞬态内容。
+4. 整块 Peek 表面可点击，但按钮按下不改变亮度或缩放。
 
 ## 6. Workspace 导航
 
@@ -419,7 +412,6 @@ Apple 的 [`NSPasteboard`](https://developer.apple.com/documentation/appkit/nspa
 | --- | --- |
 | `NotchTriage/PanelState.swift` | 状态、事件、reducer、过期任务令牌和优先级 |
 | `NotchTriage/NotchLayout.swift` | Compact、Peek、Workspace、DropTarget 统一尺寸 |
-| `NotchTriage/ExpandHintPolicy.swift` | 新手提示曝光与完成策略 |
 | `NotchTriage/FileShelfModels.swift` | Shelf item、DropSession、accepted/partial/rejected 结果 |
 | `NotchTriage/FileShelfStore.swift` | 会话级文件引用、去重、容量与失效检测 |
 | `NotchTriage/FileShelfView.swift` | Shelf 列表、空状态和项目操作 |
@@ -436,7 +428,7 @@ Apple 的 [`NSPasteboard`](https://developer.apple.com/documentation/appkit/nspa
 | `NotchTriage/AppModel.swift` | 用 reducer 管理的 `PanelState` 取代多个面板布尔状态；`showSystemHUD`、start/stop、activity pause/resume 和 Workspace section 全部发送事件 |
 | `NotchTriage/AppDelegate.swift` | 根据 `PanelState` 计算 panel frame，接入 drag 命中区 |
 | `NotchTriage/NotchRootView.swift` | 新 Peek 布局、展开提示、DropTarget 与四段 Workspace |
-| `NotchTriage/SettingsRootView.swift` | 新手提示重置、Clipboard 开关与保留策略 |
+| `NotchTriage/SettingsRootView.swift` | Clipboard 开关与保留策略 |
 | `NotchTriage/NotchTriageApp.swift` | 增加打开暂存/剪贴板的普通菜单命令；全局快捷键不进入 MVP |
 | `NotchTriage/AppModel+Diagnostics.swift` | 诊断报告复制改走 pasteboard 写回协调器；`setBackgroundRefreshPaused` 通过 activity reducer 事件清 HUD，不再直接写 `systemHUD` |
 | `NotchTriage/AppModel+Updates.swift` | 自动更新提示/安装不再直接写旧面板布尔状态，统一发送 updatePrompt/install reducer 事件 |
@@ -460,8 +452,6 @@ Apple 的 [`NSPasteboard`](https://developer.apple.com/documentation/appkit/nspa
   - notification pulse 只在无 override/HUD 的 Compact 可见，且不能修改 mode/geometry。
 - `PanelGeometryTests.swift`
   - 不同 menu bar/notch/screen 参数下，window、visible surface、hover tracker、drop hit 和 outside-click frame 保持一致。
-- `ExpandHintPolicyTests.swift`
-  - 前 3 次曝光、首次成功展开、重置和不计数场景。
 - `FileShelfStoreTests.swift`
   - 多文件、去重、20 项上限、accepted/partial/rejected、provider error、缺失文件、清空不删除原文件。
 - `WorkspaceSectionPreferenceTests.swift`
@@ -520,8 +510,7 @@ Apple 的 [`NSPasteboard`](https://developer.apple.com/documentation/appkit/nspa
 交付：
 
 - 74pt 三栏 Peek、中央“点击展开”指引与旧版无按压高亮交互。
-- 前 3 次 `点击展开详细面板` 提示。
-- 永久 disclosure affordance 和设置中的重置入口。
+- 永久显示 `点击展开` 与 disclosure affordance，不记录曝光次数。
 - 四段 Workspace 导航外观就位，但电源与通知 section 严格保留旧内容映射。
 
 完成标准：

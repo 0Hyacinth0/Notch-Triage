@@ -367,25 +367,6 @@ struct SettingsRootView: View {
                 }
             }
 
-            SettingsGroup(title: "操作提示") {
-                HStack(alignment: .center, spacing: 12) {
-                    SettingsRowLabel(
-                        title: "展开面板指引",
-                        subtitle: model.expandHintPolicy.didExpandPanel
-                            ? "已学会点击展开；可重新显示前 3 次悬停提示。"
-                            : "尚未完成引导，已显示 \(model.expandHintPolicy.impressionCount)/3 次。",
-                        symbol: "chevron.down.circle"
-                    )
-
-                    Spacer(minLength: 12)
-
-                    Button("重新显示") {
-                        model.resetExpandHint()
-                    }
-                    .buttonStyle(.bordered)
-                }
-            }
-
             SettingsGroup(title: "剪贴板历史") {
                 HStack(alignment: .center, spacing: 12) {
                     SettingsRowLabel(
