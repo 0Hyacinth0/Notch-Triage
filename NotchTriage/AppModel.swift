@@ -481,7 +481,9 @@ final class AppModel: ObservableObject {
             compactInterval: 6 * 60 * 60,
             interactiveInterval: 6 * 60 * 60,
             refreshOnResume: false,
-            action: { [weak self] in self?.checkForUpdates(manual: false) }
+            action: { [weak self] in
+                self?.checkForUpdates(context: .automatic)
+            }
         )
     ])
 
@@ -503,7 +505,7 @@ final class AppModel: ObservableObject {
         refreshScheduler.start()
         activityMonitor.start()
         startClipboardHistoryLifecycle()
-        checkForUpdates(manual: false)
+        checkForUpdates(context: .automatic)
         diagnostics.recordLifecycle("应用服务已启动；后台刷新由统一调度器管理")
     }
 

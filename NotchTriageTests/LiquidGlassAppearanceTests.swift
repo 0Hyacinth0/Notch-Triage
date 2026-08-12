@@ -12,7 +12,7 @@ final class LiquidGlassAppearanceTests: XCTestCase {
         )
     }
 
-    func testHigherIntensityStrengthensEdgeAndDepthTreatment() {
+    func testHigherIntensityStrengthensEdgeTreatment() {
         let clear = LiquidGlassAppearance(intensity: 0)
         let strong = LiquidGlassAppearance(intensity: 1)
 
@@ -21,12 +21,10 @@ final class LiquidGlassAppearanceTests: XCTestCase {
             clear.outerHighlightOpacity
         )
         XCTAssertGreaterThan(strong.dimmingOpacity, clear.dimmingOpacity)
-        XCTAssertGreaterThan(strong.haloOpacity, clear.haloOpacity)
         XCTAssertGreaterThan(
-            strong.depthShadowOpacity,
-            clear.depthShadowOpacity
+            strong.innerHighlightOpacity,
+            clear.innerHighlightOpacity
         )
-        XCTAssertGreaterThan(strong.depthShadowRadius, clear.depthShadowRadius)
     }
 
     func testDefaultIntensityUsesBalancedPreset() {

@@ -10,9 +10,10 @@ extension AppModel {
         guard !updateStatus.isBusy else { return }
         if let availableUpdate {
             dismissUpdatePrompt()
-            installUpdate(availableUpdate)
+            installUpdate(availableUpdate, context: .settings)
         } else {
-            checkForUpdates(manual: true)
+            dismissUpdatePrompt()
+            checkForUpdates(context: .settings)
         }
     }
 
@@ -25,11 +26,11 @@ extension AppModel {
             )
             presentUpdatePrompt(for: availableUpdate)
         } else {
-            checkForUpdates(manual: true)
+            checkForUpdates(context: .panel)
         }
     }
 
-    func checkForUpdates(manual: Bool) {
+    func checkForUpdates(context: UpdatePresentationContext) {
         guard !updateStatus.isBusy else { return }
         updateTask?.cancel()
         updateDownloadProgress = nil
@@ -48,19 +49,21 @@ extension AppModel {
                 if isNewerVersion(release.version, than: currentVersion) {
                     availableUpdate = release
                     updateStatus = .available(release.version)
-                    if manual {
+                    if context.isManualCheck {
                         UserDefaults.standard.set(
                             release.version,
                             forKey: PreferenceKey.lastPromptedVersion
                         )
+                    }
+                    if context.presentsAvailableReleaseInPanel {
                         presentUpdatePrompt(for: release)
-                    } else {
+                    } else if context == .automatic {
                         presentAutomaticUpdatePromptIfNeeded(for: release)
                     }
                 } else {
                     availableUpdate = nil
                     updateStatus = .upToDate(currentVersion)
-                    if manual {
+                    if context.isManualCheck {
                         updatePrompt = AppUpdatePrompt(
                             title: "已经是最新版本",
                             message: "当前版本为 v\(currentVersion)。",
@@ -73,7 +76,7 @@ extension AppModel {
             } catch {
                 updateStatus = .failed(error.localizedDescription)
                 refreshScheduler.reschedule(.updates, after: 15 * 60)
-                if manual {
+                if context.isManualCheck {
                     updatePrompt = AppUpdatePrompt(
                         title: "检查更新失败",
                         message: error.localizedDescription,
@@ -84,7 +87,10 @@ extension AppModel {
         }
     }
 
-    func installUpdate(_ release: AppRelease) {
+    func installUpdate(
+        _ release: AppRelease,
+        context: UpdatePresentationContext = .panel
+    ) {
         guard !updateStatus.isBusy else { return }
         let currentAppURL = Bundle.main.bundleURL.standardizedFileURL
         guard isInstalledApplication(currentAppURL) else {
@@ -97,8 +103,10 @@ extension AppModel {
             return
         }
 
-        withAnimation(motion(NotchDesign.Motion.panelOpen)) {
-            sendPanelEvent(.installStarted)
+        if context.presentsInstallProgressInPanel {
+            withAnimation(motion(NotchDesign.Motion.panelOpen)) {
+                sendPanelEvent(.installStarted)
+            }
         }
         updateStatus = .downloading(release.version)
         updateDownloadProgress = AppUpdateDownloadProgress(
@@ -146,11 +154,15 @@ extension AppModel {
                 NSApp.terminate(nil)
             } catch is CancellationError {
                 updateDownloadProgress = nil
-                sendPanelEvent(.installFinished)
+                if context.presentsInstallProgressInPanel {
+                    sendPanelEvent(.installFinished)
+                }
             } catch {
                 updateDownloadProgress = nil
                 updateStatus = .failed(error.localizedDescription)
-                sendPanelEvent(.installFinished)
+                if context.presentsInstallProgressInPanel {
+                    sendPanelEvent(.installFinished)
+                }
                 updatePrompt = AppUpdatePrompt(
                     title: "更新安装失败",
                     message: error.localizedDescription,

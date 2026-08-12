@@ -15,10 +15,6 @@ struct LiquidGlassAppearance: Equatable, Sendable {
     var dimmingOpacity: Double { 0.24 + intensity * 0.38 }
     var outerHighlightOpacity: Double { 0.20 + intensity * 0.38 }
     var innerHighlightOpacity: Double { 0.055 + intensity * 0.14 }
-    var haloOpacity: Double { 0.025 + intensity * 0.12 }
-    var depthShadowOpacity: Double { 0.20 + intensity * 0.16 }
-    var depthShadowRadius: CGFloat { 18 + CGFloat(intensity) * 10 }
-    var depthShadowOffset: CGFloat { 9 + CGFloat(intensity) * 6 }
 }
 
 enum NotchDesign {
@@ -60,7 +56,6 @@ enum NotchDesign {
         )
         static let sectionChange = Animation.easeInOut(duration: 0.20)
     }
-
 }
 
 private struct LiquidGlassPanelSurface: ViewModifier {
@@ -129,18 +124,6 @@ private struct LiquidGlassPanelSurface: ViewModifier {
                     .blur(radius: 0.35)
                     .blendMode(.screen)
             }
-            .shadow(
-                color: .white.opacity(
-                    reduceTransparency ? 0 : appearance.haloOpacity
-                ),
-                radius: 4 + CGFloat(appearance.intensity) * 3,
-                y: 1
-            )
-            .shadow(
-                color: .black.opacity(appearance.depthShadowOpacity),
-                radius: appearance.depthShadowRadius,
-                y: appearance.depthShadowOffset
-            )
     }
 }
 

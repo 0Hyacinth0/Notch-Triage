@@ -549,6 +549,24 @@ enum AppUpdateStatus: Equatable {
     }
 }
 
+enum UpdatePresentationContext: Equatable, Sendable {
+    case automatic
+    case settings
+    case panel
+
+    var isManualCheck: Bool {
+        self != .automatic
+    }
+
+    var presentsAvailableReleaseInPanel: Bool {
+        self == .panel
+    }
+
+    var presentsInstallProgressInPanel: Bool {
+        self != .settings
+    }
+}
+
 enum AppPromptRecovery {
     case resetAccessibility
 }
