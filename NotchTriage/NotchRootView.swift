@@ -1133,7 +1133,10 @@ private struct ExpandedPanelSurface: View {
 
     var body: some View {
         ExpandedPanel(model: model)
-            .liquidGlassPanelSurface(intensity: model.liquidGlassIntensity)
+            .liquidGlassPanelSurface(
+                intensity: model.liquidGlassIntensity,
+                samplesDesktopBackdrop: true
+            )
             .opacity(isVisible ? 1 : 0)
             .offset(y: reduceMotion || isVisible ? 0 : 8)
             .task {

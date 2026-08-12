@@ -18,6 +18,8 @@ final class LiquidGlassAppearanceTests: XCTestCase {
 
         XCTAssertEqual(clear.frostOpacity, 0, accuracy: 0.000_001)
         XCTAssertEqual(strong.frostOpacity, 0.86, accuracy: 0.000_001)
+        XCTAssertEqual(clear.desktopBackdropOpacity, 0, accuracy: 0.000_001)
+        XCTAssertEqual(strong.desktopBackdropOpacity, 0.72, accuracy: 0.000_001)
         XCTAssertGreaterThan(
             strong.outerHighlightOpacity,
             clear.outerHighlightOpacity

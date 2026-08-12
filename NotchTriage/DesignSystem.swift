@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct LiquidGlassAppearance: Equatable, Sendable {
@@ -17,6 +18,13 @@ struct LiquidGlassAppearance: Equatable, Sendable {
     /// lens-like refraction Apple uses for its Clear appearance.
     var frostOpacity: Double {
         0.86 * pow(intensity, 1.35)
+    }
+
+    /// Opacity for the AppKit backdrop sampler used by the transparent panel.
+    /// Zero leaves native Clear Liquid Glass unobstructed; the strong endpoint
+    /// adds frosted scattering without introducing a black or white tint layer.
+    var desktopBackdropOpacity: Double {
+        0.72 * pow(intensity, 1.25)
     }
 
     var outerHighlightOpacity: Double { 0.10 + intensity * 0.08 }
@@ -67,6 +75,7 @@ enum NotchDesign {
 private struct LiquidGlassPanelSurface: ViewModifier {
     let cornerRadius: CGFloat
     let intensity: Double
+    let samplesDesktopBackdrop: Bool
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
@@ -80,21 +89,27 @@ private struct LiquidGlassPanelSurface: ViewModifier {
 
     func body(content: Content) -> some View {
         content
+            .glassEffect(
+                reduceTransparency ? .identity : .clear,
+                in: .rect(cornerRadius: cornerRadius)
+            )
             .background {
                 if reduceTransparency {
                     shape.fill(
                         Color(nsColor: .windowBackgroundColor).opacity(0.96)
                     )
+                } else if samplesDesktopBackdrop {
+                    LiquidGlassDesktopBackdrop(
+                        opacity: appearance.desktopBackdropOpacity
+                    )
+                    .clipShape(shape)
+                    .allowsHitTesting(false)
                 } else {
                     shape
                         .fill(.regularMaterial)
                         .opacity(appearance.frostOpacity)
                 }
             }
-            .glassEffect(
-                reduceTransparency ? .identity : .clear,
-                in: .rect(cornerRadius: cornerRadius)
-            )
             .overlay {
                 shape
                     .strokeBorder(
@@ -137,6 +152,23 @@ private struct LiquidGlassPanelSurface: ViewModifier {
     }
 }
 
+private struct LiquidGlassDesktopBackdrop: NSViewRepresentable {
+    let opacity: Double
+
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .underWindowBackground
+        view.blendingMode = .behindWindow
+        view.state = .active
+        updateNSView(view, context: context)
+        return view
+    }
+
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
+        nsView.alphaValue = min(max(opacity, 0), 0.72)
+    }
+}
+
 private struct PanelGroupSurface: ViewModifier {
     let cornerRadius: CGFloat
 
@@ -162,12 +194,14 @@ private struct PanelGroupSurface: ViewModifier {
 extension View {
     func liquidGlassPanelSurface(
         cornerRadius: CGFloat = NotchDesign.Radius.panel,
-        intensity: Double = LiquidGlassAppearance.defaultIntensity
+        intensity: Double = LiquidGlassAppearance.defaultIntensity,
+        samplesDesktopBackdrop: Bool = false
     ) -> some View {
         modifier(
             LiquidGlassPanelSurface(
                 cornerRadius: cornerRadius,
-                intensity: intensity
+                intensity: intensity,
+                samplesDesktopBackdrop: samplesDesktopBackdrop
             )
         )
     }

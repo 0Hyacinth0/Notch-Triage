@@ -5,7 +5,7 @@
   <p>原生、轻量、常驻的 macOS 刘海工具，集中呈现系统状态，并提供文件暂存与隐私优先的剪贴板历史。</p>
 
   <p>
-    <img src="https://img.shields.io/badge/version-26.8.13.0240-25D9C5?style=flat-square" alt="Version 26.8.13.0240">
+    <img src="https://img.shields.io/badge/version-26.8.13.0307-25D9C5?style=flat-square" alt="Version 26.8.13.0307">
     <img src="https://img.shields.io/badge/macOS-26%2B-000000?style=flat-square&amp;logo=apple&amp;logoColor=white" alt="macOS 26+">
     <img src="https://img.shields.io/badge/Swift-5-F05138?style=flat-square&amp;logo=swift&amp;logoColor=white" alt="Swift 5">
     <img src="https://img.shields.io/badge/UI-Liquid%20Glass-4B5563?style=flat-square" alt="Liquid Glass">
@@ -83,7 +83,7 @@
 1. 前往 [Releases](https://github.com/0Hyacinth0/Notch-Triage/releases/latest) 下载最新发布包。
 2. 将 `NotchTriage.app` 移入“应用程序”文件夹并启动。
 
-> 如果“应用程序”中同时存在 `NotchTriage.app` 与旧的 `Notch Triage.app`，请先退出两者，再用 v26.8.13.0240 的 `NotchTriage.app` 覆盖并移除旧的空格命名副本，避免同一 Bundle ID 启动两个实例。
+> 如果“应用程序”中同时存在 `NotchTriage.app` 与旧的 `Notch Triage.app`，请先退出两者，再用 v26.8.13.0307 的 `NotchTriage.app` 覆盖并移除旧的空格命名副本，避免同一 Bundle ID 启动两个实例。
 
 3. 根据需要授予辅助功能、Finder 自动化、剪贴板访问或登录项权限。
 4. 点击刘海区域打开面板；剪贴板历史保持默认关闭，只有点击“启用剪贴板历史”后才开始监控新内容。
