@@ -2,6 +2,29 @@ import AppKit
 import Foundation
 import SwiftUI
 
+enum LiquidGlassStyle: String, CaseIterable, Codable, Identifiable, Sendable {
+    case clear
+    case regular
+
+    static let `default` = LiquidGlassStyle.regular
+
+    var id: String { rawValue }
+
+    var glass: Glass {
+        switch self {
+        case .clear: return .clear
+        case .regular: return .regular
+        }
+    }
+
+    static func restored(from persistedValue: String?) -> Self {
+        guard let persistedValue, let style = Self(rawValue: persistedValue) else {
+            return .default
+        }
+        return style
+    }
+}
+
 enum RingMetric: String, CaseIterable, Codable, Identifiable, Sendable {
     case battery
     case codex

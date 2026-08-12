@@ -1134,7 +1134,7 @@ private struct ExpandedPanelSurface: View {
     var body: some View {
         ExpandedPanel(model: model)
             .glassEffect(
-                .regular,
+                model.liquidGlassStyle.glass,
                 in: .rect(cornerRadius: NotchDesign.Radius.panel)
             )
             .opacity(isVisible ? 1 : 0)

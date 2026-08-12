@@ -132,7 +132,7 @@ struct SettingsRootView: View {
     private var appearancePage: some View {
         SettingsPage(
             title: "外观",
-            subtitle: "自动跟随 macOS 的 Liquid Glass 外观与辅助功能设置。",
+            subtitle: "使用 Apple 原生 Liquid Glass，并跟随 macOS 的全局外观与辅助功能设置。",
             symbol: "rectangle.on.rectangle"
         ) {
             SettingsGroup(title: "刘海内容") {
@@ -176,6 +176,49 @@ struct SettingsRootView: View {
                 Spacer()
             }
             .buttonStyle(.borderless)
+
+            SettingsGroup(title: "Liquid Glass") {
+                LiquidGlassStylePreview(style: model.liquidGlassStyle)
+
+                HStack(spacing: 12) {
+                    Text("清透")
+                        .font(.caption)
+                        .foregroundStyle(
+                            model.liquidGlassStyle == .clear ? .primary : .secondary
+                        )
+
+                    Slider(
+                        value: Binding(
+                            get: {
+                                model.liquidGlassStyle == .clear ? 0 : 1
+                            },
+                            set: { value in
+                                model.setLiquidGlassStyle(value < 0.5 ? .clear : .regular)
+                            }
+                        ),
+                        in: 0...1,
+                        step: 1
+                    )
+                    .accessibilityLabel("Liquid Glass 外观")
+                    .accessibilityValue(
+                        model.liquidGlassStyle == .clear ? "清透" : "标准"
+                    )
+
+                    Text("标准")
+                        .font(.caption)
+                        .foregroundStyle(
+                            model.liquidGlassStyle == .regular ? .primary : .secondary
+                        )
+                }
+
+                Text(
+                    model.liquidGlassStyle == .clear
+                        ? "清透使用 Apple 的 Clear Glass，尽量保留下方内容与色彩。"
+                        : "标准使用 Apple 的 Regular Glass，自动增强模糊与文字对比度。"
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
 
             SettingsGroup(title: "圆环主题") {
                 HStack(alignment: .center, spacing: 12) {
@@ -872,6 +915,47 @@ private struct WingPreviewCard: View {
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
+private struct LiquidGlassStylePreview: View {
+    let style: LiquidGlassStyle
+
+    var body: some View {
+        ZStack {
+            LinearGradient(
+                colors: [
+                    Color(red: 0.10, green: 0.45, blue: 0.82),
+                    Color(red: 0.30, green: 0.72, blue: 0.58),
+                    Color(red: 0.87, green: 0.56, blue: 0.28)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+
+            HStack(spacing: 12) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 18, weight: .semibold))
+                    .frame(width: 34, height: 34)
+                    .glassEffect(.regular.interactive(), in: .circle)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(style == .clear ? "清透" : "标准")
+                        .font(.callout.weight(.semibold))
+                    Text("Apple 原生 Liquid Glass")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 16)
+            .frame(width: 290, height: 58)
+            .glassEffect(style.glass, in: .rect(cornerRadius: 19))
+        }
+        .frame(height: 108)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .accessibilityHidden(true)
     }
 }
 

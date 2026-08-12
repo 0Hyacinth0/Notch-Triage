@@ -22,6 +22,7 @@ final class AppModel: ObservableObject {
         static let leftWingContent = "notch.leftWingContent"
         static let rightWingContent = "notch.rightWingContent"
         static let ringAppearance = "notch.ringAppearance"
+        static let liquidGlassStyle = "notch.liquidGlassStyle"
         static let notificationPromptIcon = "notch.notificationPromptIcon"
         static let notificationPromptColor = "notch.notificationPromptColor"
         static let notificationPromptAnimation = "notch.notificationPromptAnimation"
@@ -100,6 +101,8 @@ final class AppModel: ObservableObject {
             UserDefaults.standard.set(data, forKey: PreferenceKey.ringAppearance)
         }
     }
+
+    @Published private(set) var liquidGlassStyle: LiquidGlassStyle
 
     @Published var notificationPromptIcon: NotificationPromptIcon {
         didSet {
@@ -336,6 +339,9 @@ final class AppModel: ObservableObject {
         } else {
             ringAppearance = .default
         }
+        liquidGlassStyle = LiquidGlassStyle.restored(
+            from: defaults.string(forKey: PreferenceKey.liquidGlassStyle)
+        )
         notificationAnimationTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(1_200))
@@ -744,6 +750,12 @@ final class AppModel: ObservableObject {
         withAnimation(motion(NotchDesign.Motion.value)) {
             ringAppearance = .default
         }
+    }
+
+    func setLiquidGlassStyle(_ style: LiquidGlassStyle) {
+        guard style != liquidGlassStyle else { return }
+        liquidGlassStyle = style
+        UserDefaults.standard.set(style.rawValue, forKey: PreferenceKey.liquidGlassStyle)
     }
 
     func ringOverride(for metric: RingMetric) -> RingStyleOverride {
