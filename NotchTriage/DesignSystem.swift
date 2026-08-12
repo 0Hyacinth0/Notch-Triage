@@ -12,9 +12,15 @@ struct LiquidGlassAppearance: Equatable, Sendable {
         self.intensity = min(max(finiteValue, 0), 1)
     }
 
-    var dimmingOpacity: Double { 0.24 + intensity * 0.38 }
-    var outerHighlightOpacity: Double { 0.20 + intensity * 0.38 }
-    var innerHighlightOpacity: Double { 0.055 + intensity * 0.14 }
+    /// A continuous frosted layer behind native Clear Liquid Glass.
+    /// Keep the clear endpoint completely unobstructed so it retains the
+    /// lens-like refraction Apple uses for its Clear appearance.
+    var frostOpacity: Double {
+        0.86 * pow(intensity, 1.35)
+    }
+
+    var outerHighlightOpacity: Double { 0.10 + intensity * 0.08 }
+    var innerHighlightOpacity: Double { 0.018 + intensity * 0.047 }
 }
 
 enum NotchDesign {
@@ -74,17 +80,21 @@ private struct LiquidGlassPanelSurface: ViewModifier {
 
     func body(content: Content) -> some View {
         content
+            .background {
+                if reduceTransparency {
+                    shape.fill(
+                        Color(nsColor: .windowBackgroundColor).opacity(0.96)
+                    )
+                } else {
+                    shape
+                        .fill(.regularMaterial)
+                        .opacity(appearance.frostOpacity)
+                }
+            }
             .glassEffect(
                 reduceTransparency ? .identity : .clear,
                 in: .rect(cornerRadius: cornerRadius)
             )
-            .background {
-                shape.fill(
-                    reduceTransparency
-                        ? Color(nsColor: .windowBackgroundColor).opacity(0.96)
-                        : Color.black.opacity(appearance.dimmingOpacity)
-                )
-            }
             .overlay {
                 shape
                     .strokeBorder(
@@ -98,15 +108,15 @@ private struct LiquidGlassPanelSurface: ViewModifier {
                                     ),
                                     location: 0
                                 ),
-                                .init(color: .white.opacity(0.13), location: 0.22),
-                                .init(color: .white.opacity(0.035), location: 0.52),
-                                .init(color: .white.opacity(0.17), location: 0.82),
-                                .init(color: .white.opacity(0.08), location: 1)
+                                .init(color: .white.opacity(0.07), location: 0.22),
+                                .init(color: .white.opacity(0.018), location: 0.52),
+                                .init(color: .white.opacity(0.08), location: 0.82),
+                                .init(color: .white.opacity(0.035), location: 1)
                             ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
-                        lineWidth: 1.05
+                        lineWidth: 0.85
                     )
                     .blendMode(.screen)
             }

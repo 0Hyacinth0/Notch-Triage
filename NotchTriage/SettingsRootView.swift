@@ -132,7 +132,7 @@ struct SettingsRootView: View {
     private var appearancePage: some View {
         SettingsPage(
             title: "外观",
-            subtitle: "调整 Liquid Glass 强度与刘海两侧内容，预览会即时更新。",
+            subtitle: "调整 Liquid Glass 的清透与磨砂程度，预览会即时更新。",
             symbol: "rectangle.on.rectangle"
         ) {
             SettingsGroup(title: "Liquid Glass") {
@@ -153,7 +153,7 @@ struct SettingsRootView: View {
                         in: 0...1,
                         step: 0.01
                     )
-                    .accessibilityLabel("Liquid Glass 强度")
+                    .accessibilityLabel("Liquid Glass 磨砂程度")
                     .accessibilityValue(glassIntensityDescription)
 
                     Image(systemName: "square.on.square.fill")
@@ -898,6 +898,24 @@ private struct LiquidGlassIntensityPreview: View {
                 .frame(width: 150, height: 150)
                 .blur(radius: 30)
                 .offset(x: 170, y: -50)
+
+            HStack(spacing: 9) {
+                ForEach(0..<13, id: \.self) { index in
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(
+                            .white.opacity(index.isMultiple(of: 2) ? 0.24 : 0.10)
+                        )
+                        .frame(width: 13, height: index.isMultiple(of: 3) ? 112 : 84)
+                }
+            }
+            .rotationEffect(.degrees(-13))
+            .offset(x: -102, y: 5)
+
+            Text("LIQUID")
+                .font(.system(size: 31, weight: .black, design: .rounded))
+                .tracking(2.5)
+                .foregroundStyle(.white.opacity(0.22))
+                .offset(x: 135, y: 30)
 
             HStack(spacing: 12) {
                 ZStack {

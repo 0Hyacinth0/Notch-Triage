@@ -12,15 +12,16 @@ final class LiquidGlassAppearanceTests: XCTestCase {
         )
     }
 
-    func testHigherIntensityStrengthensEdgeTreatment() {
+    func testHigherIntensityAddsFrostWithoutDarkeningTheGlass() {
         let clear = LiquidGlassAppearance(intensity: 0)
         let strong = LiquidGlassAppearance(intensity: 1)
 
+        XCTAssertEqual(clear.frostOpacity, 0, accuracy: 0.000_001)
+        XCTAssertEqual(strong.frostOpacity, 0.86, accuracy: 0.000_001)
         XCTAssertGreaterThan(
             strong.outerHighlightOpacity,
             clear.outerHighlightOpacity
         )
-        XCTAssertGreaterThan(strong.dimmingOpacity, clear.dimmingOpacity)
         XCTAssertGreaterThan(
             strong.innerHighlightOpacity,
             clear.innerHighlightOpacity
@@ -33,7 +34,17 @@ final class LiquidGlassAppearanceTests: XCTestCase {
         )
 
         XCTAssertEqual(appearance.intensity, 0.68)
-        XCTAssertGreaterThan(appearance.dimmingOpacity, 0.45)
-        XCTAssertLessThan(appearance.dimmingOpacity, 0.55)
+        XCTAssertGreaterThan(appearance.frostOpacity, 0.50)
+        XCTAssertLessThan(appearance.frostOpacity, 0.52)
+    }
+
+    func testFrostProgressionIsNonlinearAndMonotonic() {
+        let clear = LiquidGlassAppearance(intensity: 0)
+        let balanced = LiquidGlassAppearance(intensity: 0.5)
+        let strong = LiquidGlassAppearance(intensity: 1)
+
+        XCTAssertLessThan(clear.frostOpacity, balanced.frostOpacity)
+        XCTAssertLessThan(balanced.frostOpacity, strong.frostOpacity)
+        XCTAssertLessThan(balanced.frostOpacity, 0.43)
     }
 }
