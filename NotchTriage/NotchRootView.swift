@@ -1133,18 +1133,7 @@ private struct ExpandedPanelSurface: View {
 
     var body: some View {
         ExpandedPanel(model: model)
-            .glassEffect(
-                .regular,
-                in: .rect(cornerRadius: NotchDesign.Radius.panel)
-            )
-            .overlay {
-                RoundedRectangle(
-                    cornerRadius: NotchDesign.Radius.panel,
-                    style: .continuous
-                )
-                .stroke(.white.opacity(0.12), lineWidth: 0.5)
-            }
-            .shadow(color: .black.opacity(0.22), radius: 18, y: 10)
+            .liquidGlassPanelSurface(intensity: model.liquidGlassIntensity)
             .opacity(isVisible ? 1 : 0)
             .offset(y: reduceMotion || isVisible ? 0 : 8)
             .task {

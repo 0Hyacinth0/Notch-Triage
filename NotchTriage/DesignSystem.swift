@@ -1,5 +1,26 @@
 import SwiftUI
 
+struct LiquidGlassAppearance: Equatable, Sendable {
+    static let defaultIntensity = 0.68
+
+    let intensity: Double
+
+    init(intensity: Double) {
+        let finiteValue = intensity.isFinite
+            ? intensity
+            : Self.defaultIntensity
+        self.intensity = min(max(finiteValue, 0), 1)
+    }
+
+    var dimmingOpacity: Double { 0.24 + intensity * 0.38 }
+    var outerHighlightOpacity: Double { 0.20 + intensity * 0.38 }
+    var innerHighlightOpacity: Double { 0.055 + intensity * 0.14 }
+    var haloOpacity: Double { 0.025 + intensity * 0.12 }
+    var depthShadowOpacity: Double { 0.20 + intensity * 0.16 }
+    var depthShadowRadius: CGFloat { 18 + CGFloat(intensity) * 10 }
+    var depthShadowOffset: CGFloat { 9 + CGFloat(intensity) * 6 }
+}
+
 enum NotchDesign {
     enum Spacing {
         static let panelInset: CGFloat = 20
@@ -39,6 +60,88 @@ enum NotchDesign {
         )
         static let sectionChange = Animation.easeInOut(duration: 0.20)
     }
+
+}
+
+private struct LiquidGlassPanelSurface: ViewModifier {
+    let cornerRadius: CGFloat
+    let intensity: Double
+
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    private var appearance: LiquidGlassAppearance {
+        LiquidGlassAppearance(intensity: intensity)
+    }
+
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .glassEffect(
+                reduceTransparency ? .identity : .clear,
+                in: .rect(cornerRadius: cornerRadius)
+            )
+            .background {
+                shape.fill(
+                    reduceTransparency
+                        ? Color(nsColor: .windowBackgroundColor).opacity(0.96)
+                        : Color.black.opacity(appearance.dimmingOpacity)
+                )
+            }
+            .overlay {
+                shape
+                    .strokeBorder(
+                        LinearGradient(
+                            stops: [
+                                .init(
+                                    color: .white.opacity(
+                                        reduceTransparency
+                                            ? 0.18
+                                            : appearance.outerHighlightOpacity
+                                    ),
+                                    location: 0
+                                ),
+                                .init(color: .white.opacity(0.13), location: 0.22),
+                                .init(color: .white.opacity(0.035), location: 0.52),
+                                .init(color: .white.opacity(0.17), location: 0.82),
+                                .init(color: .white.opacity(0.08), location: 1)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1.05
+                    )
+                    .blendMode(.screen)
+            }
+            .overlay {
+                shape
+                    .inset(by: 1.35)
+                    .strokeBorder(
+                        .white.opacity(
+                            reduceTransparency
+                                ? 0.06
+                                : appearance.innerHighlightOpacity
+                        ),
+                        lineWidth: 0.55
+                    )
+                    .blur(radius: 0.35)
+                    .blendMode(.screen)
+            }
+            .shadow(
+                color: .white.opacity(
+                    reduceTransparency ? 0 : appearance.haloOpacity
+                ),
+                radius: 4 + CGFloat(appearance.intensity) * 3,
+                y: 1
+            )
+            .shadow(
+                color: .black.opacity(appearance.depthShadowOpacity),
+                radius: appearance.depthShadowRadius,
+                y: appearance.depthShadowOffset
+            )
+    }
 }
 
 private struct PanelGroupSurface: ViewModifier {
@@ -64,6 +167,18 @@ private struct PanelGroupSurface: ViewModifier {
 }
 
 extension View {
+    func liquidGlassPanelSurface(
+        cornerRadius: CGFloat = NotchDesign.Radius.panel,
+        intensity: Double = LiquidGlassAppearance.defaultIntensity
+    ) -> some View {
+        modifier(
+            LiquidGlassPanelSurface(
+                cornerRadius: cornerRadius,
+                intensity: intensity
+            )
+        )
+    }
+
     func panelGroupSurface(
         cornerRadius: CGFloat = NotchDesign.Radius.group
     ) -> some View {

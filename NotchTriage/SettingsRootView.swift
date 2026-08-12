@@ -132,9 +132,55 @@ struct SettingsRootView: View {
     private var appearancePage: some View {
         SettingsPage(
             title: "外观",
-            subtitle: "选择刘海两侧显示的内容，预览会随设置即时更新。",
+            subtitle: "调整 Liquid Glass 强度与刘海两侧内容，预览会即时更新。",
             symbol: "rectangle.on.rectangle"
         ) {
+            SettingsGroup(title: "Liquid Glass") {
+                LiquidGlassIntensityPreview(
+                    intensity: model.liquidGlassIntensity
+                )
+
+                HStack(spacing: 12) {
+                    Image(systemName: "square.on.square.dashed")
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+
+                    Slider(
+                        value: Binding(
+                            get: { model.liquidGlassIntensity },
+                            set: { model.setLiquidGlassIntensity($0) }
+                        ),
+                        in: 0...1,
+                        step: 0.01
+                    )
+                    .accessibilityLabel("Liquid Glass 强度")
+                    .accessibilityValue(glassIntensityDescription)
+
+                    Image(systemName: "square.on.square.fill")
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                }
+
+                HStack {
+                    Text("\(glassIntensityDescription) · \(Int((model.liquidGlassIntensity * 100).rounded()))%")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Spacer(minLength: 12)
+
+                    Button("恢复默认") {
+                        model.resetLiquidGlassIntensity()
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(
+                        abs(
+                            model.liquidGlassIntensity
+                                - LiquidGlassAppearance.defaultIntensity
+                        ) < 0.001
+                    )
+                }
+            }
+
             SettingsGroup(title: "刘海内容") {
                 settingsPicker(
                     title: "左侧",
@@ -307,6 +353,14 @@ struct SettingsRootView: View {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .stroke(.primary.opacity(0.08), lineWidth: 0.5)
             }
+        }
+    }
+
+    private var glassIntensityDescription: String {
+        switch model.liquidGlassIntensity {
+        case ..<0.34: return "清透"
+        case ..<0.72: return "平衡"
+        default: return "浓郁"
         }
     }
 
@@ -821,6 +875,70 @@ private struct SettingsRowLabel: View {
                     .lineLimit(2)
             }
         }
+    }
+}
+
+private struct LiquidGlassIntensityPreview: View {
+    let intensity: Double
+
+    var body: some View {
+        ZStack {
+            LinearGradient(
+                colors: [
+                    Color(red: 0.08, green: 0.23, blue: 0.34),
+                    Color(red: 0.16, green: 0.49, blue: 0.45),
+                    Color(red: 0.53, green: 0.38, blue: 0.72)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+
+            Circle()
+                .fill(.cyan.opacity(0.38))
+                .frame(width: 150, height: 150)
+                .blur(radius: 30)
+                .offset(x: 170, y: -50)
+
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(.white.opacity(0.13))
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 19, weight: .semibold))
+                }
+                .frame(width: 46, height: 46)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Notch Triage")
+                        .font(.system(size: 15, weight: .semibold))
+                    Text("Liquid Glass 实时预览")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 10)
+
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: 15, weight: .semibold))
+                    .frame(width: 34, height: 34)
+                    .background(.white.opacity(0.12), in: Circle())
+            }
+            .padding(14)
+            .foregroundStyle(.white)
+            .liquidGlassPanelSurface(
+                cornerRadius: 19,
+                intensity: intensity
+            )
+            .padding(16)
+        }
+        .frame(height: 124)
+        .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 15, style: .continuous)
+                .stroke(.white.opacity(0.10), lineWidth: 0.5)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Liquid Glass 效果预览")
     }
 }
 

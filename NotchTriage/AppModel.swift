@@ -22,6 +22,7 @@ final class AppModel: ObservableObject {
         static let leftWingContent = "notch.leftWingContent"
         static let rightWingContent = "notch.rightWingContent"
         static let ringAppearance = "notch.ringAppearance"
+        static let liquidGlassIntensity = "notch.liquidGlassIntensity"
         static let notificationPromptIcon = "notch.notificationPromptIcon"
         static let notificationPromptColor = "notch.notificationPromptColor"
         static let notificationPromptAnimation = "notch.notificationPromptAnimation"
@@ -100,6 +101,8 @@ final class AppModel: ObservableObject {
             UserDefaults.standard.set(data, forKey: PreferenceKey.ringAppearance)
         }
     }
+
+    @Published private(set) var liquidGlassIntensity: Double
 
     @Published var notificationPromptIcon: NotificationPromptIcon {
         didSet {
@@ -335,6 +338,15 @@ final class AppModel: ObservableObject {
             ringAppearance = savedAppearance
         } else {
             ringAppearance = .default
+        }
+        if defaults.object(forKey: PreferenceKey.liquidGlassIntensity) != nil {
+            liquidGlassIntensity = LiquidGlassAppearance(
+                intensity: defaults.double(
+                    forKey: PreferenceKey.liquidGlassIntensity
+                )
+            ).intensity
+        } else {
+            liquidGlassIntensity = LiquidGlassAppearance.defaultIntensity
         }
 
         notificationAnimationTask = Task { [weak self] in
@@ -743,6 +755,20 @@ final class AppModel: ObservableObject {
         withAnimation(motion(NotchDesign.Motion.value)) {
             ringAppearance = .default
         }
+    }
+
+    func setLiquidGlassIntensity(_ intensity: Double) {
+        let normalized = LiquidGlassAppearance(intensity: intensity).intensity
+        guard normalized != liquidGlassIntensity else { return }
+        liquidGlassIntensity = normalized
+        UserDefaults.standard.set(
+            normalized,
+            forKey: PreferenceKey.liquidGlassIntensity
+        )
+    }
+
+    func resetLiquidGlassIntensity() {
+        setLiquidGlassIntensity(LiquidGlassAppearance.defaultIntensity)
     }
 
     func ringOverride(for metric: RingMetric) -> RingStyleOverride {
