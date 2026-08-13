@@ -437,8 +437,8 @@ final class AppModel: ObservableObject {
     lazy var refreshScheduler = BackgroundRefreshScheduler(jobs: [
         .init(
             id: .notifications,
-            compactInterval: 2,
-            interactiveInterval: 1.25,
+            compactInterval: 1.5,
+            interactiveInterval: 1,
             action: { [weak self] in self?.notificationService.refreshNow() }
         ),
         .init(

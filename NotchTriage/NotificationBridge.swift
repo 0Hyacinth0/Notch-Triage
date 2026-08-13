@@ -8,6 +8,15 @@ struct NotificationSourceCandidate: Equatable, Sendable {
 }
 
 enum NotificationSourceDetection {
+    static let notificationCenterBundleIdentifier = "com.apple.notificationcenterui"
+    static let bannerHostBundleIdentifier = "com.apple.UserNotificationCenter"
+    static let notificationCenterNames = [
+        "NotificationCenter",
+        "Notification Center",
+        "通知中心"
+    ]
+    static let bannerHostNames = ["UserNotificationCenter"]
+
     static let knownSources = [
         NotificationSourceCandidate(name: "Codex", bundleIdentifier: "com.openai.chat"),
         NotificationSourceCandidate(name: "ChatGPT", bundleIdentifier: "com.openai.chat"),
@@ -25,13 +34,31 @@ enum NotificationSourceDetection {
         in texts: [String],
         candidates: [NotificationSourceCandidate]
     ) -> NotificationSourceCandidate? {
-        let values = texts
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+        if let application = detectApplication(in: texts, candidates: candidates) {
+            return application
+        }
+
+        let values = normalized(texts)
+        guard !values.contains(where: isNotificationCenter) else {
+            return nil
+        }
+        if containsNotificationMarker(in: values) {
+            return NotificationSourceCandidate(name: "系统通知", bundleIdentifier: nil)
+        }
+
+        return nil
+    }
+
+    static func detectApplication(
+        in texts: [String],
+        candidates: [NotificationSourceCandidate]
+    ) -> NotificationSourceCandidate? {
+        let values = normalized(texts)
         let allCandidates = candidates + knownSources
 
         for candidate in uniqueCandidates(allCandidates).sorted(by: { $0.name.count > $1.name.count }) {
-            guard !isWidgetOrExtension(candidate) else { continue }
+            guard !isWidgetOrExtension(candidate),
+                  !isNotificationCenter(candidate) else { continue }
             let markers = [candidate.name, candidate.bundleIdentifier]
                 .compactMap { $0 }
             if values.contains(where: { value in
@@ -41,11 +68,37 @@ enum NotificationSourceDetection {
             }
         }
 
-        if containsNotificationMarker(in: values) {
-            return NotificationSourceCandidate(name: "系统通知", bundleIdentifier: nil)
-        }
-
         return nil
+    }
+
+    static func isNotificationCenter(_ candidate: NotificationSourceCandidate) -> Bool {
+        if [notificationCenterBundleIdentifier, bannerHostBundleIdentifier].contains(where: {
+            candidate.bundleIdentifier?.caseInsensitiveCompare($0) == .orderedSame
+        }) {
+            return true
+        }
+        return (notificationCenterNames + bannerHostNames).contains {
+            candidate.name.caseInsensitiveCompare($0) == .orderedSame
+        }
+    }
+
+    static func isNotificationCenter(_ text: String) -> Bool {
+        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if [notificationCenterBundleIdentifier, bannerHostBundleIdentifier].contains(where: {
+            value.caseInsensitiveCompare($0) == .orderedSame
+        }) {
+            return true
+        }
+        return (notificationCenterNames + bannerHostNames).contains {
+            value.caseInsensitiveCompare($0) == .orderedSame
+        }
+    }
+
+    private static func normalized(_ texts: [String]) -> [String] {
+        let values = texts
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        return values
     }
 
     static func containsNotificationMarker(in texts: [String]) -> Bool {
@@ -113,6 +166,7 @@ private struct NotificationAXItem: Equatable, Sendable {
 private struct NotificationAXScanResult: Sendable {
     let status: NotificationAXStatus
     let items: [NotificationAXItem]
+    let observedNotificationCenterSurface: Bool
     let dismissedCount: Int
     let dismissalFailures: Int
 }
@@ -124,21 +178,39 @@ private struct NotificationAXClearResult: Sendable {
 
 private struct NotificationAXScanRequest: Sendable {
     let id: Int
-    let processIdentifier: pid_t
+    let notificationCenterProcessIdentifier: pid_t?
+    let bannerHostProcessIdentifier: pid_t?
+    let scansNotificationCenterSurface: Bool
     let candidates: [NotificationSourceCandidate]
 }
 
+private enum NotificationAXSurface: Equatable, Sendable {
+    case notificationCenter
+    case bannerHost
+}
+
+private struct NotificationAXScanTarget: Sendable {
+    let processIdentifier: pid_t
+    let surface: NotificationAXSurface
+}
+
 private final class NotificationAXWorker: @unchecked Sendable {
-    private static let maximumScanDepth = 5
+    private static let maximumScanDepth = 7
     private static let maximumActionDepth = 8
-    private static let maximumNodeCount = 256
-    private static let messagingTimeout: Float = 0.2
-    private static let scanDeadline: TimeInterval = 1.5
+    private static let maximumNodeCount = 160
+    private static let messagingTimeout: Float = 0.08
+    private static let scanDeadline: TimeInterval = 0.65
 
     private struct NodeSnapshot {
         let role: String?
         let textValues: [String]
         let children: [AXUIElement]
+    }
+
+    private struct WindowScan {
+        let items: [NotificationAXItem]
+        let bannerElement: AXUIElement?
+        let observedNotificationCenterSurface: Bool
     }
 
     private struct ScanBudget {
@@ -165,7 +237,7 @@ private final class NotificationAXWorker: @unchecked Sendable {
     )
 
     func scan(
-        processIdentifier: pid_t,
+        targets: [NotificationAXScanTarget],
         candidates: [NotificationSourceCandidate]
     ) async -> NotificationAXScanResult {
         let cancellation = NotificationAXCancellation()
@@ -174,7 +246,7 @@ private final class NotificationAXWorker: @unchecked Sendable {
                 queue.async {
                     continuation.resume(
                         returning: Self.performScan(
-                            processIdentifier: processIdentifier,
+                            targets: targets,
                             candidates: candidates,
                             cancellation: cancellation,
                             dismissFingerprints: []
@@ -198,7 +270,12 @@ private final class NotificationAXWorker: @unchecked Sendable {
                 queue.async {
                     continuation.resume(
                         returning: Self.performScan(
-                            processIdentifier: processIdentifier,
+                            targets: [
+                                NotificationAXScanTarget(
+                                    processIdentifier: processIdentifier,
+                                    surface: .bannerHost
+                                )
+                            ],
                             candidates: candidates,
                             cancellation: cancellation,
                             dismissFingerprints: fingerprints
@@ -232,79 +309,111 @@ private final class NotificationAXWorker: @unchecked Sendable {
     }
 
     private static func performScan(
-        processIdentifier: pid_t,
+        targets: [NotificationAXScanTarget],
         candidates: [NotificationSourceCandidate],
         cancellation: NotificationAXCancellation,
         dismissFingerprints: Set<String>
     ) -> NotificationAXScanResult {
-        let application = AXUIElementCreateApplication(processIdentifier)
-        setMessagingTimeout(on: application)
-        var budget = ScanBudget(
-            deadlineUptime: ProcessInfo.processInfo.systemUptime + scanDeadline,
-            cancellation: cancellation
-        )
-
-        guard budget.visit() else {
-            return emptyResult(
-                status: cancellation.isCancelled ? .cancelled : .timedOut
-            )
-        }
-        guard let windows = elements(
-            application,
-            attribute: kAXWindowsAttribute
-        ) else {
-            return emptyResult(
-                status: cancellation.isCancelled ? .cancelled : .unavailable
-            )
-        }
-
         var items: [NotificationAXItem] = []
+        var observedNotificationCenterSurface = false
         var dismissedCount = 0
         var dismissalFailures = 0
+        var completedTargetCount = 0
+        var reachedLimit = false
 
-        for window in windows {
+        for target in targets {
             guard !cancellation.isCancelled else {
                 return NotificationAXScanResult(
                     status: .cancelled,
                     items: items,
+                    observedNotificationCenterSurface: observedNotificationCenterSurface,
                     dismissedCount: dismissedCount,
                     dismissalFailures: dismissalFailures
                 )
             }
-            guard !budget.didReachLimit else { break }
-            guard let scanned = scanWindow(
-                window,
-                candidates: candidates,
-                budget: &budget
-            ) else {
+
+            if target.surface == .notificationCenter,
+               !isNotificationCenterSurfaceVisible(
+                   processIdentifier: target.processIdentifier
+               ) {
+                completedTargetCount += 1
                 continue
             }
 
-            items.append(scanned.item)
-            guard dismissFingerprints.contains(scanned.item.fingerprint),
-                  scanned.item.isBanner else {
+            let application = AXUIElementCreateApplication(target.processIdentifier)
+            setMessagingTimeout(on: application)
+            var budget = ScanBudget(
+                deadlineUptime: ProcessInfo.processInfo.systemUptime + scanDeadline,
+                cancellation: cancellation
+            )
+            guard budget.visit(),
+                  let windows = elements(
+                      application,
+                      attribute: kAXWindowsAttribute
+                  ) else {
+                reachedLimit = reachedLimit || budget.didReachLimit
                 continue
             }
 
-            if dismissBanner(scanned.element) {
-                dismissedCount += 1
-            } else {
-                dismissalFailures += 1
+            var targetItems: [NotificationAXItem] = []
+            var targetObservedNotificationCenterSurface = false
+            var targetDismissedCount = 0
+            var targetDismissalFailures = 0
+            for window in windows {
+                guard !cancellation.isCancelled else { break }
+                guard !budget.didReachLimit else { break }
+                guard let scanned = scanWindow(
+                    window,
+                    surface: target.surface,
+                    candidates: candidates,
+                    budget: &budget
+                ) else {
+                    continue
+                }
+
+                targetItems.append(contentsOf: scanned.items)
+                targetObservedNotificationCenterSurface = targetObservedNotificationCenterSurface
+                    || scanned.observedNotificationCenterSurface
+                guard let bannerElement = scanned.bannerElement,
+                      scanned.items.contains(where: {
+                          $0.isBanner && dismissFingerprints.contains($0.fingerprint)
+                      }) else {
+                    continue
+                }
+
+                if dismissBanner(bannerElement) {
+                    targetDismissedCount += 1
+                } else {
+                    targetDismissalFailures += 1
+                }
+            }
+
+            reachedLimit = reachedLimit || budget.didReachLimit
+            if !budget.didReachLimit {
+                items.append(contentsOf: targetItems)
+                observedNotificationCenterSurface = observedNotificationCenterSurface
+                    || targetObservedNotificationCenterSurface
+                dismissedCount += targetDismissedCount
+                dismissalFailures += targetDismissalFailures
+                completedTargetCount += 1
             }
         }
 
         let status: NotificationAXStatus
         if cancellation.isCancelled {
             status = .cancelled
-        } else if budget.didReachLimit {
+        } else if completedTargetCount > 0 {
+            status = .success
+        } else if reachedLimit {
             status = .timedOut
         } else {
-            status = .success
+            status = .unavailable
         }
 
         return NotificationAXScanResult(
             status: status,
             items: items,
+            observedNotificationCenterSurface: observedNotificationCenterSurface,
             dismissedCount: dismissedCount,
             dismissalFailures: dismissalFailures
         )
@@ -373,46 +482,171 @@ private final class NotificationAXWorker: @unchecked Sendable {
 
     private static func scanWindow(
         _ window: AXUIElement,
+        surface: NotificationAXSurface,
         candidates: [NotificationSourceCandidate],
         budget: inout ScanBudget
-    ) -> (item: NotificationAXItem, element: AXUIElement)? {
+    ) -> WindowScan? {
         guard budget.visit() else { return nil }
         setMessagingTimeout(on: window)
         guard let node = nodeSnapshot(of: window, includeChildren: true),
               node.role == kAXWindowRole as String,
+              booleanValue(window, attribute: kAXHiddenAttribute as String) != true,
+              booleanValue(window, attribute: kAXMinimizedAttribute as String) != true,
               let frame = frame(of: window),
               frame.width > 0,
               frame.height > 0 else {
             return nil
         }
 
-        var texts = node.textValues
-        appendNotificationTexts(
-            from: node.children,
-            maximumDepth: maximumScanDepth,
-            into: &texts,
-            budget: &budget
-        )
+        if surface == .bannerHost {
+            var texts = node.textValues
+            appendNotificationTexts(
+                from: node.children,
+                maximumDepth: maximumScanDepth,
+                into: &texts,
+                budget: &budget
+            )
+            guard let source = NotificationSourceDetection.detect(
+                in: texts,
+                candidates: candidates
+            ) else {
+                return nil
+            }
 
-        guard let source = NotificationSourceDetection.detect(
-            in: texts,
-            candidates: candidates
-        ) else {
+            return WindowScan(
+                items: [
+                    NotificationAXItem(
+                        sourceName: source.name,
+                        bundleIdentifier: source.bundleIdentifier,
+                        fingerprint: "\(source.name)|banner|\(frameKey(frame))|\(textFingerprint(texts))",
+                        isBanner: true
+                    )
+                ],
+                bannerElement: window,
+                observedNotificationCenterSurface: false
+            )
+        }
+
+        guard frame.width >= 400,
+              frame.height >= 400 else {
             return nil
         }
 
-        let frameKey = "\(Int(frame.origin.x)):\(Int(frame.origin.y)):"
-            + "\(Int(frame.width)):\(Int(frame.height))"
-        let fingerprint = "\(source.name)|window|\(frameKey)"
-        return (
+        var items: [NotificationAXItem] = []
+        var fingerprints = Set<String>()
+        for child in node.children {
+            _ = appendNotificationCards(
+                from: child,
+                depthRemaining: maximumScanDepth,
+                candidates: candidates,
+                items: &items,
+                fingerprints: &fingerprints,
+                budget: &budget
+            )
+            guard !budget.didReachLimit else { break }
+        }
+        return WindowScan(
+            items: items,
+            bannerElement: nil,
+            observedNotificationCenterSurface: true
+        )
+    }
+
+    /// Walks only the visible Notification Center surface on the worker queue.
+    /// A source is emitted at its deepest matching AX node so parent groups do
+    /// not turn one notification card into several duplicate rows.
+    private static func appendNotificationCards(
+        from element: AXUIElement,
+        depthRemaining: Int,
+        candidates: [NotificationSourceCandidate],
+        items: inout [NotificationAXItem],
+        fingerprints: inout Set<String>,
+        budget: inout ScanBudget
+    ) -> Set<String> {
+        guard depthRemaining >= 0,
+              !budget.didReachLimit,
+              budget.visit() else { return [] }
+        setMessagingTimeout(on: element)
+        guard let node = nodeSnapshot(
+            of: element,
+            includeChildren: depthRemaining > 0
+        ) else {
+            return []
+        }
+
+        guard !node.textValues.contains(where: {
+            NotificationSourceDetection.isWidgetOrExtension($0)
+        }) else {
+            return []
+        }
+
+        var descendantSourceKeys = Set<String>()
+        if depthRemaining > 0 {
+            for child in node.children {
+                descendantSourceKeys.formUnion(
+                    appendNotificationCards(
+                        from: child,
+                        depthRemaining: depthRemaining - 1,
+                        candidates: candidates,
+                        items: &items,
+                        fingerprints: &fingerprints,
+                        budget: &budget
+                    )
+                )
+                guard !budget.didReachLimit else { break }
+            }
+        }
+
+        guard let source = NotificationSourceDetection.detectApplication(
+            in: node.textValues,
+            candidates: candidates
+        ) else {
+            return descendantSourceKeys
+        }
+
+        let sourceKey = source.bundleIdentifier ?? source.name
+        let alreadyFoundInDescendant = descendantSourceKeys.contains(sourceKey)
+        descendantSourceKeys.insert(sourceKey)
+        guard !alreadyFoundInDescendant,
+              let itemFrame = frame(of: element),
+              itemFrame.width > 0,
+              itemFrame.height > 0 else {
+            return descendantSourceKeys
+        }
+
+        let fingerprint = "\(sourceKey)|card|\(frameKey(itemFrame))"
+        guard fingerprints.insert(fingerprint).inserted else {
+            return descendantSourceKeys
+        }
+        items.append(
             NotificationAXItem(
                 sourceName: source.name,
                 bundleIdentifier: source.bundleIdentifier,
                 fingerprint: fingerprint,
-                isBanner: isBannerFrame(frame)
-            ),
-            window
+                isBanner: false
+            )
         )
+        return descendantSourceKeys
+    }
+
+    private static func frameKey(_ frame: CGRect) -> String {
+        "\(Int(frame.origin.x)):\(Int(frame.origin.y)):"
+            + "\(Int(frame.width)):\(Int(frame.height))"
+    }
+
+    /// Keeps notification contents out of retained state while still allowing
+    /// two banners from the same app and screen position to be distinguished.
+    private static func textFingerprint(_ texts: [String]) -> String {
+        let normalized = texts
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\u{1F}")
+        var hash: UInt64 = 14_695_981_039_346_656_037
+        for byte in normalized.utf8 {
+            hash ^= UInt64(byte)
+            hash &*= 1_099_511_628_211
+        }
+        return String(hash, radix: 16)
     }
 
     private static func appendNotificationTexts(
@@ -524,6 +758,21 @@ private final class NotificationAXWorker: @unchecked Sendable {
         return nil
     }
 
+    private static func booleanValue(
+        _ element: AXUIElement,
+        attribute: String
+    ) -> Bool? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            element,
+            attribute as CFString,
+            &value
+        ) == .success else {
+            return nil
+        }
+        return value as? Bool
+    }
+
     private static func setMessagingTimeout(on element: AXUIElement) {
         _ = AXUIElementSetMessagingTimeout(element, messagingTimeout)
     }
@@ -572,12 +821,25 @@ private final class NotificationAXWorker: @unchecked Sendable {
         ) == .success
     }
 
-    private static func isBannerFrame(_ frame: CGRect) -> Bool {
-        frame.width >= 220
-            && frame.width <= 520
-            && frame.height > 40
-            && frame.height < 320
-            && frame.origin.y < 260
+    private static func isNotificationCenterSurfaceVisible(
+        processIdentifier: pid_t
+    ) -> Bool {
+        guard let windows = CGWindowListCopyWindowInfo(
+            [.optionOnScreenOnly, .excludeDesktopElements],
+            kCGNullWindowID
+        ) as? [[String: Any]] else {
+            return false
+        }
+
+        return windows.contains { window in
+            guard let ownerPID = window[kCGWindowOwnerPID as String] as? NSNumber,
+                  ownerPID.int32Value == processIdentifier,
+                  let layer = window[kCGWindowLayer as String] as? NSNumber,
+                  layer.intValue >= 0 else {
+                return false
+            }
+            return true
+        }
     }
 
     private static func emptyResult(
@@ -586,6 +848,7 @@ private final class NotificationAXWorker: @unchecked Sendable {
         NotificationAXScanResult(
             status: status,
             items: [],
+            observedNotificationCenterSurface: false,
             dismissedCount: 0,
             dismissalFailures: 0
         )
@@ -612,12 +875,17 @@ final class NotificationBridge {
     private let onHealth: HealthHandler
     private let onAuthorizationRepairSuggested: AuthorizationRepairHandler
     private let notificationScanner = NotificationAXWorker()
+    private static let maximumRetainedNotificationCount = 100
 
+    /// Retains only banners observed in real time. The source app activation
+    /// observer removes them without reading Notification Center history.
+    private var retainedNotificationItems: [NotificationAXItem] = []
     private var previousFingerprints = Set<String>()
     private var hasBaseline = false
     private var accessibilityProbeTask: Task<Void, Never>?
     private var notificationScanTask: Task<Void, Never>?
     private var notificationActionTask: Task<Void, Never>?
+    private var activatedApplicationObserver: NSObjectProtocol?
     private var pendingScanRequest: NotificationAXScanRequest?
     private var activeScanRequestID: Int?
     private var notificationScanRequestID = 0
@@ -627,6 +895,8 @@ final class NotificationBridge {
     private var sourceCandidatesCacheExpiresAt: TimeInterval = 0
     private var notificationCenterPIDCache: pid_t?
     private var notificationCenterPIDCacheExpiresAt: TimeInterval = 0
+    private var bannerHostPIDCache: pid_t?
+    private var bannerHostPIDCacheExpiresAt: TimeInterval = 0
 
     private enum PreferenceKey {
         static let didAutomaticallyRequestAccessibility = "NotificationBridge.didAutomaticallyRequestAccessibility"
@@ -646,6 +916,7 @@ final class NotificationBridge {
 
     func start(promptForAccessibility: Bool) {
         stopping = false
+        beginObservingActivatedApplications()
         if hasAccessibilityAccess() {
             onHealth(.ready("辅助功能权限已授权"))
         } else if promptForAccessibility,
@@ -666,7 +937,9 @@ final class NotificationBridge {
         accessibilityProbeTask = nil
         notificationActionTask?.cancel()
         notificationActionTask = nil
+        stopObservingActivatedApplications()
         cancelNotificationScan()
+        retainedNotificationItems.removeAll()
         previousFingerprints.removeAll()
         hasBaseline = false
     }
@@ -690,6 +963,7 @@ final class NotificationBridge {
     func refreshNow() {
         guard hasAccessibilityAccess() else {
             cancelNotificationScan()
+            retainedNotificationItems.removeAll()
             previousFingerprints.removeAll()
             hasBaseline = false
             onSources([])
@@ -697,23 +971,26 @@ final class NotificationBridge {
             return
         }
 
-        guard let processIdentifier = cachedNotificationCenterProcessIdentifier() else {
+        let bannerHostProcessIdentifier = cachedBannerHostProcessIdentifier()
+        guard bannerHostProcessIdentifier != nil else {
             cancelNotificationScan()
-            onHealth(.warning("尚未发现系统通知中心进程"))
-            onSources([])
+            previousFingerprints.removeAll()
+            hasBaseline = false
+            onHealth(.warning("尚未发现系统通知横幅进程"))
             return
         }
 
         notificationScanRequestID &+= 1
         let request = NotificationAXScanRequest(
             id: notificationScanRequestID,
-            processIdentifier: processIdentifier,
+            notificationCenterProcessIdentifier: nil,
+            bannerHostProcessIdentifier: bannerHostProcessIdentifier,
+            scansNotificationCenterSurface: false,
             candidates: cachedSourceCandidates()
         )
 
         if notificationScanTask != nil {
             pendingScanRequest = request
-            notificationScanTask?.cancel()
             return
         }
         beginNotificationScan(request)
@@ -767,8 +1044,26 @@ final class NotificationBridge {
         let scanner = notificationScanner
         activeScanRequestID = request.id
         notificationScanTask = Task { @MainActor [weak self, scanner] in
+            var targets: [NotificationAXScanTarget] = []
+            if let bannerHostProcessIdentifier = request.bannerHostProcessIdentifier {
+                targets.append(
+                    NotificationAXScanTarget(
+                        processIdentifier: bannerHostProcessIdentifier,
+                        surface: .bannerHost
+                    )
+                )
+            }
+            if request.scansNotificationCenterSurface,
+               let notificationCenterProcessIdentifier = request.notificationCenterProcessIdentifier {
+                targets.append(
+                    NotificationAXScanTarget(
+                        processIdentifier: notificationCenterProcessIdentifier,
+                        surface: .notificationCenter
+                    )
+                )
+            }
             let result = await scanner.scan(
-                processIdentifier: request.processIdentifier,
+                targets: targets,
                 candidates: request.candidates
             )
             guard let self else { return }
@@ -815,19 +1110,37 @@ final class NotificationBridge {
             break
         }
 
-        let scanned = result.items
-        let currentFingerprints = Set(scanned.map(\.fingerprint))
+        let frontmostApplication = NSWorkspace.shared.frontmostApplication
+        let scannedBanners = result.items.filter { item in
+            item.isBanner && !notificationItem(
+                item,
+                matchesBundleIdentifier: frontmostApplication?.bundleIdentifier,
+                applicationName: frontmostApplication?.localizedName
+            )
+        }
+        retainedNotificationItems.append(
+            contentsOf: scannedBanners.filter {
+                !hasBaseline || !previousFingerprints.contains($0.fingerprint)
+            }
+        )
+        if retainedNotificationItems.count > Self.maximumRetainedNotificationCount {
+            retainedNotificationItems.removeFirst(
+                retainedNotificationItems.count - Self.maximumRetainedNotificationCount
+            )
+        }
+
+        let currentFingerprints = Set(scannedBanners.map(\.fingerprint))
         var newBannerFingerprints = Set<String>()
 
         if hasBaseline {
-            for item in scanned where !previousFingerprints.contains(item.fingerprint) {
+            for item in scannedBanners where !previousFingerprints.contains(item.fingerprint) {
                 onPulse(
                     NotificationPulse(
                         sourceName: item.sourceName,
                         bundleIdentifier: item.bundleIdentifier
                     )
                 )
-                if autoDismissBanners, item.isBanner {
+                if autoDismissBanners {
                     newBannerFingerprints.insert(item.fingerprint)
                 }
             }
@@ -836,32 +1149,36 @@ final class NotificationBridge {
         }
 
         previousFingerprints = currentFingerprints
-        onSources(aggregateSources(scanned))
+        onSources(aggregateSources(retainedNotificationItems))
 
         if !newBannerFingerprints.isEmpty {
-            dismissBanners(
-                fingerprints: newBannerFingerprints,
-                request: request
-            )
+            if let bannerHostProcessIdentifier = request.bannerHostProcessIdentifier {
+                dismissBanners(
+                    fingerprints: newBannerFingerprints,
+                    processIdentifier: bannerHostProcessIdentifier,
+                    candidates: request.candidates
+                )
+            }
         }
 
-        if scanned.isEmpty {
+        if retainedNotificationItems.isEmpty {
             onHealth(.ready("通知桥已就绪，当前没有可识别的通知节点"))
         } else {
-            onHealth(.ready("辅助功能权限有效；已镜像 \(scanned.count) 个系统通知节点"))
+            onHealth(.ready("通知桥已就绪；已保留 \(retainedNotificationItems.count) 个实时通知"))
         }
     }
 
     private func dismissBanners(
         fingerprints: Set<String>,
-        request: NotificationAXScanRequest
+        processIdentifier: pid_t,
+        candidates: [NotificationSourceCandidate]
     ) {
         notificationActionTask?.cancel()
         let scanner = notificationScanner
         notificationActionTask = Task { @MainActor [weak self, scanner] in
             let result = await scanner.dismissBanners(
-                processIdentifier: request.processIdentifier,
-                candidates: request.candidates,
+                processIdentifier: processIdentifier,
+                candidates: candidates,
                 fingerprints: fingerprints
             )
             guard let self, !Task.isCancelled, !self.stopping else { return }
@@ -893,6 +1210,7 @@ final class NotificationBridge {
             }
 
             onHealth(.ready("已请求系统通知中心清除全部"))
+            retainedNotificationItems.removeAll()
             previousFingerprints.removeAll()
             hasBaseline = false
             onSources([])
@@ -902,6 +1220,69 @@ final class NotificationBridge {
                 self?.refreshNow()
             }
         }
+    }
+
+    private func beginObservingActivatedApplications() {
+        guard activatedApplicationObserver == nil else { return }
+        activatedApplicationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let application = notification.userInfo?[NSWorkspace.applicationUserInfoKey]
+                as? NSRunningApplication else {
+                return
+            }
+            let bundleIdentifier = application.bundleIdentifier
+            let applicationName = application.localizedName
+            Task { @MainActor [weak self] in
+                self?.removeRetainedNotifications(
+                    bundleIdentifier: bundleIdentifier,
+                    applicationName: applicationName
+                )
+            }
+        }
+    }
+
+    private func stopObservingActivatedApplications() {
+        guard let activatedApplicationObserver else { return }
+        NSWorkspace.shared.notificationCenter.removeObserver(
+            activatedApplicationObserver
+        )
+        self.activatedApplicationObserver = nil
+    }
+
+    private func removeRetainedNotifications(
+        bundleIdentifier: String?,
+        applicationName: String?
+    ) {
+        let previousCount = retainedNotificationItems.count
+        retainedNotificationItems.removeAll { item in
+            notificationItem(
+                item,
+                matchesBundleIdentifier: bundleIdentifier,
+                applicationName: applicationName
+            )
+        }
+        guard retainedNotificationItems.count != previousCount else { return }
+        onSources(aggregateSources(retainedNotificationItems))
+        if retainedNotificationItems.isEmpty {
+            onHealth(.ready("通知桥已就绪，当前没有未处理的实时通知"))
+        }
+    }
+
+    private func notificationItem(
+        _ item: NotificationAXItem,
+        matchesBundleIdentifier bundleIdentifier: String?,
+        applicationName: String?
+    ) -> Bool {
+        if let bundleIdentifier,
+           let itemBundleIdentifier = item.bundleIdentifier,
+           itemBundleIdentifier.caseInsensitiveCompare(bundleIdentifier) == .orderedSame {
+            return true
+        }
+        guard let applicationName else { return false }
+        return item.sourceName.caseInsensitiveCompare(applicationName) == .orderedSame
     }
 
     private func cancelNotificationScan() {
@@ -918,17 +1299,18 @@ final class NotificationBridge {
             return sourceCandidatesCache
         }
 
-        sourceCandidatesCache = NSWorkspace.shared.runningApplications.compactMap {
-            app -> NotificationSourceCandidate? in
+        sourceCandidatesCache = NSWorkspace.shared.runningApplications.compactMap { app in
             guard let name = app.localizedName,
-                  name != "NotificationCenter",
                   !name.isEmpty else {
                 return nil
             }
-            return NotificationSourceCandidate(
+            let candidate = NotificationSourceCandidate(
                 name: name,
                 bundleIdentifier: app.bundleIdentifier
             )
+            return NotificationSourceDetection.isNotificationCenter(candidate)
+                ? nil
+                : candidate
         }
         sourceCandidatesCacheExpiresAt = now + 30
         return sourceCandidatesCache
@@ -940,12 +1322,30 @@ final class NotificationBridge {
             return notificationCenterPIDCache
         }
 
-        notificationCenterPIDCache = NSWorkspace.shared.runningApplications.first {
-            $0.bundleIdentifier == "com.apple.notificationcenterui"
-                || $0.localizedName == "NotificationCenter"
+        notificationCenterPIDCache = NSWorkspace.shared.runningApplications.first { app in
+            if app.bundleIdentifier == NotificationSourceDetection.notificationCenterBundleIdentifier {
+                return true
+            }
+            guard let localizedName = app.localizedName else { return false }
+            return NotificationSourceDetection.notificationCenterNames.contains {
+                $0.caseInsensitiveCompare(localizedName) == .orderedSame
+            }
         }?.processIdentifier
         notificationCenterPIDCacheExpiresAt = now + 5
         return notificationCenterPIDCache
+    }
+
+    private func cachedBannerHostProcessIdentifier() -> pid_t? {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now >= bannerHostPIDCacheExpiresAt else {
+            return bannerHostPIDCache
+        }
+
+        bannerHostPIDCache = NSWorkspace.shared.runningApplications.first {
+            $0.bundleIdentifier == NotificationSourceDetection.bannerHostBundleIdentifier
+        }?.processIdentifier
+        bannerHostPIDCacheExpiresAt = now + 5
+        return bannerHostPIDCache
     }
 
     private func invalidateNotificationCenterProcessCache() {

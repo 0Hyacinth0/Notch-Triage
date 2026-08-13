@@ -694,6 +694,39 @@ final class NotchTriageModelTests: XCTestCase {
         )
     }
 
+    func testNotificationSourceDetectionNeverTreatsNotificationCenterAsAnAppNotification() {
+        let candidates = [
+            NotificationSourceCandidate(
+                name: "通知中心",
+                bundleIdentifier: "com.apple.notificationcenterui"
+            ),
+            NotificationSourceCandidate(
+                name: "Notification Center",
+                bundleIdentifier: nil
+            ),
+            NotificationSourceCandidate(
+                name: "UserNotificationCenter",
+                bundleIdentifier: "com.apple.UserNotificationCenter"
+            )
+        ]
+
+        XCTAssertNil(
+            NotificationSourceDetection.detectApplication(
+                in: ["通知中心"],
+                candidates: candidates
+            )
+        )
+        XCTAssertNil(
+            NotificationSourceDetection.detect(
+                in: ["通知中心"],
+                candidates: candidates
+            )
+        )
+        XCTAssertTrue(NotificationSourceDetection.isNotificationCenter(candidates[0]))
+        XCTAssertTrue(NotificationSourceDetection.isNotificationCenter(candidates[1]))
+        XCTAssertTrue(NotificationSourceDetection.isNotificationCenter(candidates[2]))
+    }
+
     func testNotificationPromptOptionsExposeStableSymbolsAndValues() {
         XCTAssertEqual(
             NotificationPromptIcon.allCases.map(\.symbol),
