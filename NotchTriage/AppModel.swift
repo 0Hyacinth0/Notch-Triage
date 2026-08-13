@@ -22,7 +22,8 @@ final class AppModel: ObservableObject {
         static let leftWingContent = "notch.leftWingContent"
         static let rightWingContent = "notch.rightWingContent"
         static let ringAppearance = "notch.ringAppearance"
-        static let liquidGlassStyle = "notch.liquidGlassStyle"
+        static let liquidGlassLevel = "notch.liquidGlassLevel.v2"
+        static let legacyLiquidGlassStyle = "notch.liquidGlassStyle"
         static let notificationPromptIcon = "notch.notificationPromptIcon"
         static let notificationPromptColor = "notch.notificationPromptColor"
         static let notificationPromptAnimation = "notch.notificationPromptAnimation"
@@ -102,7 +103,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    @Published private(set) var liquidGlassStyle: LiquidGlassStyle
+    @Published private(set) var liquidGlassLevel: Double
 
     @Published var notificationPromptIcon: NotificationPromptIcon {
         didSet {
@@ -339,9 +340,10 @@ final class AppModel: ObservableObject {
         } else {
             ringAppearance = .default
         }
-        liquidGlassStyle = LiquidGlassStyle.restored(
-            from: defaults.string(forKey: PreferenceKey.liquidGlassStyle)
-        )
+        liquidGlassLevel = LiquidGlassAppearance.restored(
+            persistedLevel: defaults.object(forKey: PreferenceKey.liquidGlassLevel),
+            legacyStyle: defaults.string(forKey: PreferenceKey.legacyLiquidGlassStyle)
+        ).level
         notificationAnimationTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(1_200))
@@ -752,10 +754,11 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func setLiquidGlassStyle(_ style: LiquidGlassStyle) {
-        guard style != liquidGlassStyle else { return }
-        liquidGlassStyle = style
-        UserDefaults.standard.set(style.rawValue, forKey: PreferenceKey.liquidGlassStyle)
+    func setLiquidGlassLevel(_ level: Double) {
+        let normalized = LiquidGlassAppearance.normalized(level)
+        guard normalized != liquidGlassLevel else { return }
+        liquidGlassLevel = normalized
+        UserDefaults.standard.set(normalized, forKey: PreferenceKey.liquidGlassLevel)
     }
 
     func ringOverride(for metric: RingMetric) -> RingStyleOverride {

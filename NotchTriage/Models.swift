@@ -2,26 +2,40 @@ import AppKit
 import Foundation
 import SwiftUI
 
-enum LiquidGlassStyle: String, CaseIterable, Codable, Identifiable, Sendable {
-    case clear
-    case regular
+struct LiquidGlassAppearance: Equatable, Sendable {
+    static let defaultLevel = 1.0
+    let level: Double
 
-    static let `default` = LiquidGlassStyle.regular
-
-    var id: String { rawValue }
-
-    var glass: Glass {
-        switch self {
-        case .clear: return .clear
-        case .regular: return .regular
-        }
+    init(level: Double) {
+        self.level = Self.normalized(level)
     }
 
-    static func restored(from persistedValue: String?) -> Self {
-        guard let persistedValue, let style = Self(rawValue: persistedValue) else {
-            return .default
+    var regularLayerOpacity: Double {
+        pow(level, 1.35)
+    }
+
+    var desktopBackdropOpacity: Double {
+        0.14 + (0.58 * pow(level, 1.15))
+    }
+
+    static func normalized(_ value: Double) -> Double {
+        guard value.isFinite else { return defaultLevel }
+        return min(max(value, 0), 1)
+    }
+
+    static func restored(
+        persistedLevel: Any?,
+        legacyStyle: String?
+    ) -> Self {
+        if let number = persistedLevel as? NSNumber {
+            return Self(level: number.doubleValue)
         }
-        return style
+
+        switch legacyStyle {
+        case "clear": return Self(level: 0)
+        case "regular": return Self(level: 1)
+        default: return Self(level: defaultLevel)
+        }
     }
 }
 

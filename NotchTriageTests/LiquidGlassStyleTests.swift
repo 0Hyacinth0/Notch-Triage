@@ -3,28 +3,33 @@ import XCTest
 @testable import NotchTriage
 
 final class LiquidGlassStyleTests: XCTestCase {
-    func testRawValuesAndGlassMappingsRemainStable() {
-        XCTAssertEqual(LiquidGlassStyle.clear.rawValue, "clear")
-        XCTAssertEqual(LiquidGlassStyle.regular.rawValue, "regular")
-        XCTAssertEqual(LiquidGlassStyle.clear.glass, .clear)
-        XCTAssertEqual(LiquidGlassStyle.regular.glass, .regular)
+    func testLevelClampsAndNonFiniteValuesUseDefault() {
+        XCTAssertEqual(LiquidGlassAppearance(level: -1).level, 0)
+        XCTAssertEqual(LiquidGlassAppearance(level: 0.4).level, 0.4)
+        XCTAssertEqual(LiquidGlassAppearance(level: 2).level, 1)
+        XCTAssertEqual(LiquidGlassAppearance(level: .nan).level, 1)
+        XCTAssertEqual(LiquidGlassAppearance(level: .infinity).level, 1)
     }
 
-    func testMissingInvalidAndCurrentValuesRestoreExpectedStyle() {
-        XCTAssertEqual(LiquidGlassStyle.default, .regular)
-        XCTAssertEqual(LiquidGlassStyle.restored(from: nil), .regular)
-        XCTAssertEqual(LiquidGlassStyle.restored(from: ""), .regular)
-        XCTAssertEqual(LiquidGlassStyle.restored(from: "unsupported"), .regular)
+    func testRegularOverlayProvidesContinuousStandardEndpoint() {
+        let clear = LiquidGlassAppearance(level: 0)
+        XCTAssertEqual(clear.regularLayerOpacity, 0, accuracy: 0.0001)
+        XCTAssertEqual(clear.desktopBackdropOpacity, 0.14, accuracy: 0.0001)
 
-        for style in LiquidGlassStyle.allCases {
-            XCTAssertEqual(LiquidGlassStyle.restored(from: style.rawValue), style)
-        }
+        let middle = LiquidGlassAppearance(level: 0.5)
+        XCTAssertGreaterThan(middle.regularLayerOpacity, 0)
+        XCTAssertLessThan(middle.regularLayerOpacity, 1)
+        XCTAssertGreaterThan(middle.desktopBackdropOpacity, clear.desktopBackdropOpacity)
+
+        let regular = LiquidGlassAppearance(level: 1)
+        XCTAssertEqual(regular.regularLayerOpacity, 1, accuracy: 0.0001)
+        XCTAssertEqual(regular.desktopBackdropOpacity, 0.72, accuracy: 0.0001)
     }
 
     @MainActor
     func testSettingPersistsRawValueAndNewModelRestoresIt() {
         let defaults = UserDefaults.standard
-        let key = AppModel.PreferenceKey.liquidGlassStyle
+        let key = AppModel.PreferenceKey.liquidGlassLevel
         let previousValue = defaults.object(forKey: key)
         defer {
             if let previousValue {
@@ -36,34 +41,43 @@ final class LiquidGlassStyleTests: XCTestCase {
 
         defaults.removeObject(forKey: key)
         let model = AppModel()
-        XCTAssertEqual(model.liquidGlassStyle, .regular)
+        XCTAssertEqual(model.liquidGlassLevel, 1)
 
-        model.setLiquidGlassStyle(.clear)
-        XCTAssertEqual(model.liquidGlassStyle, .clear)
-        XCTAssertEqual(defaults.string(forKey: key), LiquidGlassStyle.clear.rawValue)
-        XCTAssertEqual(AppModel().liquidGlassStyle, .clear)
+        model.setLiquidGlassLevel(0.37)
+        XCTAssertEqual(model.liquidGlassLevel, 0.37)
+        XCTAssertEqual(defaults.double(forKey: key), 0.37)
+        XCTAssertEqual(AppModel().liquidGlassLevel, 0.37)
 
-        model.setLiquidGlassStyle(.regular)
-        XCTAssertEqual(model.liquidGlassStyle, .regular)
-        XCTAssertEqual(defaults.string(forKey: key), LiquidGlassStyle.regular.rawValue)
-        XCTAssertEqual(AppModel().liquidGlassStyle, .regular)
+        model.setLiquidGlassLevel(4)
+        XCTAssertEqual(model.liquidGlassLevel, 1)
+        XCTAssertEqual(defaults.double(forKey: key), 1)
     }
 
     @MainActor
-    func testUnsupportedPersistedValueFallsBackWithoutOverwritingDefaults() {
+    func testLegacyStyleMigratesWhenContinuousValueIsMissing() {
         let defaults = UserDefaults.standard
-        let key = AppModel.PreferenceKey.liquidGlassStyle
+        let key = AppModel.PreferenceKey.liquidGlassLevel
+        let legacyKey = AppModel.PreferenceKey.legacyLiquidGlassStyle
         let previousValue = defaults.object(forKey: key)
+        let previousLegacyValue = defaults.object(forKey: legacyKey)
         defer {
             if let previousValue {
                 defaults.set(previousValue, forKey: key)
             } else {
                 defaults.removeObject(forKey: key)
             }
+            if let previousLegacyValue {
+                defaults.set(previousLegacyValue, forKey: legacyKey)
+            } else {
+                defaults.removeObject(forKey: legacyKey)
+            }
         }
 
-        defaults.set("unsupported", forKey: key)
-        XCTAssertEqual(AppModel().liquidGlassStyle, .regular)
-        XCTAssertEqual(defaults.string(forKey: key), "unsupported")
+        defaults.removeObject(forKey: key)
+        defaults.set("clear", forKey: legacyKey)
+        XCTAssertEqual(AppModel().liquidGlassLevel, 0)
+
+        defaults.set("regular", forKey: legacyKey)
+        XCTAssertEqual(AppModel().liquidGlassLevel, 1)
     }
 }

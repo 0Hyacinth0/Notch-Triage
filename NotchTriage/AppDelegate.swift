@@ -125,6 +125,11 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 }
 
 @MainActor
+private final class InteractiveNotchPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+}
+
+@MainActor
 final class NotchPanelController {
     private let model: AppModel
     private let panel: NSPanel
@@ -139,7 +144,7 @@ final class NotchPanelController {
     init(model: AppModel) {
         self.model = model
 
-        panel = NSPanel(
+        panel = InteractiveNotchPanel(
             contentRect: NSRect(
                 x: 0,
                 y: 0,
@@ -160,7 +165,7 @@ final class NotchPanelController {
         panel.isMovable = false
         panel.isReleasedWhenClosed = false
         panel.acceptsMouseMovedEvents = true
-        panel.becomesKeyOnlyIfNeeded = true
+        panel.becomesKeyOnlyIfNeeded = false
         let hostingView = NSHostingView(rootView: NotchRootView(model: model))
         hostingView.sizingOptions = []
         panel.contentView = hostingView
@@ -172,6 +177,18 @@ final class NotchPanelController {
             .removeDuplicates()
             .sink { [weak self] _ in
                 self?.scheduleResize(animated: true)
+            }
+            .store(in: &cancellables)
+
+        model.$panelState
+            .map { !$0.isExpanded && !$0.isPresentingFileDropTarget }
+            .removeDuplicates()
+            .filter { $0 }
+            .sink { [weak self] _ in
+                guard let self, self.panel.isKeyWindow else {
+                    return
+                }
+                self.panel.resignKey()
             }
             .store(in: &cancellables)
 
@@ -422,6 +439,14 @@ final class NotchPanelController {
                 guard let self,
                       event.window === self.panel else {
                     return
+                }
+                if event.type == .leftMouseDown,
+                   !self.panel.isKeyWindow {
+                    // The compact notch is a nonactivating panel, but a direct
+                    // click is an explicit request to interact with it. Make
+                    // the panel key without activating the owning app so the
+                    // system renders active Liquid Glass while it is in use.
+                    self.panel.makeKey()
                 }
                 let location = self.panel.convertPoint(
                     toScreen: event.locationInWindow

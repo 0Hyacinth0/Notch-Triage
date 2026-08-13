@@ -178,44 +178,31 @@ struct SettingsRootView: View {
             .buttonStyle(.borderless)
 
             SettingsGroup(title: "Liquid Glass") {
-                LiquidGlassStylePreview(style: model.liquidGlassStyle)
+                LiquidGlassStylePreview(level: model.liquidGlassLevel)
 
                 HStack(spacing: 12) {
                     Text("清透")
                         .font(.caption)
-                        .foregroundStyle(
-                            model.liquidGlassStyle == .clear ? .primary : .secondary
-                        )
+                        .foregroundStyle(model.liquidGlassLevel < 0.5 ? .primary : .secondary)
 
                     Slider(
                         value: Binding(
-                            get: {
-                                model.liquidGlassStyle == .clear ? 0 : 1
-                            },
-                            set: { value in
-                                model.setLiquidGlassStyle(value < 0.5 ? .clear : .regular)
-                            }
+                            get: { model.liquidGlassLevel },
+                            set: { model.setLiquidGlassLevel($0) }
                         ),
-                        in: 0...1,
-                        step: 1
+                        in: 0...1
                     )
                     .accessibilityLabel("Liquid Glass 外观")
                     .accessibilityValue(
-                        model.liquidGlassStyle == .clear ? "清透" : "标准"
+                        liquidGlassAccessibilityValue
                     )
 
                     Text("标准")
                         .font(.caption)
-                        .foregroundStyle(
-                            model.liquidGlassStyle == .regular ? .primary : .secondary
-                        )
+                        .foregroundStyle(model.liquidGlassLevel >= 0.5 ? .primary : .secondary)
                 }
 
-                Text(
-                    model.liquidGlassStyle == .clear
-                        ? "清透使用 Apple 的 Clear Glass，尽量保留下方内容与色彩。"
-                        : "标准使用 Apple 的 Regular Glass，自动增强模糊与文字对比度。"
-                )
+                Text(liquidGlassDescription)
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
@@ -351,6 +338,24 @@ struct SettingsRootView: View {
                     .stroke(.primary.opacity(0.08), lineWidth: 0.5)
             }
         }
+    }
+
+    private var liquidGlassAccessibilityValue: String {
+        let percent = Int((model.liquidGlassLevel * 100).rounded())
+        if percent == 0 { return "清透" }
+        if percent == 100 { return "标准" }
+        return "\(percent)%"
+    }
+
+    private var liquidGlassDescription: String {
+        let percent = Int((model.liquidGlassLevel * 100).rounded())
+        if percent == 0 {
+            return "清透端使用完整的 Apple Clear Glass，保留原生折射、散射与立体边缘。"
+        }
+        if percent == 100 {
+            return "标准端在 Clear Glass 上完整叠加 Apple Regular Glass，增强磨砂与文字对比度。"
+        }
+        return "保持完整 Clear Glass，并逐渐叠加 Apple Regular Glass（\(percent)%）。"
     }
 
     @ViewBuilder
@@ -919,19 +924,20 @@ private struct WingPreviewCard: View {
 }
 
 private struct LiquidGlassStylePreview: View {
-    let style: LiquidGlassStyle
+    let level: Double
 
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [
-                    Color(red: 0.10, green: 0.45, blue: 0.82),
-                    Color(red: 0.30, green: 0.72, blue: 0.58),
-                    Color(red: 0.87, green: 0.56, blue: 0.28)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
+            Image("LiquidGlassPreviewBackground")
+                .resizable()
+                .scaledToFill()
+                .overlay {
+                    LinearGradient(
+                        colors: [.black.opacity(0.02), .black.opacity(0.18)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                }
 
             HStack(spacing: 12) {
                 Image(systemName: "sparkles")
@@ -940,7 +946,7 @@ private struct LiquidGlassStylePreview: View {
                     .glassEffect(.regular.interactive(), in: .circle)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(style == .clear ? "清透" : "标准")
+                    Text(previewTitle)
                         .font(.callout.weight(.semibold))
                     Text("Apple 原生 Liquid Glass")
                         .font(.caption2)
@@ -951,11 +957,17 @@ private struct LiquidGlassStylePreview: View {
             }
             .padding(.horizontal, 16)
             .frame(width: 290, height: 58)
-            .glassEffect(style.glass, in: .rect(cornerRadius: 19))
+            .nativeLiquidGlassSurface(level: level, cornerRadius: 19)
         }
         .frame(height: 108)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .accessibilityHidden(true)
+    }
+
+    private var previewTitle: String {
+        if level <= 0.01 { return "清透" }
+        if level >= 0.99 { return "标准" }
+        return "\(Int((level * 100).rounded()))%"
     }
 }
 

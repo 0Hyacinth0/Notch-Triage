@@ -1133,9 +1133,11 @@ private struct ExpandedPanelSurface: View {
 
     var body: some View {
         ExpandedPanel(model: model)
-            .glassEffect(
-                model.liquidGlassStyle.glass,
-                in: .rect(cornerRadius: NotchDesign.Radius.panel)
+            .environment(\.appearsActive, true)
+            .nativeLiquidGlassSurface(
+                level: model.liquidGlassLevel,
+                cornerRadius: NotchDesign.Radius.panel,
+                samplesDesktopBackdrop: true
             )
             .opacity(isVisible ? 1 : 0)
             .offset(y: reduceMotion || isVisible ? 0 : 8)
