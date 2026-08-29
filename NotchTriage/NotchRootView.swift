@@ -48,6 +48,21 @@ struct NotchRootView: View {
                 )
             }
             .buttonStyle(StableNotchButtonStyle())
+            .contextMenu {
+                Button {
+                    model.openSettings()
+                } label: {
+                    Label("设置…", systemImage: "gearshape")
+                }
+
+                Divider()
+
+                Button(role: .destructive) {
+                    model.quitApplication()
+                } label: {
+                    Label("退出 Notch Triage", systemImage: "power")
+                }
+            }
             .background {
                 NotchHoverTracker { hovered in
                     model.setNotchHovered(hovered)
@@ -714,7 +729,7 @@ private struct LivingNotch: View {
         case .codex:
             switch model.codexDisplayMode {
             case .weekly:
-                hoverWeeklyCodexStatus(side: side)
+                hoverCodexLimitsStatus(side: side)
             case .balance:
                 hoverBalanceCodexStatus(side: side)
             }
@@ -724,25 +739,32 @@ private struct LivingNotch: View {
         }
     }
 
-    private func hoverWeeklyCodexStatus(side: NotchWingSide) -> some View {
+    private func hoverCodexLimitsStatus(side: NotchWingSide) -> some View {
         HStack(spacing: 7) {
-            if let primary = model.weeklyCodexLimit {
+            if !model.codexQuotaLimits.isEmpty {
                 if side == .left {
-                    hoverCodexRing(primary)
+                    hoverCodexQuotaRings
                 }
 
                 VStack(alignment: side == .left ? .leading : .trailing, spacing: 0) {
-                    Text("\(Int(primary.remainingPercent.rounded()))%")
-                        .font(.system(size: 10.5, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                        .contentTransition(.numericText())
-                    Text(primary.windowLabel)
-                        .font(.system(size: 8.5, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.48))
+                    if let fiveHour = model.fiveHourCodexLimit {
+                        Text("5 小时 \(Int(fiveHour.remainingPercent.rounded()))%")
+                            .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                            .monospacedDigit()
+                            .contentTransition(.numericText())
+                    }
+                    if let weekly = model.weeklyCodexLimit,
+                       weekly.id != model.fiveHourCodexLimit?.id {
+                        Text("周额度 \(Int(weekly.remainingPercent.rounded()))%")
+                            .font(.system(size: 8.5, weight: .medium, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.56))
+                            .monospacedDigit()
+                            .contentTransition(.numericText())
+                    }
                 }
 
                 if side == .right {
-                    hoverCodexRing(primary)
+                    hoverCodexQuotaRings
                 }
             } else {
                 if side == .left {
@@ -819,16 +841,29 @@ private struct LivingNotch: View {
         }
     }
 
-    private func hoverCodexRing(_ primary: CodexLimitBucket) -> some View {
+    private var hoverCodexQuotaRings: some View {
         AttentionRing(
             model: model,
             diameter: 20
         ) {
-            UsageArc(
-                progress: primary.remainingFraction,
-                style: model.ringAppearance.style(for: .codex),
-                lineWidth: 2.6
-            )
+            ZStack {
+                UsageArc(
+                    progress: model.fiveHourCodexLimit?.remainingFraction ?? 0,
+                    style: model.ringAppearance.style(for: .codex),
+                    lineWidth: 2.2
+                )
+
+                if let weekly = model.weeklyCodexLimit,
+                   weekly.id != model.fiveHourCodexLimit?.id {
+                    UsageArc(
+                        progress: weekly.remainingFraction,
+                        style: model.ringAppearance.style(for: .codex),
+                        lineWidth: 1.6
+                    )
+                    .frame(width: 13, height: 13)
+                    .opacity(0.72)
+                }
+            }
         }
     }
 
@@ -1048,7 +1083,11 @@ private struct CompactCodexContent: View {
     let health: ServiceHealth
     let style: RingStyle
 
-    private var primary: CodexLimitBucket? {
+    private var fiveHour: CodexLimitBucket? {
+        AppModel.fiveHourCodexLimit(from: limits)
+    }
+
+    private var weekly: CodexLimitBucket? {
         AppModel.weeklyCodexLimit(from: limits)
     }
 
@@ -1068,10 +1107,20 @@ private struct CompactCodexContent: View {
             case .weekly:
                 ZStack {
                     UsageArc(
-                        progress: primary?.remainingFraction ?? 0,
+                        progress: fiveHour?.remainingFraction ?? 0,
                         style: style,
-                        lineWidth: 3.2
+                        lineWidth: 2.7
                     )
+
+                    if let weekly, weekly.id != fiveHour?.id {
+                        UsageArc(
+                            progress: weekly.remainingFraction,
+                            style: style,
+                            lineWidth: 1.8
+                        )
+                        .frame(width: 14, height: 14)
+                        .opacity(0.72)
+                    }
                 }
             case .balance:
                 ZStack {
@@ -1087,7 +1136,8 @@ private struct CompactCodexContent: View {
             }
         }
         .foregroundStyle(.white)
-        .animation(NotchDesign.Motion.value, value: primary?.remainingPercent)
+        .animation(NotchDesign.Motion.value, value: fiveHour?.remainingPercent)
+        .animation(NotchDesign.Motion.value, value: weekly?.remainingPercent)
         .animation(NotchDesign.Motion.value, value: model.codexDisplayMode)
         .help(helpLabel)
         .accessibilityLabel(
@@ -1098,10 +1148,7 @@ private struct CompactCodexContent: View {
     private var helpLabel: String {
         switch model.codexDisplayMode {
         case .weekly:
-            return "ChatGPT 与 Codex 剩余额度 "
-                + weeklyLabel
-                + " · "
-                + (primary?.windowLabel ?? health.message)
+            return quotaLabel(separator: " · ")
         case .balance:
             return balance.accessibilityLabel + " · " + balance.hint
         }
@@ -1110,18 +1157,26 @@ private struct CompactCodexContent: View {
     private var accessibilityLabel: String {
         switch model.codexDisplayMode {
         case .weekly:
-            return "ChatGPT 与 Codex 剩余额度 "
-                + weeklyLabel
-                + "，"
-                + (primary?.windowLabel ?? health.message)
+            return quotaLabel(separator: "，")
         case .balance:
             return balance.accessibilityLabel
         }
     }
 
-    private var weeklyLabel: String {
-        guard let primary else { return "—" }
-        return String(Int(primary.remainingPercent.rounded())) + "%"
+    private func quotaLabel(separator: String) -> String {
+        let labels = [
+            fiveHour.map { "5 小时剩余 \(Int($0.remainingPercent.rounded()))%" },
+            weekly.flatMap { bucket in
+                bucket.id == fiveHour?.id
+                    ? nil
+                    : "周额度剩余 \(Int(bucket.remainingPercent.rounded()))%"
+            }
+        ].compactMap { $0 }
+
+        guard !labels.isEmpty else {
+            return "ChatGPT 与 Codex 限额" + separator + health.message
+        }
+        return "ChatGPT 与 Codex " + labels.joined(separator: separator)
     }
 
 }
@@ -1664,7 +1719,11 @@ private struct NotificationSourceRow: View {
 private struct CodexUsageCard: View {
     @ObservedObject var model: AppModel
 
-    private var primary: CodexLimitBucket? {
+    private var fiveHour: CodexLimitBucket? {
+        model.fiveHourCodexLimit
+    }
+
+    private var weekly: CodexLimitBucket? {
         model.weeklyCodexLimit
     }
 
@@ -1685,7 +1744,7 @@ private struct CodexUsageCard: View {
             }
 
             Picker("Codex 显示", selection: $model.codexDisplayMode) {
-                Text("周额度").tag(AppModel.CodexDisplayMode.weekly)
+                Text("限额").tag(AppModel.CodexDisplayMode.weekly)
                 Text("余额").tag(AppModel.CodexDisplayMode.balance)
             }
             .labelsHidden()
@@ -1695,7 +1754,7 @@ private struct CodexUsageCard: View {
             Group {
                 switch model.codexDisplayMode {
                 case .weekly:
-                    weeklyContent
+                    limitsContent
                 case .balance:
                     balanceContent
                 }
@@ -1706,35 +1765,49 @@ private struct CodexUsageCard: View {
         .panelGroupSurface()
     }
 
-    private var weeklyContent: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                UsageArc(
-                    progress: primary?.remainingFraction ?? 0,
-                    style: model.ringAppearance.style(for: .codex),
-                    lineWidth: 4
-                )
+    private var limitsContent: some View {
+        HStack(spacing: 8) {
+            quotaColumn(title: "5 小时", bucket: fiveHour)
 
-                Text(percentLabel)
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .monospacedDigit()
-            }
-            .frame(width: 53, height: 53)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(primary?.windowLabel ?? "正在连接")
-                    .font(.system(size: 11, weight: .semibold))
-                Text("剩余额度")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-
-                if let reset = primary?.resetsAt {
-                    Text(reset.formatted(date: .omitted, time: .shortened))
-                        .font(.caption2.monospacedDigit())
-                        .foregroundStyle(.tertiary)
-                }
+            if let weekly, weekly.id != fiveHour?.id {
+                Divider()
+                    .frame(height: 52)
+                quotaColumn(title: "周额度", bucket: weekly)
             }
         }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(quotaAccessibilityLabel)
+    }
+
+    private func quotaColumn(
+        title: String,
+        bucket: CodexLimitBucket?
+    ) -> some View {
+        VStack(spacing: 3) {
+            ZStack {
+                UsageArc(
+                    progress: bucket?.remainingFraction ?? 0,
+                    style: model.ringAppearance.style(for: .codex),
+                    lineWidth: 3
+                )
+
+                Text(percentLabel(for: bucket))
+                    .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+            }
+            .frame(width: 38, height: 38)
+
+            Text(title)
+                .font(.system(size: 9.5, weight: .semibold))
+
+            Text(resetLabel(for: bucket))
+                .font(.system(size: 8, weight: .medium, design: .rounded))
+                .foregroundStyle(.tertiary)
+                .monospacedDigit()
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     private var balanceContent: some View {
@@ -1778,9 +1851,21 @@ private struct CodexUsageCard: View {
         )
     }
 
-    private var percentLabel: String {
-        guard let primary else { return "—" }
-        return "\(Int(primary.remainingPercent.rounded()))"
+    private func percentLabel(for bucket: CodexLimitBucket?) -> String {
+        guard let bucket else { return "—" }
+        return "\(Int(bucket.remainingPercent.rounded()))"
+    }
+
+    private func resetLabel(for bucket: CodexLimitBucket?) -> String {
+        guard let reset = bucket?.resetsAt else { return "正在连接" }
+        return reset.formatted(date: .omitted, time: .shortened) + " 重置"
+    }
+
+    private var quotaAccessibilityLabel: String {
+        model.codexQuotaLimits.map { bucket in
+            "\(bucket.windowLabel)剩余\(Int(bucket.remainingPercent.rounded()))%"
+        }
+        .joined(separator: "，")
     }
 
     private var estimatedUSDLabel: String {

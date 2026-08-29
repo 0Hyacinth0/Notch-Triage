@@ -5,7 +5,7 @@
   <p>原生、轻量、常驻的 macOS 刘海工具，集中呈现系统状态，并提供文件暂存与隐私优先的剪贴板历史。</p>
 
   <p>
-    <img src="https://img.shields.io/badge/version-26.8.14.0554-25D9C5?style=flat-square" alt="Version 26.8.14.0554">
+    <img src="https://img.shields.io/badge/version-26.8.30.0036-25D9C5?style=flat-square" alt="Version 26.8.30.0036">
     <img src="https://img.shields.io/badge/macOS-26%2B-000000?style=flat-square&amp;logo=apple&amp;logoColor=white" alt="macOS 26+">
     <img src="https://img.shields.io/badge/Swift-5-F05138?style=flat-square&amp;logo=swift&amp;logoColor=white" alt="Swift 5">
     <img src="https://img.shields.io/badge/UI-Liquid%20Glass-4B5563?style=flat-square" alt="Liquid Glass">
@@ -59,7 +59,7 @@
 | 模块 | 能力 | 说明 |
 | --- | --- | --- |
 | 刘海交互 | 静止、悬停预览、点击展开 | 窗口锚定屏幕顶边连续变形，左右内容按实体刘海镜像布局 |
-| Codex 状态 | 周额度与 credits 余额 | 通过本机 Codex App Server 读取账户实际返回的限额桶与 credits；面板可切换周额度和美元估算余额 |
+| Codex 状态 | 5 小时 / 周额度与 credits 余额 | 通过本机 Codex App Server 读取账户实际返回的限额桶与 credits；面板可切换双限额和美元估算余额 |
 | 系统 HUD | 音量、显示亮度、AirPods | 系统状态变化时以紧凑 HUD 进入刘海，展示完成后自动收起 |
 | 媒体中心 | 正在播放与播放进度 | 支持 Apple Music、Spotify、QQ 音乐、网易云音乐等系统媒体来源 |
 | 电源管理 | 电池健康、循环次数、实时功率 | 展示适配器、系统与电池之间的功率流；支持系统提供的充电上限档位 |
@@ -83,7 +83,7 @@
 1. 前往 [Releases](https://github.com/0Hyacinth0/Notch-Triage/releases/latest) 下载最新发布包。
 2. 将 `NotchTriage.app` 移入“应用程序”文件夹并启动。
 
-> 如果“应用程序”中同时存在 `NotchTriage.app` 与旧的 `Notch Triage.app`，请先退出两者，再用 v26.8.14.0554 的 `NotchTriage.app` 覆盖并移除旧的空格命名副本，避免同一 Bundle ID 启动两个实例。
+> 如果“应用程序”中同时存在 `NotchTriage.app` 与旧的 `Notch Triage.app`，请先退出两者，再用 v26.8.30.0036 的 `NotchTriage.app` 覆盖并移除旧的空格命名副本，避免同一 Bundle ID 启动两个实例。
 
 3. 根据需要授予辅助功能、Finder 自动化、剪贴板访问或登录项权限。
 4. 点击刘海区域打开面板；剪贴板历史保持默认关闭，只有点击“启用剪贴板历史”后才开始监控新内容。
@@ -179,7 +179,7 @@ DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer \
 3. 播放 Apple Music、Spotify、QQ 音乐或网易云音乐，检查左翼曲目与实时推进的进度；QQ 音乐还需验证暂停、拖动和切歌。
 4. 将鼠标移入连续黑色刘海区域检查悬停预览，再点击展开完整面板。
 5. 点击桌面或其他 App，确认完整面板自动收起。
-6. 在 Codex 卡片切换“周额度 / 余额”，检查周窗口和 credits 是否与 App Server 当前返回的数据一致。
+6. 在 Codex 卡片切换“限额 / 余额”，检查 5 小时、周额度和 credits 是否与 App Server 当前返回的数据一致。
 7. 配置“自动收起横幅”，并使用真实通知验证横幅与通知中心行为。
 8. 切换 80 / 85 / 90 / 95 / 100% 充电上限，验证系统返回状态；“充满”只应临时覆盖限制。
 9. 分别更改左右显示内容，收起并重启 App，确认设置保留。

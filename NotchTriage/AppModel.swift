@@ -12,7 +12,7 @@ final class AppModel: ObservableObject {
 
         var title: String {
             switch self {
-            case .weekly: return "每周限额"
+            case .weekly: return "5 小时与每周限额"
             case .balance: return "Credits 余额"
             }
         }
@@ -161,6 +161,27 @@ final class AppModel: ObservableObject {
         Self.weeklyCodexLimit(from: codexLimits)
     }
 
+    /// The five-hour rolling bucket, falling back to the shortest available
+    /// window when the server does not expose exactly 300 minutes.
+    var fiveHourCodexLimit: CodexLimitBucket? {
+        Self.fiveHourCodexLimit(from: codexLimits)
+    }
+
+    var codexQuotaLimits: [CodexLimitBucket] {
+        Self.codexQuotaLimits(from: codexLimits)
+    }
+
+    nonisolated static func fiveHourCodexLimit(
+        from limits: [CodexLimitBucket]
+    ) -> CodexLimitBucket? {
+        let validLimits = limits.filter { $0.windowMinutes > 0 }
+        let fiveHour = validLimits.filter { $0.windowMinutes == 300 }
+        if let exact = fiveHour.min(by: preferredLimitOrder) {
+            return exact
+        }
+        return validLimits.min(by: preferredLimitOrder)
+    }
+
     nonisolated static func weeklyCodexLimit(
         from limits: [CodexLimitBucket]
     ) -> CodexLimitBucket? {
@@ -170,6 +191,20 @@ final class AppModel: ObservableObject {
             return exact
         }
         return validLimits.max(by: preferredLimitOrder)
+    }
+
+    nonisolated static func codexQuotaLimits(
+        from limits: [CodexLimitBucket]
+    ) -> [CodexLimitBucket] {
+        [
+            fiveHourCodexLimit(from: limits),
+            weeklyCodexLimit(from: limits)
+        ]
+        .compactMap { $0 }
+        .reduce(into: []) { result, bucket in
+            guard !result.contains(where: { $0.id == bucket.id }) else { return }
+            result.append(bucket)
+        }
     }
 
     private nonisolated static func preferredLimitOrder(

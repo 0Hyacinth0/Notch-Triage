@@ -98,6 +98,10 @@ final class NotchTriageModelTests: XCTestCase {
                     "limitId": "codex",
                     "primary": [
                         "usedPercent": 42,
+                        "windowDurationMins": 300
+                    ],
+                    "secondary": [
+                        "usedPercent": 7,
                         "windowDurationMins": 10_080
                     ],
                     "credits": [
@@ -111,7 +115,7 @@ final class NotchTriageModelTests: XCTestCase {
 
         let snapshot = CodexUsageParser.parseMessage(message)
 
-        XCTAssertEqual(snapshot?.limits.first?.windowMinutes, 10_080)
+        XCTAssertEqual(snapshot?.limits.map(\.windowMinutes), [300, 10_080])
         XCTAssertEqual(snapshot?.credits?.credits, Decimal(2_500))
         XCTAssertEqual(snapshot?.credits?.estimatedUSD, Decimal(100))
     }
@@ -220,6 +224,25 @@ final class NotchTriageModelTests: XCTestCase {
         XCTAssertEqual(
             AppModel.weeklyCodexLimit(from: [short, long]),
             long
+        )
+    }
+
+    func testCodexQuotaLimitsPreferFiveHoursThenSevenDays() {
+        let short = makeBucket(id: "short", windowMinutes: 60)
+        let fiveHour = makeBucket(id: "five-hour", windowMinutes: 300)
+        let weekly = makeBucket(id: "weekly", windowMinutes: 10_080)
+
+        XCTAssertEqual(
+            AppModel.fiveHourCodexLimit(from: [short, weekly, fiveHour]),
+            fiveHour
+        )
+        XCTAssertEqual(
+            AppModel.codexQuotaLimits(from: [weekly, fiveHour]),
+            [fiveHour, weekly]
+        )
+        XCTAssertEqual(
+            AppModel.codexQuotaLimits(from: [fiveHour]),
+            [fiveHour]
         )
     }
 
