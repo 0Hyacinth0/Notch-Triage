@@ -39,10 +39,10 @@ struct SystemHUDContent: View {
 
             VStack(alignment: .leading, spacing: 5) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(snapshot.title)
+                    Text(LocalizedStringKey(snapshot.title))
                         .font(.system(size: 10.5, weight: .bold))
                     Spacer(minLength: 8)
-                    Text(snapshot.subtitle)
+                    Text(LocalizedStringKey(snapshot.subtitle))
                         .font(.system(size: 10, weight: .bold, design: .rounded))
                         .monospacedDigit()
                         .contentTransition(.numericText())
@@ -65,7 +65,7 @@ struct SystemHUDContent: View {
                 Text(snapshot.title)
                     .font(.system(size: 11, weight: .semibold))
                     .lineLimit(1)
-                Text(snapshot.subtitle)
+                Text(LocalizedStringKey(snapshot.subtitle))
                     .font(.system(size: 8.5, weight: .medium))
                     .foregroundStyle(.white.opacity(0.5))
             }

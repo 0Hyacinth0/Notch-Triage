@@ -3,11 +3,18 @@ import SwiftUI
 @main
 struct NotchTriageApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @AppStorage("notch.appLanguage") private var appLanguageRawValue =
+        AppLanguage.simplifiedChinese.rawValue
+
+    private var appLanguage: AppLanguage {
+        AppLanguage(rawValue: appLanguageRawValue) ?? .simplifiedChinese
+    }
 
     var body: some Scene {
         Settings {
             SettingsRootView(model: appDelegate.model)
         }
+        .environment(\.locale, appLanguage.locale)
         .commands {
             CommandGroup(replacing: .appSettings) {
                 Button("设置…") {

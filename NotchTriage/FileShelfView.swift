@@ -52,7 +52,9 @@ struct FileShelfView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("文件暂存架")
                     .font(.system(size: 13, weight: .semibold))
-                Text("会话内保留 · \(model.fileShelfItems.count)/\(FileShelfStore.maximumItemCount)")
+                Text(model.appLanguage == .english
+                     ? "Kept for this session · \(model.fileShelfItems.count)/\(FileShelfStore.maximumItemCount)"
+                     : "会话内保留 · \(model.fileShelfItems.count)/\(FileShelfStore.maximumItemCount)")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -234,10 +236,10 @@ private struct FileShelfItemCard: View {
     }
 
     private var detail: String {
-        guard item.isAvailable else { return "项目不可用" }
-        if item.isDirectory { return "文件夹" }
+        guard item.isAvailable else { return model.localized("项目不可用") }
+        if item.isDirectory { return model.localized("文件夹") }
         let kind = item.url.pathExtension.isEmpty
-            ? "文件"
+            ? model.localized("文件")
             : item.url.pathExtension.uppercased()
         guard let byteSize = item.byteSize else { return kind }
         return "\(kind) · \(ByteCountFormatter.string(fromByteCount: byteSize, countStyle: .file))"

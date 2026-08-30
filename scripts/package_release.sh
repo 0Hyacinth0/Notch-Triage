@@ -3,8 +3,8 @@ set -euo pipefail
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 readonly PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd -P)"
-readonly VERSION="26.8.30.1355"
-readonly BUILD="1355"
+readonly VERSION="26.8.31.0136"
+readonly BUILD="136"
 readonly DIST_DIR="$PROJECT_DIR/dist"
 readonly DMG_PATH="$DIST_DIR/NotchTriage-${VERSION}-macOS-universal.dmg"
 
@@ -31,6 +31,7 @@ trap cleanup EXIT
 
 readonly DERIVED_DATA_PATH="$TEMP_ROOT/DerivedData"
 readonly STAGING_DIR="$TEMP_ROOT/dmg-root"
+readonly TEMP_DMG_PATH="$TEMP_ROOT/NotchTriage-${VERSION}-macOS-universal.dmg"
 mkdir -p "$STAGING_DIR"
 
 printf 'Building NotchTriage %s (build %s) for arm64 and x86_64...\n' "$VERSION" "$BUILD"
@@ -79,8 +80,9 @@ hdiutil create \
   -volname "NotchTriage ${VERSION}" \
   -srcfolder "$STAGING_DIR" \
   -format UDZO \
-  "$DMG_PATH"
-hdiutil verify "$DMG_PATH"
+  "$TEMP_DMG_PATH"
+hdiutil verify "$TEMP_DMG_PATH"
+ditto "$TEMP_DMG_PATH" "$DMG_PATH"
 
 readonly SHA256="$(shasum -a 256 "$DMG_PATH" | awk '{print $1}')"
 printf 'SHA-256: %s  %s\n' "$SHA256" "$DMG_PATH"

@@ -7,8 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		NT00000000000000000000A3 /* MediaRemoteAdapter.framework in Embed MediaRemote Adapter */ = {isa = PBXBuildFile; fileRef = NT00000000000000000000A0 /* MediaRemoteAdapter.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
-		NT00000000000000000000A4 /* MediaRemoteAdapter Resources in Resources */ = {isa = PBXBuildFile; fileRef = NT00000000000000000000A1 /* MediaRemoteAdapter Resources */; };
+		NT00000000000000000000A3 /* Vendor/MediaRemoteAdapter/MediaRemoteAdapter.framework in Embed MediaRemote Adapter */ = {isa = PBXBuildFile; fileRef = NT00000000000000000000A0 /* Vendor/MediaRemoteAdapter/MediaRemoteAdapter.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		NT00000000000000000000A4 /* MediaRemoteAdapter in Resources */ = {isa = PBXBuildFile; fileRef = NT00000000000000000000A1 /* MediaRemoteAdapter */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -28,7 +28,7 @@
 			dstPath = "";
 			dstSubfolderSpec = 10;
 			files = (
-				NT00000000000000000000A3 /* MediaRemoteAdapter.framework in Embed MediaRemote Adapter */,
+				NT00000000000000000000A3 /* Vendor/MediaRemoteAdapter/MediaRemoteAdapter.framework in Embed MediaRemote Adapter */,
 			);
 			name = "Embed MediaRemote Adapter";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -38,13 +38,13 @@
 /* Begin PBXFileReference section */
 		NT0000000000000000000002 /* NotchTriage.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NotchTriage.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		NT0000000000000000000051 /* NotchTriageTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NotchTriageTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		NT00000000000000000000A0 /* MediaRemoteAdapter.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = Vendor/MediaRemoteAdapter/MediaRemoteAdapter.framework; sourceTree = "<group>"; };
-		NT00000000000000000000A1 /* MediaRemoteAdapter Resources */ = {isa = PBXFileReference; lastKnownFileType = folder; name = MediaRemoteAdapter; path = Vendor/MediaRemoteAdapter/MediaRemoteAdapter; sourceTree = "<group>"; };
+		NT00000000000000000000A0 /* Vendor/MediaRemoteAdapter/MediaRemoteAdapter.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = Vendor/MediaRemoteAdapter/MediaRemoteAdapter.framework; sourceTree = "<group>"; };
+		NT00000000000000000000A1 /* MediaRemoteAdapter */ = {isa = PBXFileReference; lastKnownFileType = folder; name = MediaRemoteAdapter; path = Vendor/MediaRemoteAdapter/MediaRemoteAdapter; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		NT0000000000000000000001 /* NotchTriage */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = NotchTriage; sourceTree = "<group>"; };
-		NT0000000000000000000050 /* NotchTriageTests */ = {isa = PBXFileSystemSynchronizedRootGroup; path = NotchTriageTests; sourceTree = "<group>"; };
+		NT0000000000000000000050 /* NotchTriageTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = NotchTriageTests; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -70,8 +70,8 @@
 			children = (
 				NT0000000000000000000001 /* NotchTriage */,
 				NT0000000000000000000050 /* NotchTriageTests */,
-				NT00000000000000000000A0 /* MediaRemoteAdapter.framework */,
-				NT00000000000000000000A1 /* MediaRemoteAdapter Resources */,
+				NT00000000000000000000A0 /* Vendor/MediaRemoteAdapter/MediaRemoteAdapter.framework */,
+				NT00000000000000000000A1 /* MediaRemoteAdapter */,
 				NT0000000000000000000004 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -179,7 +179,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				NT00000000000000000000A4 /* MediaRemoteAdapter Resources in Resources */,
+				NT00000000000000000000A4 /* MediaRemoteAdapter in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -340,7 +340,7 @@
 				CODE_SIGN_ENTITLEMENTS = NotchTriage/NotchTriage.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1355;
+				CURRENT_PROJECT_VERSION = 136;
 				DEVELOPMENT_TEAM = VZ99K76PMS;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -354,7 +354,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 26.8.30.1355;
+				MARKETING_VERSION = 26.8.31.0136;
 				PRODUCT_BUNDLE_IDENTIFIER = com.hyacinth.notchtriage.debug;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = NO;
@@ -373,7 +373,7 @@
 				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1355;
+				CURRENT_PROJECT_VERSION = 136;
 				DEVELOPMENT_TEAM = VZ99K76PMS;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -386,7 +386,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 26.8.30.1355;
+				MARKETING_VERSION = 26.8.31.0136;
 				PRODUCT_BUNDLE_IDENTIFIER = com.hyacinth.notchtriage;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = NO;

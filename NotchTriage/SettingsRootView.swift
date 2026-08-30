@@ -69,18 +69,22 @@ struct SettingsRootView: View {
         }
         .frame(minWidth: 780, idealWidth: 860, minHeight: 540, idealHeight: 640)
         .background(Color(nsColor: .windowBackgroundColor))
+        .environment(\.locale, model.appLanguage.locale)
         .onAppear {
             model.refreshLaunchAtLoginStatus()
-            onPaneChange(currentDestination.title)
+            onPaneChange(localizedSettingsWindowTitle)
         }
         .onChange(of: selectedPane) { _, rawValue in
             let destination = Destination(rawValue: rawValue) ?? .appearance
-            onPaneChange(destination.title)
+            onPaneChange(localizedSettingsWindowTitle(for: destination))
+        }
+        .onChange(of: model.appLanguage) { _, _ in
+            onPaneChange(localizedSettingsWindowTitle)
         }
         .alert(item: nonReleaseUpdatePrompt) { prompt in
             Alert(
-                title: Text(prompt.title),
-                message: Text(prompt.message),
+                title: Text(model.localized(prompt.title)),
+                message: Text(model.localized(prompt.message)),
                 dismissButton: .default(Text("好"))
             )
         }
@@ -101,13 +105,21 @@ struct SettingsRootView: View {
         Destination(rawValue: selectedPane) ?? .appearance
     }
 
+    private var localizedSettingsWindowTitle: String {
+        localizedSettingsWindowTitle(for: currentDestination)
+    }
+
+    private func localizedSettingsWindowTitle(for destination: Destination) -> String {
+        "\(model.localized("Notch Triage 设置")) — \(model.localized(destination.title))"
+    }
+
     @ViewBuilder
     private func sidebarItem(
         _ title: String,
         symbol: String,
         destination: Destination
     ) -> some View {
-        Label(title, systemImage: symbol)
+        Label(LocalizedStringKey(title), systemImage: symbol)
             .tag(destination)
     }
 
@@ -135,6 +147,32 @@ struct SettingsRootView: View {
             subtitle: "使用 Apple 原生 Liquid Glass，并跟随 macOS 的全局外观与辅助功能设置。",
             symbol: "rectangle.on.rectangle"
         ) {
+            SettingsGroup(title: "语言") {
+                HStack(spacing: 12) {
+                    SettingsRowLabel(
+                        title: "界面语言",
+                        subtitle: "选择 Notch Triage 的显示语言。",
+                        symbol: "globe"
+                    )
+
+                    Spacer(minLength: 12)
+
+                    Picker(
+                        "界面语言",
+                        selection: Binding(
+                            get: { model.appLanguage },
+                            set: { model.setAppLanguage($0) }
+                        )
+                    ) {
+                        ForEach(AppLanguage.allCases) { language in
+                            Text(language.title).tag(language)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 150)
+                }
+            }
+
             SettingsGroup(title: "刘海内容") {
                 settingsPicker(
                     title: "左侧",
@@ -216,7 +254,7 @@ struct SettingsRootView: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("全局主题模板")
                             .font(.callout.weight(.medium))
-                        Text(model.ringAppearance.theme.subtitle)
+                        Text(LocalizedStringKey(model.ringAppearance.theme.subtitle))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -231,7 +269,7 @@ struct SettingsRootView: View {
                         )
                     ) {
                         ForEach(RingTheme.allCases) { theme in
-                            Text(theme.title).tag(theme)
+                            Text(LocalizedStringKey(theme.title)).tag(theme)
                         }
                     }
                     .labelsHidden()
@@ -270,7 +308,7 @@ struct SettingsRootView: View {
                             )
                         ) {
                             ForEach(NotificationPromptIcon.allCases) { icon in
-                                Text(icon.title).tag(icon)
+                                Text(LocalizedStringKey(icon.title)).tag(icon)
                             }
                         }
                     }
@@ -293,7 +331,7 @@ struct SettingsRootView: View {
                                     Circle()
                                         .fill(color.color)
                                         .frame(width: 9, height: 9)
-                                    Text(color.title)
+                                    Text(LocalizedStringKey(color.title))
                                 }
                                 .tag(color)
                             }
@@ -313,7 +351,7 @@ struct SettingsRootView: View {
                             )
                         ) {
                             ForEach(NotificationPromptAnimation.allCases) { animation in
-                                Text(animation.title).tag(animation)
+                                Text(LocalizedStringKey(animation.title)).tag(animation)
                             }
                         }
                     }
@@ -342,18 +380,25 @@ struct SettingsRootView: View {
 
     private var liquidGlassAccessibilityValue: String {
         let percent = Int((model.liquidGlassLevel * 100).rounded())
-        if percent == 0 { return "清透" }
-        if percent == 100 { return "标准" }
+        if percent == 0 { return model.localized("清透") }
+        if percent == 100 { return model.localized("标准") }
         return "\(percent)%"
     }
 
     private var liquidGlassDescription: String {
         let percent = Int((model.liquidGlassLevel * 100).rounded())
         if percent == 0 {
-            return "清透端使用完整的 Apple Clear Glass，保留原生折射、散射与立体边缘。"
+            return model.localized(
+                "清透端使用完整的 Apple Clear Glass，保留原生折射、散射与立体边缘。"
+            )
         }
         if percent == 100 {
-            return "标准端在 Clear Glass 上完整叠加 Apple Regular Glass，增强磨砂与文字对比度。"
+            return model.localized(
+                "标准端在 Clear Glass 上完整叠加 Apple Regular Glass，增强磨砂与文字对比度。"
+            )
+        }
+        if model.appLanguage == .english {
+            return "Keeps full Clear Glass and gradually adds Apple Regular Glass (\(percent)%)."
         }
         return "保持完整 Clear Glass，并逐渐叠加 Apple Regular Glass（\(percent)%）。"
     }
@@ -378,9 +423,9 @@ struct SettingsRootView: View {
             .frame(width: 20)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(title)
+                Text(LocalizedStringKey(title))
                     .font(.callout.weight(.medium))
-                Text(subtitle)
+                Text(LocalizedStringKey(subtitle))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -427,7 +472,9 @@ struct SettingsRootView: View {
 
                     Spacer(minLength: 12)
 
-                    Button(model.clipboardHistoryEnabled ? "停止并保留" : "启用") {
+                    Button(LocalizedStringKey(
+                        model.clipboardHistoryEnabled ? "停止并保留" : "启用"
+                    )) {
                         if model.clipboardHistoryEnabled {
                             model.disableClipboardHistory(clearHistory: false)
                         } else {
@@ -455,7 +502,7 @@ struct SettingsRootView: View {
                         )
                     ) {
                         ForEach(ClipboardRetentionPolicy.allCases) { policy in
-                            Text(policy.title).tag(policy)
+                            Text(LocalizedStringKey(policy.title)).tag(policy)
                         }
                     }
                     .labelsHidden()
@@ -553,7 +600,9 @@ struct SettingsRootView: View {
                         .font(.callout)
                         .foregroundStyle(.secondary)
                     Spacer(minLength: 12)
-                    Button(model.accessibilityRepairSuggested ? "修复权限…" : "打开设置…") {
+                    Button(LocalizedStringKey(
+                        model.accessibilityRepairSuggested ? "修复权限…" : "打开设置…"
+                    )) {
                         if model.accessibilityRepairSuggested {
                             model.presentAccessibilityRepairPrompt()
                         } else {
@@ -605,7 +654,7 @@ struct SettingsRootView: View {
                     Divider()
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
-                            Text(model.updateStatus.menuTitle)
+                            Text(model.localized(model.updateStatus.menuTitle))
                                 .font(.callout.weight(.medium))
                             Spacer()
                             Text("\(Int((progress.fraction * 100).rounded()))%")
@@ -676,7 +725,9 @@ struct SettingsRootView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Notch Triage")
                             .font(.title3.weight(.semibold))
-                        Text("版本 v\(model.currentVersion)")
+                        Text(model.appLanguage == .english
+                             ? "Version v\(model.currentVersion)"
+                             : "版本 v\(model.currentVersion)")
                             .font(.callout)
                             .foregroundStyle(.secondary)
                         Text("Codex · 媒体 · 电源 · 通知 · 系统 HUD")
@@ -714,11 +765,11 @@ struct SettingsRootView: View {
             Image(systemName: symbol)
                 .foregroundStyle(.secondary)
                 .frame(width: 20)
-            Text(title)
+            Text(LocalizedStringKey(title))
             Spacer()
             Picker(title, selection: selection) {
                 ForEach(NotchWingContent.allCases) { content in
-                    Label(content.title, systemImage: content.symbol)
+                    Label(LocalizedStringKey(content.title), systemImage: content.symbol)
                         .tag(content)
                 }
             }
@@ -733,9 +784,9 @@ struct SettingsRootView: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 20)
             VStack(alignment: .leading, spacing: 3) {
-                Text(title)
+                Text(LocalizedStringKey(title))
                     .font(.callout.weight(.medium))
-                Text(message)
+                Text(LocalizedStringKey(message))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -764,21 +815,35 @@ struct SettingsRootView: View {
 
     private var updateStatusDescription: String {
         switch model.updateStatus {
-        case .idle: return "等待检查"
-        case .checking: return "正在检查 GitHub Release"
-        case .available(let version): return "发现可安装版本 v\(version)"
-        case .downloading(let version): return "正在下载 v\(version)"
-        case .installing(let version): return "正在安装 v\(version)"
-        case .upToDate(let version): return "当前已是最新版 v\(version)"
+        case .idle: return model.localized("等待检查")
+        case .checking: return model.localized("正在检查 GitHub Release")
+        case .available(let version):
+            return model.appLanguage == .english
+                ? "Found an installable version v\(version)"
+                : "发现可安装版本 v\(version)"
+        case .downloading(let version):
+            return model.appLanguage == .english
+                ? "Downloading v\(version)"
+                : "正在下载 v\(version)"
+        case .installing(let version):
+            return model.appLanguage == .english
+                ? "Installing v\(version)"
+                : "正在安装 v\(version)"
+        case .upToDate(let version):
+            return model.appLanguage == .english
+                ? "Already up to date at v\(version)"
+                : "当前已是最新版 v\(version)"
         case .failed(let message): return message
         }
     }
 
     private var updateButtonTitle: String {
         if model.availableUpdate != nil {
-            return "下载并安装"
+            return model.localized("下载并安装")
         }
-        return model.updateStatus.isBusy ? model.updateStatus.menuTitle : "检查更新"
+        return model.updateStatus.isBusy
+            ? model.localized(model.updateStatus.menuTitle)
+            : model.localized("检查更新")
     }
 
     private var nonReleaseUpdatePrompt: Binding<AppUpdatePrompt?> {
@@ -811,9 +876,9 @@ private struct SettingsPage<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             VStack(alignment: .leading, spacing: 5) {
-                Text(title)
+                Text(LocalizedStringKey(title))
                     .font(.system(size: 24, weight: .bold))
-                Text(subtitle)
+                Text(LocalizedStringKey(subtitle))
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
@@ -830,7 +895,7 @@ private struct SettingsGroup<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(title)
+            Text(LocalizedStringKey(title))
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.primary)
                 .padding(.bottom, 2)
@@ -861,9 +926,9 @@ private struct SettingsRowLabel: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 20)
             VStack(alignment: .leading, spacing: 3) {
-                Text(title)
+                Text(LocalizedStringKey(title))
                     .font(.callout.weight(.medium))
-                Text(subtitle)
+                Text(LocalizedStringKey(subtitle))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
@@ -884,9 +949,9 @@ private struct SettingsStatusRow: View {
                 .foregroundStyle(tint)
                 .frame(width: 20)
             VStack(alignment: .leading, spacing: 3) {
-                Text(title)
+                Text(LocalizedStringKey(title))
                     .font(.callout.weight(.medium))
-                Text(subtitle)
+                Text(LocalizedStringKey(subtitle))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -904,14 +969,14 @@ private struct WingPreviewCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title)
+            Text(LocalizedStringKey(title))
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
             HStack(spacing: 8) {
                 Image(systemName: content.symbol)
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.tint)
-                Text(content.title)
+                Text(LocalizedStringKey(content.title))
                     .font(.callout.weight(.medium))
                     .lineLimit(1)
                 Spacer(minLength: 0)
@@ -946,9 +1011,9 @@ private struct LiquidGlassStylePreview: View {
                     .glassEffect(.regular.interactive(), in: .circle)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(previewTitle)
+                    Text(LocalizedStringKey(previewTitle))
                         .font(.callout.weight(.semibold))
-                    Text("Apple 原生 Liquid Glass")
+                    Text(LocalizedStringKey("Apple 原生 Liquid Glass"))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -980,7 +1045,7 @@ private struct RingThemeSwatch: View {
             Circle()
                 .stroke(style.shapeStyle, lineWidth: 3)
                 .frame(width: 22, height: 22)
-            Text(metric.title)
+            Text(LocalizedStringKey(metric.title))
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
@@ -1032,7 +1097,7 @@ private struct RingStyleEditor: View {
                 get: { override.isEnabled },
                 set: { model.setRingOverrideEnabled($0, for: metric) }
             )) {
-                Label(metric.title, systemImage: metric.symbol)
+                Label(LocalizedStringKey(metric.title), systemImage: metric.symbol)
                     .font(.callout.weight(.medium))
             }
 
@@ -1068,7 +1133,7 @@ private struct RingStyleEditor: View {
                     )
                 ) {
                     ForEach(RingGradientMode.allCases) { mode in
-                        Text(mode.title).tag(mode)
+                        Text(LocalizedStringKey(mode.title)).tag(mode)
                     }
                 }
                 .labelsHidden()

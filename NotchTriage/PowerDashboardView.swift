@@ -49,7 +49,7 @@ private struct ChargeLimitCard: View {
                     Label("充电管理", systemImage: "battery.100percent.bolt")
                         .font(.system(size: 12.5, weight: .semibold))
 
-                    Text(controlSubtitle)
+                    Text(LocalizedStringKey(controlSubtitle))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -137,6 +137,7 @@ private struct BatteryLimitBar: View {
     let limitPercent: Int
     let isCharging: Bool
     let isConnected: Bool
+    @Environment(\.locale) private var locale
 
     var body: some View {
         GeometryReader { proxy in
@@ -171,7 +172,7 @@ private struct BatteryLimitBar: View {
                         .monospacedDigit()
                         .contentTransition(.numericText())
                     Spacer()
-                    Text("上限 \(limitPercent)%")
+                    Text(limitLabel)
                         .font(.system(size: 9.5, weight: .semibold))
                         .contentTransition(.numericText())
                 }
@@ -185,6 +186,12 @@ private struct BatteryLimitBar: View {
         if batteryPercent <= 20 { return .red }
         if batteryPercent >= limitPercent { return .green }
         return .mint
+    }
+
+    private var limitLabel: String {
+        locale.identifier.hasPrefix("en")
+            ? "Limit \(limitPercent)%"
+            : "上限 \(limitPercent)%"
     }
 
     private var stateSymbol: String {
@@ -303,7 +310,7 @@ private struct FlowNode: View {
                 .font(.system(size: 12, weight: .bold, design: .rounded))
                 .monospacedDigit()
                 .contentTransition(.numericText())
-            Text(label)
+            Text(LocalizedStringKey(label))
                 .font(.system(size: 9.5, weight: .medium))
                 .foregroundStyle(.secondary)
         }
@@ -431,7 +438,7 @@ private struct MetricSection<Content: View>: View {
             HStack(spacing: 7) {
                 Image(systemName: symbol)
                     .foregroundStyle(.secondary)
-                Text(title)
+                Text(LocalizedStringKey(title))
                     .font(.system(size: 12.5, weight: .semibold))
                 Spacer()
             }
@@ -456,7 +463,7 @@ private struct PowerMetricRow: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 15)
 
-            Text(title)
+            Text(LocalizedStringKey(title))
                 .font(.system(size: 10.5, weight: .medium))
                 .foregroundStyle(.secondary)
 

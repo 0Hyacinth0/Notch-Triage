@@ -66,8 +66,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 private final class SettingsWindowTitleSink {
     weak var window: NSWindow?
 
-    func update(for paneTitle: String) {
-        window?.title = "Notch Triage 设置 — \(paneTitle)"
+    func update(for title: String) {
+        window?.title = title
     }
 }
 
@@ -98,7 +98,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         super.init()
 
         titleSink.window = window
-        titleSink.update(for: "外观")
+        titleSink.update(for: "\(model.localized("Notch Triage 设置")) — \(model.localized("外观"))")
         window.titleVisibility = .visible
         window.isReleasedWhenClosed = false
         window.isMovableByWindowBackground = true

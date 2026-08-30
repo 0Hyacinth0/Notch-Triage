@@ -31,6 +31,7 @@ struct NotchRootView: View {
         }
         .animation(NotchDesign.Motion.value, value: model.leftWingContent)
         .animation(NotchDesign.Motion.value, value: model.rightWingContent)
+        .environment(\.locale, model.appLanguage.locale)
     }
 
     private var compactHeight: CGFloat {
@@ -77,7 +78,9 @@ struct NotchRootView: View {
             }
             .offset(x: compactAlignmentOffset)
             .accessibilityLabel(
-                model.isExpanded ? "收起 Notch Triage" : "展开 Notch Triage"
+                model.localized(
+                    model.isExpanded ? "收起 Notch Triage" : "展开 Notch Triage"
+                )
             )
 
             // Keep both control surfaces mounted in the panel's fixed canvas.
@@ -746,10 +749,11 @@ private struct CompactMediaTransportButton: View {
     }
 
     private var helpText: String {
+        let title = model.localized(command.title)
         if let reason = model.mediaCommandAvailability.disabledReason(for: command) {
-            return "\(command.title) · \(reason)"
+            return "\(title) · \(model.localized(reason))"
         }
-        return command.title
+        return title
     }
 
     private var diameter: CGFloat {
@@ -801,9 +805,9 @@ private struct CompactMediaTransportButton: View {
         .disabled(!isEnabled)
         .opacity(isSending ? 0.78 : (isEnabled ? 1 : 0.34))
         .help(helpText)
-        .accessibilityLabel(command.title)
+        .accessibilityLabel(model.localized(command.title))
         .accessibilityValue(
-            isSending ? "正在发送" : (isEnabled ? "可用" : "不可用")
+            model.localized(isSending ? "正在发送" : (isEnabled ? "可用" : "不可用"))
         )
     }
 }
@@ -888,13 +892,14 @@ private struct CompactBatteryContent: View {
     }
 
     private var batteryHelp: String {
+        let battery = model.localized("电池")
         if let chargingWatts = snapshot.chargingWatts {
-            return "电池 \(snapshot.batteryPercent)% · 正在充电 \(String(format: "%.1f W", chargingWatts))"
+            return "\(battery) \(snapshot.batteryPercent)% · \(model.localized("正在充电")) \(String(format: "%.1f W", chargingWatts))"
         }
         if snapshot.isExternalPowerConnected {
-            return "电池 \(snapshot.batteryPercent)% · 已连接电源"
+            return "\(battery) \(snapshot.batteryPercent)% · \(model.localized("已连接电源"))"
         }
-        return "电池 \(snapshot.batteryPercent)% · 电池供电"
+        return "\(battery) \(snapshot.batteryPercent)% · \(model.localized("电池供电"))"
     }
 
 }
@@ -1172,19 +1177,28 @@ private struct LivingNotch: View {
                 }
 
                 VStack(alignment: side == .left ? .leading : .trailing, spacing: 1) {
-                    Text(model.media == .idle ? "暂未播放" : model.media.title)
-                        .font(.system(size: 10.5, weight: .semibold))
-                        .lineLimit(1)
-                    Text(
-                        model.media == .idle
-                            ? "正在播放"
-                            : (model.media.artist.isEmpty
-                                ? model.media.sourceName
-                                : model.media.artist)
-                    )
-                    .font(.system(size: 8.5, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.48))
-                    .lineLimit(1)
+                    if model.media == .idle {
+                        Text("暂未播放")
+                            .font(.system(size: 10.5, weight: .semibold))
+                            .lineLimit(1)
+                    } else {
+                        Text(model.media.title)
+                            .font(.system(size: 10.5, weight: .semibold))
+                            .lineLimit(1)
+                    }
+                    if model.media == .idle {
+                        Text("正在播放")
+                            .font(.system(size: 8.5, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.48))
+                            .lineLimit(1)
+                    } else {
+                        Text(model.media.artist.isEmpty
+                             ? model.media.sourceName
+                             : model.media.artist)
+                            .font(.system(size: 8.5, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.48))
+                            .lineLimit(1)
+                    }
                 }
 
                 if side == .right {
@@ -1239,17 +1253,21 @@ private struct LivingNotch: View {
 
                 VStack(alignment: side == .left ? .leading : .trailing, spacing: 0) {
                     if let fiveHour = model.fiveHourCodexLimit {
-                        Text("5 小时 \(Int(fiveHour.remainingPercent.rounded()))%")
+                        Text("5h \(Int(fiveHour.remainingPercent.rounded()))%")
                             .font(.system(size: 9.5, weight: .bold, design: .rounded))
                             .monospacedDigit()
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
                             .contentTransition(.numericText())
                     }
                     if let weekly = model.weeklyCodexLimit,
                        weekly.id != model.fiveHourCodexLimit?.id {
-                        Text("周额度 \(Int(weekly.remainingPercent.rounded()))%")
+                        Text("\(model.appLanguage == .english ? "W" : "周") \(Int(weekly.remainingPercent.rounded()))%")
                             .font(.system(size: 8.5, weight: .medium, design: .rounded))
                             .foregroundStyle(.white.opacity(0.56))
                             .monospacedDigit()
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
                             .contentTransition(.numericText())
                     }
                 }
@@ -1283,13 +1301,13 @@ private struct LivingNotch: View {
             }
 
             VStack(alignment: side == .left ? .leading : .trailing, spacing: 0) {
-                Text(balance.estimatedUSDLabel)
+                Text(LocalizedStringKey(balance.estimatedUSDLabel))
                     .font(.system(size: 10.5, weight: .bold, design: .rounded))
                     .monospacedDigit()
                     .lineLimit(1)
                     .minimumScaleFactor(0.72)
                     .contentTransition(.numericText())
-                Text(balance.creditsLabel)
+                Text(LocalizedStringKey(balance.creditsLabel))
                     .font(.system(size: 8.5, weight: .medium))
                     .foregroundStyle(.white.opacity(0.48))
                     .lineLimit(1)
@@ -1383,12 +1401,14 @@ private struct LivingNotch: View {
 
     private var hoverBatteryDetail: String {
         if let chargingWatts = model.power.chargingWatts {
-            return String(format: "充电 %.1f W", chargingWatts)
+            return model.appLanguage == .english
+                ? String(format: "Charging %.1f W", chargingWatts)
+                : String(format: "充电 %.1f W", chargingWatts)
         }
         if model.power.isExternalPowerConnected {
-            return "已连接电源"
+            return model.localized("已连接电源")
         }
-        return "电池供电"
+        return model.localized("电池供电")
     }
 }
 
@@ -1498,6 +1518,7 @@ struct CodexBalancePresentation: Equatable {
 
 private struct FileDropTargetContent: View {
     let acceptance: FileDropAcceptance
+    @Environment(\.locale) private var locale
 
     var body: some View {
         HStack(spacing: 12) {
@@ -1508,10 +1529,10 @@ private struct FileDropTargetContent: View {
                 .background(tint.opacity(0.14), in: .rect(cornerRadius: 11))
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(title)
+                Text(LocalizedStringKey(title))
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.white)
-                Text(subtitle)
+                Text(LocalizedStringKey(subtitle))
                     .font(.system(size: 9, weight: .medium))
                     .foregroundStyle(.white.opacity(0.58))
                     .lineLimit(1)
@@ -1548,20 +1569,28 @@ private struct FileDropTargetContent: View {
     }
 
     private var title: String {
+        let isEnglish = locale.identifier.hasPrefix("en")
         switch acceptance {
         case .accepted(let count):
-            return "松手加入 \(count) 项"
+            return isEnglish
+                ? "Release to add \(count) item\(count == 1 ? "" : "s")"
+                : "松手加入 \(count) 项"
         case .partial(let acceptedCount, let rejectedCount, _):
-            return "\(acceptedCount) 项可加入 · \(rejectedCount) 项跳过"
+            return isEnglish
+                ? "\(acceptedCount) item\(acceptedCount == 1 ? "" : "s") to add · \(rejectedCount) skipped"
+                : "\(acceptedCount) 项可加入 · \(rejectedCount) 项跳过"
         case .rejected:
-            return "不能加入暂存架"
+            return isEnglish ? "Cannot Add to Shelf" : "不能加入暂存架"
         }
     }
 
     private var subtitle: String {
+        let isEnglish = locale.identifier.hasPrefix("en")
         switch acceptance {
         case .accepted:
-            return "只保存引用，不会移动或复制原文件"
+            return isEnglish
+                ? "Only references are saved; original files are not moved or copied"
+                : "只保存引用，不会移动或复制原文件"
         case .partial(_, _, let reason), .rejected(_, let reason):
             return reason
         }
@@ -1815,8 +1844,8 @@ private struct ExpandedPanel: View {
         .alert(item: nonReleaseUpdatePrompt) { prompt in
             if prompt.recovery == .resetAccessibility {
                 return Alert(
-                    title: Text(prompt.title),
-                    message: Text(prompt.message),
+                    title: Text(model.localized(prompt.title)),
+                    message: Text(model.localized(prompt.message)),
                     primaryButton: .destructive(Text("重置并重新授权")) {
                         model.repairAccessibilityAuthorization()
                     },
@@ -1824,8 +1853,8 @@ private struct ExpandedPanel: View {
                 )
             }
             return Alert(
-                title: Text(prompt.title),
-                message: Text(prompt.message),
+                title: Text(model.localized(prompt.title)),
+                message: Text(model.localized(prompt.message)),
                 dismissButton: .default(Text("好"))
             )
         }
@@ -1872,7 +1901,7 @@ private struct ExpandedPanel: View {
                     .frame(width: 30, height: 30)
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(title)
+                    Text(LocalizedStringKey(title))
                         .font(.system(size: 15, weight: .semibold))
                     Text(model.updateStatus.activeUpdateVersion.map { "Notch Triage v\($0)" } ?? "Notch Triage")
                         .font(.caption)
@@ -1904,9 +1933,9 @@ private struct ExpandedPanel: View {
                 if let progress {
                     Text("\(Self.byteCount(progress.receivedBytes)) / \(Self.byteCount(progress.totalBytes))")
                     Spacer(minLength: 8)
-                    Text(detail)
+                    Text(LocalizedStringKey(detail))
                 } else {
-                    Text(detail)
+                    Text(LocalizedStringKey(detail))
                 }
             }
             .font(.caption2)
@@ -1931,7 +1960,7 @@ private struct ExpandedPanel: View {
                 Image(systemName: model.workspaceSection.symbol)
                     .font(.system(size: 12, weight: .semibold))
                     .contentTransition(.symbolEffect(.replace))
-                Text(model.workspaceSection.title)
+                Text(LocalizedStringKey(model.workspaceSection.title))
                     .font(.system(size: 14, weight: .semibold))
 
                 if model.workspaceSection == .notifications,
@@ -1951,7 +1980,7 @@ private struct ExpandedPanel: View {
                 HStack(spacing: 8) {
                     Picker("工作区", selection: workspaceSectionBinding) {
                         ForEach(WorkspaceSection.allCases) { section in
-                            Label(section.title, systemImage: section.symbol)
+                            Label(LocalizedStringKey(section.title), systemImage: section.symbol)
                                 .tag(section)
                         }
                     }
@@ -2126,7 +2155,7 @@ private struct NotificationInbox: View {
                         .foregroundStyle(.secondary)
                     Text("没有待处理通知")
                         .font(.system(size: 13, weight: .medium))
-                    Text(emptyDetail)
+                    Text(LocalizedStringKey(emptyDetail))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -2150,7 +2179,9 @@ private struct NotificationInbox: View {
             HStack {
                 StatusDot(health: model.notificationHealth)
 
-                Text(model.autoDismissBanners ? "横幅自动收起" : "横幅保持原样")
+                Text(LocalizedStringKey(
+                    model.autoDismissBanners ? "横幅自动收起" : "横幅保持原样"
+                ))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
 
@@ -2289,10 +2320,10 @@ private struct CodexUsageCard: View {
             }
             .frame(width: 38, height: 38)
 
-            Text(title)
+            Text(LocalizedStringKey(title))
                 .font(.system(size: 9.5, weight: .semibold))
 
-            Text(resetLabel(for: bucket))
+            Text(LocalizedStringKey(resetLabel(for: bucket)))
                 .font(.system(size: 8, weight: .medium, design: .rounded))
                 .foregroundStyle(.tertiary)
                 .monospacedDigit()
@@ -2315,17 +2346,17 @@ private struct CodexUsageCard: View {
             .frame(width: 45, height: 45)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(estimatedUSDLabel)
+                Text(LocalizedStringKey(estimatedUSDLabel))
                     .font(.system(size: 13.5, weight: .bold, design: .rounded))
                     .monospacedDigit()
                     .lineLimit(1)
                     .minimumScaleFactor(0.72)
-                Text(creditsLabel)
+                Text(LocalizedStringKey(creditsLabel))
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.72)
-                Text(balanceHint)
+                Text(LocalizedStringKey(balanceHint))
                     .font(.system(size: 8.5, weight: .medium))
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
@@ -2349,7 +2380,9 @@ private struct CodexUsageCard: View {
 
     private func resetLabel(for bucket: CodexLimitBucket?) -> String {
         guard let reset = bucket?.resetsAt else { return "正在连接" }
-        return reset.formatted(date: .omitted, time: .shortened) + " 重置"
+        return reset.formatted(date: .omitted, time: .shortened)
+            + " "
+            + model.localized("重置")
     }
 
     private var quotaAccessibilityLabel: String {
@@ -2385,7 +2418,7 @@ private struct TrashCompactCard: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text("废纸篓")
                     .font(.system(size: 11.5, weight: .semibold))
-                Text(trashStatus)
+                Text(LocalizedStringKey(trashStatus))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -2415,7 +2448,10 @@ private struct TrashCompactCard: View {
 
     private var trashStatus: String {
         guard let count = model.trashCount else { return "计数不可用" }
-        return count == 0 ? "空" : "\(count) 项"
+        if count == 0 { return model.localized("空") }
+        return model.appLanguage == .english
+            ? "\(count) item\(count == 1 ? "" : "s")"
+            : "\(count) 项"
     }
 
     private var trashSymbol: String {
@@ -2437,9 +2473,15 @@ private struct NowPlayingStrip: View {
             .frame(width: 24, height: 24)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(snapshot == .idle ? "暂未播放" : snapshot.title)
-                    .font(.system(size: 11.5, weight: .semibold))
-                    .lineLimit(1)
+                if snapshot == .idle {
+                    Text("暂未播放")
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .lineLimit(1)
+                } else {
+                    Text(snapshot.title)
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .lineLimit(1)
+                }
 
                 if snapshot != .idle {
                     Text(snapshot.artist.isEmpty ? snapshot.sourceName : snapshot.artist)
@@ -2519,10 +2561,11 @@ private struct MediaCommandButton: View {
     }
 
     private var helpText: String {
+        let title = model.localized(command.title)
         if let reason = model.mediaCommandAvailability.disabledReason(for: command) {
-            return "\(command.title) · \(reason)"
+            return "\(title) · \(model.localized(reason))"
         }
-        return command.title
+        return title
     }
 
     var body: some View {
@@ -2550,9 +2593,9 @@ private struct MediaCommandButton: View {
         .disabled(!isEnabled)
         .opacity(isSending ? 0.76 : (isEnabled ? 1 : 0.34))
         .help(helpText)
-        .accessibilityLabel(command.title)
+        .accessibilityLabel(model.localized(command.title))
         .accessibilityValue(
-            isSending ? "正在发送" : (isEnabled ? "可用" : "不可用")
+            model.localized(isSending ? "正在发送" : (isEnabled ? "可用" : "不可用"))
         )
     }
 }

@@ -51,13 +51,15 @@ struct DiagnosticsDashboardView: View {
             .frame(width: 36, height: 36)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(model.isBackgroundRefreshPaused ? "后台刷新已暂停" : "节能调度正常")
+                Text(LocalizedStringKey(
+                    model.isBackgroundRefreshPaused ? "后台刷新已暂停" : "节能调度正常"
+                ))
                     .font(.system(size: 13, weight: .semibold))
-                Text(
+                Text(LocalizedStringKey(
                     model.isBackgroundRefreshPaused
                         ? "解锁或唤醒后会自动刷新全部状态"
                         : "7 项任务共享一个带容差的唤醒计时器"
-                )
+                ))
                 .font(.caption2)
                 .foregroundStyle(.secondary)
             }
@@ -67,7 +69,7 @@ struct DiagnosticsDashboardView: View {
             VStack(alignment: .trailing, spacing: 2) {
                 Text("v\(model.currentVersion)")
                     .font(.caption.monospacedDigit().weight(.semibold))
-                Text(model.launchAtLoginStatusDescription)
+                Text(LocalizedStringKey(model.launchAtLoginStatusDescription))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -87,7 +89,7 @@ struct DiagnosticsDashboardView: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 5) {
-                    Text(record.service.title)
+                    Text(LocalizedStringKey(record.service.title))
                         .font(.system(size: 12, weight: .semibold))
                     Spacer(minLength: 2)
                     Circle()
@@ -95,7 +97,7 @@ struct DiagnosticsDashboardView: View {
                         .frame(width: 6, height: 6)
                 }
 
-                Text(record.health.message)
+                Text(LocalizedStringKey(record.health.message))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)

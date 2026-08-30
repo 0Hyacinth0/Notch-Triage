@@ -19,6 +19,7 @@ final class AppModel: ObservableObject {
     }
 
     enum PreferenceKey {
+        static let appLanguage = "notch.appLanguage"
         static let leftWingContent = "notch.leftWingContent"
         static let rightWingContent = "notch.rightWingContent"
         static let ringAppearance = "notch.ringAppearance"
@@ -37,6 +38,14 @@ final class AppModel: ObservableObject {
     }
 
     @Published private(set) var panelState = PanelState()
+    @Published var appLanguage: AppLanguage {
+        didSet {
+            UserDefaults.standard.set(
+                appLanguage.rawValue,
+                forKey: PreferenceKey.appLanguage
+            )
+        }
+    }
     @Published var workspaceSection: WorkspaceSection {
         didSet {
             UserDefaults.standard.set(
@@ -272,6 +281,14 @@ final class AppModel: ObservableObject {
         panelState = state
     }
 
+    func setAppLanguage(_ language: AppLanguage) {
+        appLanguage = language
+    }
+
+    func localized(_ source: String) -> String {
+        appLanguage.localized(source)
+    }
+
     func replaceFileShelfItems(_ items: [FileShelfItem]) {
         fileShelfItems = items
     }
@@ -329,6 +346,9 @@ final class AppModel: ObservableObject {
 
     init() {
         let defaults = UserDefaults.standard
+        appLanguage = AppLanguage(
+            rawValue: defaults.string(forKey: PreferenceKey.appLanguage) ?? ""
+        ) ?? .simplifiedChinese
         workspaceSection = WorkspaceSection.restored(
             from: defaults.string(forKey: PreferenceKey.workspaceSection)
         )

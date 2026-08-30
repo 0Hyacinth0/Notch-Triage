@@ -39,10 +39,12 @@ struct ClipboardHistoryView: View {
                     Circle()
                         .fill(statusColor)
                         .frame(width: 6, height: 6)
-                    Text(statusTitle)
+                    Text(LocalizedStringKey(statusTitle))
                         .font(.system(size: 13, weight: .semibold))
                 }
-                Text("本机保存 · \(model.clipboardHistoryItems.count)/\(ClipboardStore.maximumItemCount)")
+                Text(model.appLanguage == .english
+                     ? "Stored locally · \(model.clipboardHistoryItems.count)/\(ClipboardStore.maximumItemCount)"
+                     : "本机保存 · \(model.clipboardHistoryItems.count)/\(ClipboardStore.maximumItemCount)")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -57,7 +59,7 @@ struct ClipboardHistoryView: View {
                 )
             ) {
                 ForEach(ClipboardRetentionPolicy.allCases) { policy in
-                    Text(policy.title).tag(policy)
+                    Text(LocalizedStringKey(policy.title)).tag(policy)
                 }
             }
             .labelsHidden()
@@ -90,10 +92,10 @@ struct ClipboardHistoryView: View {
                 .onTapGesture { self.confirmation = nil }
 
             VStack(alignment: .leading, spacing: 12) {
-                Label(confirmation.title, systemImage: confirmation.symbol)
+                Label(LocalizedStringKey(confirmation.title), systemImage: confirmation.symbol)
                     .font(.headline)
 
-                Text(confirmation.message)
+                Text(LocalizedStringKey(confirmation.message))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -350,7 +352,7 @@ private struct ClipboardHistoryRow: View {
     }
 
     private var detail: String {
-        "\(item.payload.kind.localizedTitle) · \(item.capturedAt.formatted(date: .omitted, time: .shortened)) · \(ByteCountFormatter.string(fromByteCount: Int64(item.byteCount), countStyle: .file))"
+        "\(model.localized(item.payload.kind.localizedTitle)) · \(item.capturedAt.formatted(date: .omitted, time: .shortened)) · \(ByteCountFormatter.string(fromByteCount: Int64(item.byteCount), countStyle: .file))"
     }
 }
 
