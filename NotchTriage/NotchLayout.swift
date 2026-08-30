@@ -21,6 +21,7 @@ enum NotchLayout {
     static let expandedPanelHeight: CGFloat = 460
     static let shoulderRadius: CGFloat = 6
     static let compactWingSlotWidth: CGFloat = 37
+    static let compactMediaControlsWidth: CGFloat = 120
     static let minimumMenuBarHeight: CGFloat = 32
 
     static var expandedHeight: CGFloat {

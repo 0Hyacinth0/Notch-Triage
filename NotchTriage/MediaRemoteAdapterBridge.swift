@@ -61,6 +61,7 @@ enum MediaRemoteAdapterParser {
         let duration = max(0, numberValue(dictionary["duration"]) ?? 0)
         let elapsed = numberValue(dictionary["elapsedTime"]) ?? 0
         let rate = numberValue(dictionary["playbackRate"])
+        let prohibitsSkip = boolValue(dictionary["prohibitsSkip"]) ?? false
         let isPlaying = boolValue(dictionary["playing"]) ?? ((rate ?? 0) > 0)
         let timestamp = dateValue(dictionary["timestamp"])
 
@@ -72,6 +73,7 @@ enum MediaRemoteAdapterParser {
             duration: duration,
             elapsed: elapsed,
             isPlaying: isPlaying,
+            prohibitsSkip: prohibitsSkip,
             progressAnchorDate: timestamp,
             playbackRate: rate
         )
@@ -189,7 +191,7 @@ enum MediaRemoteAdapterJSONParser {
 }
 
 @MainActor
-final class MediaRemoteAdapterBridge {
+final class MediaRemoteAdapterBridge: MediaCommandSending {
     typealias SnapshotHandler = @MainActor (MediaSnapshot) -> Void
     typealias FailureHandler = @MainActor (String) -> Void
 
@@ -203,6 +205,10 @@ final class MediaRemoteAdapterBridge {
     private var outputBuffer = Data()
     private var stopping = false
     private var hasProcessedInitialPayload = false
+    private var commandProcesses: [UUID: Process] = [:]
+    private var commandContinuations: [UUID: CheckedContinuation<Bool, Never>] = [:]
+    private var commandTimeoutTasks: [UUID: Task<Void, Never>] = [:]
+    private let commandTimeout: Duration = .seconds(2)
 
     init(
         bundle: Bundle = .main,
@@ -216,6 +222,11 @@ final class MediaRemoteAdapterBridge {
 
     var isRunning: Bool {
         process?.isRunning == true
+    }
+
+    var isAvailable: Bool {
+        resourceURL("MediaRemoteAdapter/mediaremote-adapter.pl") != nil
+            && privateFrameworkURL("MediaRemoteAdapter.framework") != nil
     }
 
     /// Starts one long-lived adapter process.  A false return means the
@@ -284,6 +295,10 @@ final class MediaRemoteAdapterBridge {
 
     func stop() {
         stopping = true
+        let commandIDs = Array(commandContinuations.keys)
+        for commandID in commandIDs {
+            finishCommand(id: commandID, succeeded: false, terminateProcess: true)
+        }
         outputPipe?.fileHandleForReading.readabilityHandler = nil
         errorPipe?.fileHandleForReading.readabilityHandler = nil
         if let process, process.isRunning {
@@ -294,6 +309,65 @@ final class MediaRemoteAdapterBridge {
         errorPipe = nil
         outputBuffer.removeAll(keepingCapacity: false)
         hasProcessedInitialPayload = false
+    }
+
+    /// Sends one command through a short-lived adapter process.  The stream
+    /// process is intentionally kept separate: MediaRemoteAdapter's command
+    /// entry point is synchronous, while this API returns only after the
+    /// helper exits and never blocks the app's main actor waiting for it.
+    func send(_ command: MediaCommand) async -> Bool {
+        guard isAvailable,
+              let scriptURL = resourceURL(
+                  "MediaRemoteAdapter/mediaremote-adapter.pl"
+              ),
+              let frameworkURL = privateFrameworkURL("MediaRemoteAdapter.framework") else {
+            return false
+        }
+
+        let commandID = UUID()
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/perl")
+        process.arguments = [
+            scriptURL.path,
+            frameworkURL.path,
+            "send",
+            String(command.rawValue)
+        ]
+        if let nullDevice = FileHandle(forWritingAtPath: "/dev/null") {
+            process.standardOutput = nullDevice
+            process.standardError = nullDevice
+        }
+
+        return await withCheckedContinuation { continuation in
+            commandProcesses[commandID] = process
+            commandContinuations[commandID] = continuation
+            process.terminationHandler = { [weak self] terminatedProcess in
+                let succeeded = terminatedProcess.terminationReason == .exit
+                    && terminatedProcess.terminationStatus == 0
+                Task { @MainActor [weak self] in
+                    self?.finishCommand(id: commandID, succeeded: succeeded)
+                }
+            }
+
+            do {
+                try process.run()
+                commandTimeoutTasks[commandID] = Task { @MainActor [weak self] in
+                    do {
+                        try await Task.sleep(for: self?.commandTimeout ?? .seconds(2))
+                    } catch {
+                        return
+                    }
+                    guard !Task.isCancelled else { return }
+                    self?.finishCommand(
+                        id: commandID,
+                        succeeded: false,
+                        terminateProcess: true
+                    )
+                }
+            } catch {
+                finishCommand(id: commandID, succeeded: false)
+            }
+        }
     }
 
     private func resourceURL(_ relativePath: String) -> URL? {
@@ -346,5 +420,19 @@ final class MediaRemoteAdapterBridge {
         errorPipe = nil
         guard !stopping else { return }
         onFailure("媒体适配器进程已退出")
+    }
+
+    private func finishCommand(
+        id: UUID,
+        succeeded: Bool,
+        terminateProcess: Bool = false
+    ) {
+        let process = commandProcesses.removeValue(forKey: id)
+        commandTimeoutTasks.removeValue(forKey: id)?.cancel()
+        let continuation = commandContinuations.removeValue(forKey: id)
+        if terminateProcess, process?.isRunning == true {
+            process?.terminate()
+        }
+        continuation?.resume(returning: succeeded)
     }
 }

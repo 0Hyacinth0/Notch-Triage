@@ -53,7 +53,94 @@ private actor SequencedQQMusicAccessibilityScanner: QQMusicAccessibilityScanning
     }
 }
 
+@MainActor
+private final class TestMediaCommandSender: MediaCommandSending {
+    var isAvailable = true
+    var sentCommands: [MediaCommand] = []
+    var result = true
+
+    func send(_ command: MediaCommand) async -> Bool {
+        sentCommands.append(command)
+        return result
+    }
+}
+
 final class NotchTriageModelTests: XCTestCase {
+    func testMediaCommandsMatchMediaRemoteAdapterIDs() {
+        XCTAssertEqual(MediaCommand.previousTrack.rawValue, 5)
+        XCTAssertEqual(MediaCommand.togglePlayPause.rawValue, 2)
+        XCTAssertEqual(MediaCommand.nextTrack.rawValue, 4)
+        XCTAssertEqual(MediaCommand.previousTrack.title, "上一首")
+        XCTAssertEqual(MediaCommand.togglePlayPause.title, "播放/暂停")
+        XCTAssertEqual(MediaCommand.nextTrack.title, "下一首")
+    }
+
+    func testMediaCommandAvailabilityDisablesOnlySkippingWhenProhibited() {
+        let available = MediaCommandAvailability(
+            hasMedia: true,
+            transportAvailable: true,
+            prohibitsSkip: false,
+            isBusy: false
+        )
+        XCTAssertTrue(available.isEnabled(for: .previousTrack))
+        XCTAssertTrue(available.isEnabled(for: .togglePlayPause))
+        XCTAssertTrue(available.isEnabled(for: .nextTrack))
+
+        let prohibited = MediaCommandAvailability(
+            hasMedia: true,
+            transportAvailable: true,
+            prohibitsSkip: true,
+            isBusy: false
+        )
+        XCTAssertFalse(prohibited.isEnabled(for: .previousTrack))
+        XCTAssertTrue(prohibited.isEnabled(for: .togglePlayPause))
+        XCTAssertFalse(prohibited.isEnabled(for: .nextTrack))
+        XCTAssertEqual(
+            prohibited.disabledReason(for: .nextTrack),
+            "当前媒体禁止跳过"
+        )
+
+        let idle = MediaCommandAvailability(
+            hasMedia: false,
+            transportAvailable: true,
+            prohibitsSkip: false,
+            isBusy: false
+        )
+        XCTAssertFalse(idle.isEnabled(for: .togglePlayPause))
+        XCTAssertEqual(
+            idle.disabledReason(for: .togglePlayPause),
+            "没有正在播放的媒体"
+        )
+
+        let busy = MediaCommandAvailability(
+            hasMedia: true,
+            transportAvailable: true,
+            prohibitsSkip: false,
+            isBusy: true
+        )
+        XCTAssertFalse(busy.isEnabled(for: .previousTrack))
+        XCTAssertEqual(
+            busy.disabledReason(for: .togglePlayPause),
+            "正在发送媒体控制命令"
+        )
+    }
+
+    @MainActor
+    func testMediaServiceForwardsCommandToAsyncSender() async {
+        let sender = TestMediaCommandSender()
+        let service = MediaService(
+            onSnapshot: { _ in },
+            onHealth: { _ in },
+            commandSender: sender
+        )
+
+        XCTAssertTrue(sender.isAvailable)
+        let result = await service.send(.togglePlayPause)
+        XCTAssertTrue(result)
+        XCTAssertEqual(sender.sentCommands, [.togglePlayPause])
+        service.stop()
+    }
+
     func testAppUpdateDownloadProgressFractionClampsUnknownNegativeAndExcess() {
         XCTAssertEqual(
             AppUpdateDownloadProgress(receivedBytes: 25, totalBytes: 100).fraction,
@@ -317,6 +404,7 @@ final class NotchTriageModelTests: XCTestCase {
             duration: 240,
             elapsed: 91,
             isPlaying: true,
+            prohibitsSkip: true,
             progressAnchorDate: anchor,
             playbackRate: 1.25
         )
@@ -336,6 +424,7 @@ final class NotchTriageModelTests: XCTestCase {
         XCTAssertEqual(enriched.duration, 240)
         XCTAssertEqual(enriched.elapsed, 91)
         XCTAssertEqual(enriched.isPlaying, true)
+        XCTAssertEqual(enriched.prohibitsSkip, true)
         XCTAssertEqual(enriched.progressAnchorDate, anchor)
         XCTAssertEqual(enriched.playbackRate, 1.25)
     }
@@ -596,7 +685,7 @@ final class NotchTriageModelTests: XCTestCase {
 
     func testMediaRemoteAdapterParserReadsSnapshotAndIdleNull() {
         let line = """
-        {"type":"data","diff":false,"payload":{"bundleIdentifier":"com.spotify.client","playing":true,"title":"Track","artist":"Artist","duration":240,"elapsedTime":20,"timestamp":"2026-08-04T12:00:00.000Z","playbackRate":1.5}}
+        {"type":"data","diff":false,"payload":{"bundleIdentifier":"com.spotify.client","playing":true,"prohibitsSkip":true,"title":"Track","artist":"Artist","duration":240,"elapsedTime":20,"timestamp":"2026-08-04T12:00:00.000Z","playbackRate":1.5}}
         """
         let snapshot = MediaRemoteAdapterParser.parse(line: line)
 
@@ -607,6 +696,7 @@ final class NotchTriageModelTests: XCTestCase {
         XCTAssertEqual(snapshot?.elapsed, 20)
         XCTAssertEqual(snapshot?.playbackRate, 1.5)
         XCTAssertEqual(snapshot?.isPlaying, true)
+        XCTAssertEqual(snapshot?.prohibitsSkip, true)
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         XCTAssertEqual(

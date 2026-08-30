@@ -662,6 +662,10 @@ struct MediaSnapshot: Equatable {
     var duration: TimeInterval
     var elapsed: TimeInterval
     var isPlaying: Bool
+    /// Some sources expose policy metadata that explicitly disables track
+    /// skipping.  Keep this separate from transport availability so the UI
+    /// can disable only previous/next while play/pause remains available.
+    var prohibitsSkip: Bool
     /// The point in time at which `elapsed` was observed by the media
     /// provider.  A nil anchor intentionally keeps the snapshot's elapsed
     /// value static (this is what the AppleScript/AX fallbacks provide).
@@ -678,6 +682,7 @@ struct MediaSnapshot: Equatable {
         duration: TimeInterval,
         elapsed: TimeInterval,
         isPlaying: Bool,
+        prohibitsSkip: Bool = false,
         progressAnchorDate: Date? = nil,
         playbackRate: Double? = nil
     ) {
@@ -688,6 +693,7 @@ struct MediaSnapshot: Equatable {
         self.duration = duration
         self.elapsed = elapsed
         self.isPlaying = isPlaying
+        self.prohibitsSkip = prohibitsSkip
         self.progressAnchorDate = progressAnchorDate
         self.playbackRate = playbackRate
     }

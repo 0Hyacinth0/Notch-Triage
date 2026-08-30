@@ -56,6 +56,7 @@ final class AppModel: ObservableObject {
     @Published var menuBarHeight: CGFloat = 37
     @Published var notchWidth: CGFloat = 186
     @Published var media = MediaSnapshot.idle
+    @Published private(set) var mediaCommandInFlight: MediaCommand? = nil
     @Published var codexLimits: [CodexLimitBucket] = []
     @Published var codexCredits: CodexCreditsBalance? = nil
     @Published var codexDisplayMode: CodexDisplayMode {
@@ -155,6 +156,19 @@ final class AppModel: ObservableObject {
         notificationPulse != nil || !notificationSources.isEmpty
     }
 
+    var mediaCommandAvailability: MediaCommandAvailability {
+        MediaCommandAvailability(
+            hasMedia: media != .idle,
+            transportAvailable: mediaService.canSendCommands,
+            prohibitsSkip: media.prohibitsSkip,
+            isBusy: mediaCommandInFlight != nil
+        )
+    }
+
+    func isMediaCommandEnabled(_ command: MediaCommand) -> Bool {
+        mediaCommandAvailability.isEnabled(for: command)
+    }
+
     /// The one-week rolling bucket, falling back to the largest available
     /// window when the server does not expose exactly 10,080 minutes.
     var weeklyCodexLimit: CodexLimitBucket? {
@@ -234,6 +248,8 @@ final class AppModel: ObservableObject {
     var fileShelfFeedbackTask: Task<Void, Never>?
     var clipboardStoreTask: Task<Void, Never>?
     var clipboardFeedbackTask: Task<Void, Never>?
+    private var mediaCommandTask: Task<Void, Never>?
+    private var mediaCommandGeneration = 0
     var pendingFileDropSessionID: UUID?
     /// The drag session whose accepted payload is still being persisted.
     ///
@@ -561,6 +577,10 @@ final class AppModel: ObservableObject {
         fileShelfFeedbackTask?.cancel()
         clipboardStoreTask?.cancel()
         clipboardFeedbackTask?.cancel()
+        mediaCommandGeneration &+= 1
+        mediaCommandTask?.cancel()
+        mediaCommandTask = nil
+        mediaCommandInFlight = nil
         cancelFileDropInFlight()
         pendingFileDropSessionID = nil
         accessibilityRequestTask?.cancel()
@@ -688,6 +708,40 @@ final class AppModel: ObservableObject {
 
     func refreshCodex() {
         codexService.refresh()
+    }
+
+    func sendMediaCommand(_ command: MediaCommand) {
+        guard mediaCommandAvailability.isEnabled(for: command) else { return }
+
+        mediaCommandGeneration &+= 1
+        let generation = mediaCommandGeneration
+        mediaCommandInFlight = command
+        mediaCommandTask?.cancel()
+        mediaCommandTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let succeeded = await self.mediaService.send(command)
+            guard self.mediaCommandGeneration == generation else { return }
+
+            if succeeded {
+                // A healthy adapter stream normally publishes the new state;
+                // refresh also covers the fallback path if that stream has
+                // already gone away.
+                self.mediaService.refresh()
+            } else {
+                self.applyHealth(
+                    .warning("媒体控制发送失败，请检查播放器状态"),
+                    to: .media
+                )
+            }
+
+            // Keep the group locked for a short settling window after the
+            // helper exits so one physical click cannot become two commands.
+            try? await Task.sleep(for: .milliseconds(350))
+            guard !Task.isCancelled,
+                  self.mediaCommandGeneration == generation else { return }
+            self.mediaCommandInFlight = nil
+            self.mediaCommandTask = nil
+        }
     }
 
     func openTrash() {

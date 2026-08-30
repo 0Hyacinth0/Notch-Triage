@@ -237,6 +237,7 @@ enum QQMusicSnapshotEnricher {
             isPlaying: snapshot.bundleIdentifier == nil
                 ? metadata.isPlaying
                 : snapshot.isPlaying,
+            prohibitsSkip: snapshot.prohibitsSkip,
             progressAnchorDate: snapshot.progressAnchorDate,
             playbackRate: snapshot.playbackRate
         )
@@ -309,6 +310,7 @@ final class MediaService {
     private let onHealth: HealthHandler
     private let qqMusicScanner: any QQMusicAccessibilityScanning
     private let qqMusicProcessIdentifier: QQMusicProcessIdentifierProvider
+    private let commandSender: (any MediaCommandSending)?
 
     private let qqMusicBundleIdentifier = "com.tencent.QQMusicMac"
     private let qqMusicAXFailureRetryInterval: TimeInterval = 15
@@ -358,13 +360,28 @@ final class MediaService {
             NSRunningApplication.runningApplications(
                 withBundleIdentifier: "com.tencent.QQMusicMac"
             ).first?.processIdentifier
-        }
+        },
+        commandSender: (any MediaCommandSending)? = nil
     ) {
         self.onSnapshot = onSnapshot
         self.onHealth = onHealth
         self.qqMusicScanner = qqMusicScanner
         self.qqMusicProcessIdentifier = qqMusicProcessIdentifier
+        self.commandSender = commandSender
         loadMediaRemote()
+    }
+
+    var canSendCommands: Bool {
+        commandSender?.isAvailable
+            ?? (adapterBridgeHealthy && adapterBridge.isAvailable)
+    }
+
+    func send(_ command: MediaCommand) async -> Bool {
+        guard !stopping else { return false }
+        if let commandSender {
+            return await commandSender.send(command)
+        }
+        return await adapterBridge.send(command)
     }
 
     func start() {
@@ -483,6 +500,7 @@ final class MediaService {
         let duration = numberValue(in: info, suffix: "Duration") ?? 0
         let elapsed = numberValue(in: info, suffix: "ElapsedTime") ?? 0
         let rate = numberValue(in: info, suffix: "PlaybackRate") ?? 0
+        let prohibitsSkip = boolValue(in: info, suffix: "ProhibitsSkip") ?? false
         let timestamp = dateValue(in: info, suffix: "Timestamp")
         let bundleIdentifier =
             stringValue(in: info, suffix: "ClientBundleIdentifier")
@@ -496,6 +514,7 @@ final class MediaService {
             duration: duration,
             elapsed: elapsed,
             isPlaying: rate > 0,
+            prohibitsSkip: prohibitsSkip,
             progressAnchorDate: timestamp,
             playbackRate: rate
         )
@@ -517,6 +536,28 @@ final class MediaService {
         for (key, value) in dictionary where key.localizedCaseInsensitiveContains(suffix) {
             if let number = value as? NSNumber {
                 return number.doubleValue
+            }
+        }
+        return nil
+    }
+
+    private func boolValue(in dictionary: [String: Any], suffix: String) -> Bool? {
+        for (key, value) in dictionary where key.localizedCaseInsensitiveContains(suffix) {
+            if let bool = value as? Bool {
+                return bool
+            }
+            if let number = value as? NSNumber {
+                return number.boolValue
+            }
+            if let string = value as? String {
+                switch string.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+                case "true", "yes", "1":
+                    return true
+                case "false", "no", "0":
+                    return false
+                default:
+                    continue
+                }
             }
         }
         return nil

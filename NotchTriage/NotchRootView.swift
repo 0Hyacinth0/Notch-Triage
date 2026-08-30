@@ -3,6 +3,12 @@ import SwiftUI
 
 struct NotchRootView: View {
     @ObservedObject var model: AppModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var pointerRegion = NotchPointerRegion.outside
+    @State private var requestedMediaControlSide: NotchWingSide?
+    @State private var mediaControlsPointerInside = false
+    @State private var mediaControlsDismissTask: Task<Void, Never>?
+    @State private var retainedCompactMedia = MediaSnapshot.idle
     private let hoveredNotchHeight = NotchLayout.hoveredHeight
 
     var body: some View {
@@ -44,7 +50,8 @@ struct NotchRootView: View {
             } label: {
                 LivingNotch(
                     model: model,
-                    hoveredHeight: hoveredNotchHeight
+                    hoveredHeight: hoveredNotchHeight,
+                    mediaOverlaySide: activeMediaControlSide
                 )
             }
             .buttonStyle(StableNotchButtonStyle())
@@ -64,29 +71,220 @@ struct NotchRootView: View {
                 }
             }
             .background {
-                NotchHoverTracker { hovered in
-                    model.setNotchHovered(hovered)
+                NotchHoverTracker { location in
+                    updatePointerRegion(at: location)
                 }
             }
             .offset(x: compactAlignmentOffset)
-            .accessibilityLabel(model.isExpanded ? "收起 Notch Triage" : "展开 Notch Triage")
+            .accessibilityLabel(
+                model.isExpanded ? "收起 Notch Triage" : "展开 Notch Triage"
+            )
+
+            // Keep both control surfaces mounted in the panel's fixed canvas.
+            // Their reveal never changes the main silhouette width or feeds
+            // another geometry change back into AppKit window constraints.
+            compactMediaSurface(for: .left)
+            compactMediaSurface(for: .right)
         }
         .frame(maxWidth: .infinity, alignment: .top)
+        .onDisappear {
+            mediaControlsDismissTask?.cancel()
+            mediaControlsDismissTask = nil
+        }
+        .onChange(of: model.media) { _, snapshot in
+            retainCompactMediaIdentity(from: snapshot)
+        }
+        .onChange(of: model.mediaCommandInFlight) { _, command in
+            guard command != nil, model.media != .idle else { return }
+            retainedCompactMedia = model.media
+        }
     }
 
-    private var compactAlignmentOffset: CGFloat {
-        let leftWidth = NotchLayout.compactWingWidth(
+    private var activeMediaControlSide: NotchWingSide? {
+        guard !model.isExpanded,
+              !model.isPanelClosing,
+              !model.isHoveringNotch,
+              model.systemHUD == nil,
+              !model.panelState.isPresentingFileDropTarget,
+              let side = requestedMediaControlSide else {
+            return nil
+        }
+
+        switch side {
+        case .left:
+            return model.leftWingContent == .media ? .left : nil
+        case .right:
+            return model.rightWingContent == .media ? .right : nil
+        }
+    }
+
+    private var leftWingWidth: CGFloat {
+        NotchLayout.compactWingWidth(
             for: model.leftWingContent,
             media: model.media
         )
-        let rightWidth = NotchLayout.compactWingWidth(
+    }
+
+    private var rightWingWidth: CGFloat {
+        NotchLayout.compactWingWidth(
             for: model.rightWingContent,
             media: model.media
         )
+    }
+
+    private var compactAlignmentOffset: CGFloat {
         return NotchLayout.compactSurfaceHorizontalOffset(
-            leftWingWidth: leftWidth,
-            rightWingWidth: rightWidth
+            leftWingWidth: leftWingWidth,
+            rightWingWidth: rightWingWidth
         )
+    }
+
+    @ViewBuilder
+    private func compactMediaSurface(for side: NotchWingSide) -> some View {
+        let active = activeMediaControlSide == side
+        CompactMediaTransportControls(
+            model: model,
+            snapshot: compactMediaSnapshot,
+            side: side,
+            isRevealed: active,
+            reduceMotion: reduceMotion
+        )
+        .frame(
+            width: NotchLayout.compactMediaControlsWidth,
+            height: min(model.menuBarHeight, 40)
+        )
+        .offset(x: mediaControlHorizontalOffset(for: side))
+        .zIndex(active ? 2 : 0)
+        .allowsHitTesting(active)
+        .accessibilityHidden(!active)
+        .onHover { hovered in
+            mediaControlsHoverChanged(hovered, side: side)
+        }
+    }
+
+    private var compactMediaSnapshot: MediaSnapshot {
+        model.media == .idle ? retainedCompactMedia : model.media
+    }
+
+    private func mediaControlHorizontalOffset(for side: NotchWingSide) -> CGFloat {
+        let distance = model.notchWidth / 2
+            + NotchLayout.compactMediaControlsWidth / 2
+        return side == .left ? -distance : distance
+    }
+
+    private func updatePointerRegion(at location: CGPoint?) {
+        let region = pointerRegion(at: location)
+        guard region != pointerRegion else { return }
+        pointerRegion = region
+
+        if requestedMediaControlSide != nil {
+            switch region {
+            case .media(let side):
+                cancelMediaControlsDismissal()
+                requestedMediaControlSide = side
+            case .outside, .notch:
+                scheduleMediaControlsDismissal()
+            }
+            return
+        }
+
+        switch region {
+        case .outside:
+            model.setNotchHovered(false)
+        case .notch:
+            model.setNotchHovered(true)
+        case .media(let side):
+            guard !model.isHoveringNotch else { return }
+            cancelMediaControlsDismissal()
+            retainedCompactMedia = model.media
+            requestedMediaControlSide = side
+        }
+    }
+
+    private func pointerRegion(at location: CGPoint?) -> NotchPointerRegion {
+        guard let location else { return .outside }
+        guard !model.isExpanded,
+              !model.isPanelClosing,
+              model.systemHUD == nil,
+              !model.panelState.isPresentingFileDropTarget,
+              model.media != .idle,
+              model.mediaCommandAvailability.transportAvailable else {
+            return .notch
+        }
+
+        let contentOriginX = NotchLayout.shoulderRadius
+        let leftRange = contentOriginX..<(contentOriginX + leftWingWidth)
+        let rightOriginX = contentOriginX + leftWingWidth + model.notchWidth
+        let rightRange = rightOriginX..<(rightOriginX + rightWingWidth)
+
+        if model.leftWingContent == .media, leftRange.contains(location.x) {
+            return .media(.left)
+        }
+        if model.rightWingContent == .media, rightRange.contains(location.x) {
+            return .media(.right)
+        }
+        return .notch
+    }
+
+    private func mediaControlsHoverChanged(
+        _ hovered: Bool,
+        side: NotchWingSide
+    ) {
+        guard activeMediaControlSide == side || !hovered else { return }
+        mediaControlsPointerInside = hovered
+        if hovered {
+            cancelMediaControlsDismissal()
+            requestedMediaControlSide = side
+        } else {
+            scheduleMediaControlsDismissal()
+        }
+    }
+
+    private func cancelMediaControlsDismissal() {
+        mediaControlsDismissTask?.cancel()
+        mediaControlsDismissTask = nil
+    }
+
+    private func scheduleMediaControlsDismissal() {
+        guard requestedMediaControlSide != nil else { return }
+        mediaControlsDismissTask?.cancel()
+        mediaControlsDismissTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(450))
+            guard !Task.isCancelled,
+                  !mediaControlsPointerInside else { return }
+
+            if case .media(let side) = pointerRegion {
+                requestedMediaControlSide = side
+                mediaControlsDismissTask = nil
+                return
+            }
+
+            requestedMediaControlSide = nil
+            mediaControlsDismissTask = nil
+
+            switch pointerRegion {
+            case .outside:
+                model.setNotchHovered(false)
+            case .notch:
+                if !model.isHoveringNotch {
+                    model.setNotchHovered(true)
+                }
+            case .media:
+                break
+            }
+        }
+    }
+
+    private func retainCompactMediaIdentity(from snapshot: MediaSnapshot) {
+        guard snapshot != .idle else { return }
+        guard retainedCompactMedia == .idle
+                || retainedCompactMedia.sourceName != snapshot.sourceName
+                || retainedCompactMedia.bundleIdentifier != snapshot.bundleIdentifier
+                || retainedCompactMedia.title != snapshot.title
+                || retainedCompactMedia.artist != snapshot.artist else {
+            return
+        }
+        retainedCompactMedia = snapshot
     }
 }
 
@@ -183,34 +381,40 @@ private struct StableNotchButtonStyle: ButtonStyle {
 }
 
 private struct NotchHoverTracker: NSViewRepresentable {
-    let onHover: (Bool) -> Void
+    let onPointerLocation: (CGPoint?) -> Void
 
     func makeNSView(context: Context) -> HoverTrackingView {
         let view = HoverTrackingView()
-        view.onHover = onHover
+        view.onPointerLocation = onPointerLocation
         return view
     }
 
     func updateNSView(_ nsView: HoverTrackingView, context: Context) {
-        nsView.onHover = onHover
+        nsView.onPointerLocation = onPointerLocation
     }
 }
 
+@MainActor
 private final class HoverTrackingView: NSView {
-    var onHover: ((Bool) -> Void)?
+    var onPointerLocation: ((CGPoint?) -> Void)?
     private var hoverArea: NSTrackingArea?
+    private var pendingPointerLocation: CGPoint?
+    private var hasPendingPointerLocation = false
+    private var pointerDeliveryScheduled = false
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
 
-        if let hoverArea {
-            removeTrackingArea(hoverArea)
-        }
+        // inVisibleRect keeps this area synchronized with the view bounds.
+        // Replacing it during every constraint pass can itself cause another
+        // enter/move callback while SwiftUI is resizing the compact notch.
+        guard hoverArea == nil else { return }
 
         let area = NSTrackingArea(
-            rect: bounds,
+            rect: .zero,
             options: [
                 .mouseEnteredAndExited,
+                .mouseMoved,
                 .activeAlways,
                 .inVisibleRect
             ],
@@ -222,17 +426,52 @@ private final class HoverTrackingView: NSView {
     }
 
     override func mouseEntered(with event: NSEvent) {
-        onHover?(true)
+        reportLocation(for: event)
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        reportLocation(for: event)
     }
 
     override func mouseExited(with event: NSEvent) {
-        onHover?(false)
+        schedulePointerLocation(nil)
+    }
+
+    private func reportLocation(for event: NSEvent) {
+        schedulePointerLocation(convert(event.locationInWindow, from: nil))
+    }
+
+    private func schedulePointerLocation(_ location: CGPoint?) {
+        pendingPointerLocation = location
+        hasPendingPointerLocation = true
+        guard !pointerDeliveryScheduled else { return }
+        pointerDeliveryScheduled = true
+
+        // The callback changes SwiftUI layout. Deliver it after AppKit has
+        // completed the current event/constraint pass and coalesce any mouse
+        // movement generated by that same layout change.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.pointerDeliveryScheduled = false
+            guard self.hasPendingPointerLocation else { return }
+
+            let location = self.pendingPointerLocation
+            self.pendingPointerLocation = nil
+            self.hasPendingPointerLocation = false
+            self.onPointerLocation?(location)
+        }
     }
 }
 
 private enum NotchWingSide: Equatable {
     case left
     case right
+}
+
+private enum NotchPointerRegion: Equatable {
+    case outside
+    case notch
+    case media(NotchWingSide)
 }
 
 private struct AttentionRing<Content: View>: View {
@@ -353,6 +592,237 @@ private struct CompactMediaContent: View {
     }
 }
 
+private struct CompactMediaTransportControls: View {
+    @ObservedObject var model: AppModel
+    let snapshot: MediaSnapshot
+    let side: NotchWingSide
+    let isRevealed: Bool
+    let reduceMotion: Bool
+
+    private var commands: [MediaCommand] {
+        switch side {
+        case .left:
+            return [.previousTrack, .nextTrack, .togglePlayPause]
+        case .right:
+            return [.togglePlayPause, .previousTrack, .nextTrack]
+        }
+    }
+
+    var body: some View {
+        ZStack {
+            CompactMediaRevealShape(
+                side: side,
+                progress: isRevealed ? 1 : 0
+            )
+            .fill(.black)
+            .opacity(isRevealed ? 1 : 0)
+            .animation(revealAnimation, value: isRevealed)
+
+            HStack(spacing: 8) {
+                ForEach(Array(commands.enumerated()), id: \.element.rawValue) { index, command in
+                    CompactMediaTransportButton(
+                        model: model,
+                        snapshot: snapshot,
+                        command: command
+                    )
+                    .opacity(isRevealed ? 1 : 0)
+                    .scaleEffect(isRevealed ? 1 : 0.82)
+                    .offset(
+                        x: isRevealed
+                            ? 0
+                            : collapsedControlOffset(at: index)
+                    )
+                    .animation(
+                        controlAnimation(at: index),
+                        value: isRevealed
+                    )
+                }
+            }
+            .frame(
+                maxWidth: .infinity,
+                alignment: side == .left ? .trailing : .leading
+            )
+            .padding(side == .left ? .trailing : .leading, 3.5)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
+        .onTapGesture {}
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("快速媒体控制")
+    }
+
+    private var revealAnimation: Animation {
+        reduceMotion
+            ? .linear(duration: 0.01)
+            : NotchDesign.Motion.hover
+    }
+
+    private func distanceFromAnchor(at index: Int) -> Int {
+        switch side {
+        case .left:
+            return commands.count - 1 - index
+        case .right:
+            return index
+        }
+    }
+
+    private func collapsedControlOffset(at index: Int) -> CGFloat {
+        let distance = CGFloat(distanceFromAnchor(at: index))
+        let offset = distance * 18
+        return side == .left ? offset : -offset
+    }
+
+    private func controlAnimation(at index: Int) -> Animation {
+        guard !reduceMotion else { return .linear(duration: 0.01) }
+        guard isRevealed else { return .easeOut(duration: 0.12) }
+        return NotchDesign.Motion.hover.delay(
+            Double(distanceFromAnchor(at: index)) * 0.035
+        )
+    }
+}
+
+private struct CompactMediaRevealShape: Shape {
+    let side: NotchWingSide
+    var progress: CGFloat
+
+    var animatableData: CGFloat {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        let progress = min(1, max(0, progress))
+        let collapsedWidth = min(
+            NotchLayout.compactWingSlotWidth,
+            rect.width
+        )
+        let width = collapsedWidth
+            + (rect.width - collapsedWidth) * progress
+        let revealRect: CGRect
+
+        switch side {
+        case .left:
+            revealRect = CGRect(
+                x: rect.maxX - width,
+                y: rect.minY,
+                width: width,
+                height: rect.height
+            )
+        case .right:
+            revealRect = CGRect(
+                x: rect.minX,
+                y: rect.minY,
+                width: width,
+                height: rect.height
+            )
+        }
+
+        return NotchSilhouette(
+            shoulderRadius: NotchLayout.shoulderRadius,
+            bottomCornerRadius: 12
+        )
+        .path(in: revealRect)
+    }
+}
+
+private struct CompactMediaTransportButton: View {
+    @ObservedObject var model: AppModel
+    let snapshot: MediaSnapshot
+    let command: MediaCommand
+
+    private var isEnabled: Bool {
+        model.isMediaCommandEnabled(command)
+    }
+
+    private var isSending: Bool {
+        model.mediaCommandInFlight == command
+    }
+
+    private var imageName: String {
+        if command == .togglePlayPause {
+            return snapshot.isPlaying ? "pause.fill" : "play.fill"
+        }
+        return command.systemImage
+    }
+
+    private var helpText: String {
+        if let reason = model.mediaCommandAvailability.disabledReason(for: command) {
+            return "\(command.title) · \(reason)"
+        }
+        return command.title
+    }
+
+    private var diameter: CGFloat {
+        command == .togglePlayPause ? 30 : 28
+    }
+
+    var body: some View {
+        Button {
+            model.sendMediaCommand(command)
+        } label: {
+            ZStack {
+                if command == .togglePlayPause {
+                    Circle()
+                        .fill(.white.opacity(0.045))
+                }
+
+                if command == .togglePlayPause, !isSending {
+                    MediaProgressRing(
+                        snapshot: snapshot,
+                        style: model.ringAppearance.style(for: .media),
+                        diameter: 30,
+                        lineWidth: 2.5
+                    )
+                }
+
+                if isSending {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .tint(.white)
+                } else {
+                    Image(systemName: imageName)
+                        .font(
+                            .system(
+                                size: command == .togglePlayPause ? 11.5 : 11,
+                                weight: .semibold
+                            )
+                        )
+                        .foregroundStyle(
+                            .white.opacity(
+                                command == .togglePlayPause ? 1 : 0.86
+                            )
+                        )
+                }
+            }
+            .frame(width: diameter, height: diameter)
+            .contentShape(Circle())
+        }
+        .buttonStyle(CompactMediaTransportButtonStyle())
+        .disabled(!isEnabled)
+        .opacity(isSending ? 0.78 : (isEnabled ? 1 : 0.34))
+        .help(helpText)
+        .accessibilityLabel(command.title)
+        .accessibilityValue(
+            isSending ? "正在发送" : (isEnabled ? "可用" : "不可用")
+        )
+    }
+}
+
+private struct CompactMediaTransportButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background {
+                Circle()
+                    .fill(.white.opacity(configuration.isPressed ? 0.13 : 0))
+            }
+            .scaleEffect(configuration.isPressed ? 0.92 : 1)
+            .animation(
+                .easeOut(duration: 0.10),
+                value: configuration.isPressed
+            )
+    }
+}
+
 private struct CompactWingSlot: View {
     @ObservedObject var model: AppModel
     let content: NotchWingContent
@@ -432,6 +902,7 @@ private struct CompactBatteryContent: View {
 private struct LivingNotch: View {
     @ObservedObject var model: AppModel
     let hoveredHeight: CGFloat
+    let mediaOverlaySide: NotchWingSide?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let shoulderRadius = NotchLayout.shoulderRadius
 
@@ -562,6 +1033,11 @@ private struct LivingNotch: View {
                 content: model.leftWingContent
             )
             .frame(width: leftWidth, height: height)
+            .opacity(mediaOverlaySide == .left ? 0 : 1)
+            .animation(
+                compactMediaSlotAnimation(for: .left),
+                value: mediaOverlaySide
+            )
 
             ZStack {
                 if model.panelState.canShowNotificationPulse,
@@ -590,8 +1066,23 @@ private struct LivingNotch: View {
                 content: model.rightWingContent
             )
             .frame(width: rightWidth, height: height)
+            .opacity(mediaOverlaySide == .right ? 0 : 1)
+            .animation(
+                compactMediaSlotAnimation(for: .right),
+                value: mediaOverlaySide
+            )
         }
         .frame(width: compactWidth, height: height)
+    }
+
+    private func compactMediaSlotAnimation(
+        for side: NotchWingSide
+    ) -> Animation {
+        guard !reduceMotion else { return .linear(duration: 0.01) }
+        if mediaOverlaySide == side {
+            return .easeOut(duration: 0.08)
+        }
+        return .easeIn(duration: 0.10).delay(0.12)
     }
 
     private var hoverPreview: some View {
@@ -1519,7 +2010,7 @@ private struct ExpandedPanel: View {
             }
             .frame(height: Layout.upperContentHeight)
 
-            NowPlayingStrip(snapshot: model.media)
+            NowPlayingStrip(model: model, snapshot: model.media)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
@@ -1934,6 +2425,7 @@ private struct TrashCompactCard: View {
 }
 
 private struct NowPlayingStrip: View {
+    @ObservedObject var model: AppModel
     let snapshot: MediaSnapshot
 
     var body: some View {
@@ -1972,10 +2464,96 @@ private struct NowPlayingStrip: View {
                     }
                 }
             }
+
+            MediaCommandControls(model: model, snapshot: snapshot)
         }
         .padding(.horizontal, 12)
         .frame(height: 48)
         .panelGroupSurface(cornerRadius: NotchDesign.Radius.compactGroup)
+    }
+}
+
+private struct MediaCommandControls: View {
+    @ObservedObject var model: AppModel
+    let snapshot: MediaSnapshot
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(MediaCommand.allCases, id: \.rawValue) { command in
+                MediaCommandButton(
+                    model: model,
+                    snapshot: snapshot,
+                    command: command
+                )
+            }
+        }
+        .padding(3)
+        .background(.primary.opacity(0.055), in: Capsule())
+        .overlay {
+            Capsule()
+                .stroke(.primary.opacity(0.07), lineWidth: 0.5)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("媒体控制")
+    }
+}
+
+private struct MediaCommandButton: View {
+    @ObservedObject var model: AppModel
+    let snapshot: MediaSnapshot
+    let command: MediaCommand
+
+    private var isEnabled: Bool {
+        model.isMediaCommandEnabled(command)
+    }
+
+    private var isSending: Bool {
+        model.mediaCommandInFlight == command
+    }
+
+    private var imageName: String {
+        if command == .togglePlayPause {
+            return snapshot.isPlaying ? "pause.fill" : "play.fill"
+        }
+        return command.systemImage
+    }
+
+    private var helpText: String {
+        if let reason = model.mediaCommandAvailability.disabledReason(for: command) {
+            return "\(command.title) · \(reason)"
+        }
+        return command.title
+    }
+
+    var body: some View {
+        Button {
+            model.sendMediaCommand(command)
+        } label: {
+            Group {
+                if isSending {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(.primary)
+                } else {
+                    Image(systemName: imageName)
+                        .font(.system(size: 12, weight: .semibold))
+                }
+            }
+            .frame(width: 28, height: 28)
+            .contentShape(Circle())
+            .background {
+                Circle()
+                    .fill(.primary.opacity(isEnabled ? 0.10 : 0))
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .opacity(isSending ? 0.76 : (isEnabled ? 1 : 0.34))
+        .help(helpText)
+        .accessibilityLabel(command.title)
+        .accessibilityValue(
+            isSending ? "正在发送" : (isEnabled ? "可用" : "不可用")
+        )
     }
 }
 
