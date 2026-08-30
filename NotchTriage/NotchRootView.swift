@@ -5,9 +5,9 @@ struct NotchRootView: View {
     @ObservedObject var model: AppModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pointerRegion = NotchPointerRegion.outside
-    @State private var requestedMediaControlSide: NotchWingSide?
-    @State private var mediaControlsPointerInside = false
-    @State private var mediaControlsDismissTask: Task<Void, Never>?
+    @State private var requestedCompactReveal: CompactWingReveal?
+    @State private var compactRevealPointerInside = false
+    @State private var compactRevealDismissTask: Task<Void, Never>?
     @State private var retainedCompactMedia = MediaSnapshot.idle
     private let hoveredNotchHeight = NotchLayout.hoveredHeight
 
@@ -52,7 +52,7 @@ struct NotchRootView: View {
                 LivingNotch(
                     model: model,
                     hoveredHeight: hoveredNotchHeight,
-                    mediaOverlaySide: activeMediaControlSide
+                    compactOverlaySide: activeCompactReveal?.side
                 )
             }
             .buttonStyle(StableNotchButtonStyle())
@@ -83,16 +83,24 @@ struct NotchRootView: View {
                 )
             )
 
-            // Keep both control surfaces mounted in the panel's fixed canvas.
-            // Their reveal never changes the main silhouette width or feeds
-            // another geometry change back into AppKit window constraints.
-            compactMediaSurface(for: .left)
-            compactMediaSurface(for: .right)
+            // Isolate adaptive reveal alignment from the main notch. Custom
+            // alignment guides can expand a ZStack's layout bounds; keeping
+            // them in a full-canvas sibling prevents that from moving the
+            // centered LivingNotch.
+            ZStack(alignment: .top) {
+                Color.clear
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .allowsHitTesting(false)
+
+                compactRevealSurface(for: .left)
+                compactRevealSurface(for: .right)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .frame(maxWidth: .infinity, alignment: .top)
         .onDisappear {
-            mediaControlsDismissTask?.cancel()
-            mediaControlsDismissTask = nil
+            compactRevealDismissTask?.cancel()
+            compactRevealDismissTask = nil
         }
         .onChange(of: model.media) { _, snapshot in
             retainCompactMediaIdentity(from: snapshot)
@@ -103,21 +111,30 @@ struct NotchRootView: View {
         }
     }
 
-    private var activeMediaControlSide: NotchWingSide? {
+    private var activeCompactReveal: CompactWingReveal? {
         guard !model.isExpanded,
               !model.isPanelClosing,
               !model.isHoveringNotch,
               model.systemHUD == nil,
               !model.panelState.isPresentingFileDropTarget,
-              let side = requestedMediaControlSide else {
+              let reveal = requestedCompactReveal else {
             return nil
         }
 
-        switch side {
-        case .left:
-            return model.leftWingContent == .media ? .left : nil
-        case .right:
-            return model.rightWingContent == .media ? .right : nil
+        let content = reveal.side == .left
+            ? model.leftWingContent
+            : model.rightWingContent
+        switch (reveal.kind, content) {
+        case (.battery, .battery):
+            return reveal
+        case (.media, .media):
+            guard model.media != .idle,
+                  model.mediaCommandAvailability.transportAvailable else {
+                return nil
+            }
+            return reveal
+        default:
+            return nil
         }
     }
 
@@ -143,25 +160,67 @@ struct NotchRootView: View {
     }
 
     @ViewBuilder
-    private func compactMediaSurface(for side: NotchWingSide) -> some View {
-        let active = activeMediaControlSide == side
-        CompactMediaTransportControls(
-            model: model,
-            snapshot: compactMediaSnapshot,
-            side: side,
-            isRevealed: active,
-            reduceMotion: reduceMotion
-        )
-        .frame(
-            width: NotchLayout.compactMediaControlsWidth,
-            height: min(model.menuBarHeight, 40)
-        )
-        .offset(x: mediaControlHorizontalOffset(for: side))
-        .zIndex(active ? 2 : 0)
-        .allowsHitTesting(active)
-        .accessibilityHidden(!active)
-        .onHover { hovered in
-            mediaControlsHoverChanged(hovered, side: side)
+    private func compactRevealSurface(for side: NotchWingSide) -> some View {
+        let content = side == .left
+            ? model.leftWingContent
+            : model.rightWingContent
+        switch content {
+        case .media:
+            let reveal = CompactWingReveal(side: side, kind: .media)
+            let active = activeCompactReveal == reveal
+            CompactMediaTransportControls(
+                model: model,
+                snapshot: compactMediaSnapshot,
+                side: side,
+                isRevealed: active,
+                reduceMotion: reduceMotion
+            )
+            .frame(
+                width: NotchLayout.compactMediaControlsWidth,
+                height: min(model.menuBarHeight, 40)
+            )
+            .offset(
+                x: compactRevealHorizontalOffset(
+                    for: side,
+                    width: NotchLayout.compactMediaControlsWidth
+                )
+            )
+            .zIndex(active ? 2 : 0)
+            .allowsHitTesting(active)
+            .accessibilityHidden(!active)
+            .onHover { hovered in
+                compactRevealHoverChanged(hovered, reveal: reveal)
+            }
+        case .battery:
+            let reveal = CompactWingReveal(side: side, kind: .battery)
+            let active = activeCompactReveal == reveal
+            let notchWidth = model.notchWidth
+            CompactBatteryStatusReveal(
+                model: model,
+                snapshot: model.power,
+                side: side,
+                isRevealed: active,
+                reduceMotion: reduceMotion,
+                style: model.ringAppearance.style(for: .battery)
+            )
+            .fixedSize(horizontal: true, vertical: false)
+            .frame(height: min(model.menuBarHeight, 40))
+            .alignmentGuide(HorizontalAlignment.center) { dimensions in
+                switch side {
+                case .left:
+                    return dimensions.width + notchWidth / 2
+                case .right:
+                    return -notchWidth / 2
+                }
+            }
+            .zIndex(active ? 2 : 0)
+            .allowsHitTesting(active)
+            .accessibilityHidden(!active)
+            .onHover { hovered in
+                compactRevealHoverChanged(hovered, reveal: reveal)
+            }
+        case .codex, .hidden:
+            EmptyView()
         }
     }
 
@@ -169,9 +228,11 @@ struct NotchRootView: View {
         model.media == .idle ? retainedCompactMedia : model.media
     }
 
-    private func mediaControlHorizontalOffset(for side: NotchWingSide) -> CGFloat {
-        let distance = model.notchWidth / 2
-            + NotchLayout.compactMediaControlsWidth / 2
+    private func compactRevealHorizontalOffset(
+        for side: NotchWingSide,
+        width: CGFloat
+    ) -> CGFloat {
+        let distance = model.notchWidth / 2 + width / 2
         return side == .left ? -distance : distance
     }
 
@@ -180,13 +241,13 @@ struct NotchRootView: View {
         guard region != pointerRegion else { return }
         pointerRegion = region
 
-        if requestedMediaControlSide != nil {
+        if requestedCompactReveal != nil {
             switch region {
-            case .media(let side):
-                cancelMediaControlsDismissal()
-                requestedMediaControlSide = side
+            case .wing(let reveal):
+                cancelCompactRevealDismissal()
+                requestedCompactReveal = reveal
             case .outside, .notch:
-                scheduleMediaControlsDismissal()
+                scheduleCompactRevealDismissal()
             }
             return
         }
@@ -196,11 +257,13 @@ struct NotchRootView: View {
             model.setNotchHovered(false)
         case .notch:
             model.setNotchHovered(true)
-        case .media(let side):
+        case .wing(let reveal):
             guard !model.isHoveringNotch else { return }
-            cancelMediaControlsDismissal()
-            retainedCompactMedia = model.media
-            requestedMediaControlSide = side
+            cancelCompactRevealDismissal()
+            if reveal.kind == .media {
+                retainedCompactMedia = model.media
+            }
+            requestedCompactReveal = reveal
         }
     }
 
@@ -209,9 +272,7 @@ struct NotchRootView: View {
         guard !model.isExpanded,
               !model.isPanelClosing,
               model.systemHUD == nil,
-              !model.panelState.isPresentingFileDropTarget,
-              model.media != .idle,
-              model.mediaCommandAvailability.transportAvailable else {
+              !model.panelState.isPresentingFileDropTarget else {
             return .notch
         }
 
@@ -220,50 +281,89 @@ struct NotchRootView: View {
         let rightOriginX = contentOriginX + leftWingWidth + model.notchWidth
         let rightRange = rightOriginX..<(rightOriginX + rightWingWidth)
 
-        if model.leftWingContent == .media, leftRange.contains(location.x) {
-            return .media(.left)
+        if leftRange.contains(location.x),
+           let reveal = compactReveal(
+               for: model.leftWingContent,
+               side: .left
+           ) {
+            return .wing(reveal)
         }
-        if model.rightWingContent == .media, rightRange.contains(location.x) {
-            return .media(.right)
+        if rightRange.contains(location.x),
+           let reveal = compactReveal(
+               for: model.rightWingContent,
+               side: .right
+           ) {
+            return .wing(reveal)
         }
         return .notch
     }
 
-    private func mediaControlsHoverChanged(
-        _ hovered: Bool,
+    private func compactReveal(
+        for content: NotchWingContent,
         side: NotchWingSide
-    ) {
-        guard activeMediaControlSide == side || !hovered else { return }
-        mediaControlsPointerInside = hovered
-        if hovered {
-            cancelMediaControlsDismissal()
-            requestedMediaControlSide = side
-        } else {
-            scheduleMediaControlsDismissal()
+    ) -> CompactWingReveal? {
+        switch content {
+        case .battery:
+            return CompactWingReveal(side: side, kind: .battery)
+        case .media:
+            guard model.media != .idle,
+                  model.mediaCommandAvailability.transportAvailable else {
+                return nil
+            }
+            return CompactWingReveal(side: side, kind: .media)
+        case .codex, .hidden:
+            return nil
         }
     }
 
-    private func cancelMediaControlsDismissal() {
-        mediaControlsDismissTask?.cancel()
-        mediaControlsDismissTask = nil
+    private func compactRevealHoverChanged(
+        _ hovered: Bool,
+        reveal: CompactWingReveal
+    ) {
+        Task { @MainActor in
+            // SwiftUI can deliver onHover while reconciling the reveal
+            // surface. Wait until that update has completed before touching
+            // state that changes the same view hierarchy.
+            await Task.yield()
+            applyCompactRevealHoverChange(hovered, reveal: reveal)
+        }
     }
 
-    private func scheduleMediaControlsDismissal() {
-        guard requestedMediaControlSide != nil else { return }
-        mediaControlsDismissTask?.cancel()
-        mediaControlsDismissTask = Task { @MainActor in
+    private func applyCompactRevealHoverChange(
+        _ hovered: Bool,
+        reveal: CompactWingReveal
+    ) {
+        guard activeCompactReveal == reveal || !hovered else { return }
+        compactRevealPointerInside = hovered
+        if hovered {
+            cancelCompactRevealDismissal()
+            requestedCompactReveal = reveal
+        } else {
+            scheduleCompactRevealDismissal()
+        }
+    }
+
+    private func cancelCompactRevealDismissal() {
+        compactRevealDismissTask?.cancel()
+        compactRevealDismissTask = nil
+    }
+
+    private func scheduleCompactRevealDismissal() {
+        guard requestedCompactReveal != nil else { return }
+        compactRevealDismissTask?.cancel()
+        compactRevealDismissTask = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(450))
             guard !Task.isCancelled,
-                  !mediaControlsPointerInside else { return }
+                  !compactRevealPointerInside else { return }
 
-            if case .media(let side) = pointerRegion {
-                requestedMediaControlSide = side
-                mediaControlsDismissTask = nil
+            if case .wing(let reveal) = pointerRegion {
+                requestedCompactReveal = reveal
+                compactRevealDismissTask = nil
                 return
             }
 
-            requestedMediaControlSide = nil
-            mediaControlsDismissTask = nil
+            requestedCompactReveal = nil
+            compactRevealDismissTask = nil
 
             switch pointerRegion {
             case .outside:
@@ -272,7 +372,7 @@ struct NotchRootView: View {
                 if !model.isHoveringNotch {
                     model.setNotchHovered(true)
                 }
-            case .media:
+            case .wing:
                 break
             }
         }
@@ -471,10 +571,20 @@ private enum NotchWingSide: Equatable {
     case right
 }
 
+private enum CompactWingRevealKind: Equatable {
+    case media
+    case battery
+}
+
+private struct CompactWingReveal: Equatable {
+    let side: NotchWingSide
+    let kind: CompactWingRevealKind
+}
+
 private enum NotchPointerRegion: Equatable {
     case outside
     case notch
-    case media(NotchWingSide)
+    case wing(CompactWingReveal)
 }
 
 private struct AttentionRing<Content: View>: View {
@@ -613,7 +723,7 @@ private struct CompactMediaTransportControls: View {
 
     var body: some View {
         ZStack {
-            CompactMediaRevealShape(
+            CompactWingRevealShape(
                 side: side,
                 progress: isRevealed ? 1 : 0
             )
@@ -684,7 +794,7 @@ private struct CompactMediaTransportControls: View {
     }
 }
 
-private struct CompactMediaRevealShape: Shape {
+private struct CompactWingRevealShape: Shape {
     let side: NotchWingSide
     var progress: CGFloat
 
@@ -904,10 +1014,176 @@ private struct CompactBatteryContent: View {
 
 }
 
+private struct CompactBatteryStatusReveal: View {
+    @ObservedObject var model: AppModel
+    let snapshot: PowerSnapshot
+    let side: NotchWingSide
+    let isRevealed: Bool
+    let reduceMotion: Bool
+    let style: RingStyle
+
+    var body: some View {
+        ZStack {
+            CompactWingRevealShape(
+                side: side,
+                progress: isRevealed ? 1 : 0
+            )
+            .fill(.black)
+            .opacity(isRevealed ? 1 : 0)
+            .animation(revealAnimation, value: isRevealed)
+
+            HStack(spacing: 6) {
+                if side == .left {
+                    batteryPercentage
+                    statusText
+                    statusRing
+                } else {
+                    statusRing
+                    statusText
+                    batteryPercentage
+                }
+            }
+            .padding(side == .left ? .leading : .trailing, 12)
+            .padding(side == .left ? .trailing : .leading, 3.5)
+        }
+        .fixedSize(horizontal: true, vertical: false)
+        .frame(maxHeight: .infinity)
+        .contentShape(Rectangle())
+        .onTapGesture {}
+        .help(accessibilityText)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityText)
+    }
+
+    private var statusRing: some View {
+        ZStack {
+            Circle()
+                .fill(.white.opacity(0.045))
+
+            UsageArc(
+                progress: Double(snapshot.batteryPercent) / 100,
+                style: style,
+                lineWidth: 2.5
+            )
+
+            Image(systemName: statusSymbol)
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.94))
+        }
+        .frame(width: 30, height: 30)
+        .opacity(isRevealed ? 1 : 0)
+        .scaleEffect(isRevealed ? 1 : 0.76)
+        .animation(revealAnimation, value: isRevealed)
+    }
+
+    private var statusText: some View {
+        VStack(
+            alignment: side == .left ? .trailing : .leading,
+            spacing: 1
+        ) {
+            Text(statusTitle)
+                .font(.system(size: 9.5, weight: .semibold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+
+            Text(powerDetail)
+                .font(.system(size: 7.5, weight: .medium, design: .rounded))
+                .foregroundStyle(.white.opacity(0.52))
+                .monospacedDigit()
+                .lineLimit(1)
+                .contentTransition(.numericText())
+        }
+        .fixedSize(horizontal: true, vertical: false)
+        .opacity(isRevealed ? 1 : 0)
+        .scaleEffect(isRevealed ? 1 : 0.92, anchor: textAnchor)
+        .offset(x: isRevealed ? 0 : collapsedTextOffset)
+        .animation(textAnimation, value: isRevealed)
+        .animation(NotchDesign.Motion.value, value: snapshot.updatedAt)
+    }
+
+    private var batteryPercentage: some View {
+        Text("\(snapshot.batteryPercent)%")
+            .font(.system(size: 12.5, weight: .semibold, design: .rounded))
+            .foregroundStyle(.white.opacity(0.82))
+            .monospacedDigit()
+            .contentTransition(.numericText())
+            .frame(minWidth: 26, minHeight: 22)
+            .opacity(isRevealed ? 1 : 0)
+            .scaleEffect(isRevealed ? 1 : 0.84, anchor: textAnchor)
+            .offset(x: isRevealed ? 0 : collapsedTextOffset * 0.55)
+            .animation(textAnimation, value: isRevealed)
+            .animation(NotchDesign.Motion.value, value: snapshot.batteryPercent)
+    }
+
+    private var statusTitle: String {
+        if snapshot.isCharging {
+            return model.localized("正在充电")
+        }
+        if snapshot.isExternalPowerConnected {
+            return model.localized("已达充电上限")
+        }
+        return model.localized("电池供电")
+    }
+
+    private var statusSymbol: String {
+        if snapshot.isCharging { return "bolt.fill" }
+        if snapshot.isExternalPowerConnected { return "checkmark" }
+        return "battery.75"
+    }
+
+    private var powerDetail: String {
+        let source = model.localized(
+            snapshot.isExternalPowerConnected ? "适配器" : "系统"
+        )
+        guard let watts = livePowerWatts else {
+            return "\(source) — W"
+        }
+        return "\(source) \(String(format: "%.1f W", watts))"
+    }
+
+    private var livePowerWatts: Double? {
+        let candidates = snapshot.isExternalPowerConnected
+            ? [snapshot.adapterInputWatts, snapshot.systemLoadWatts]
+            : [snapshot.systemLoadWatts, snapshot.batteryPowerWatts]
+
+        return candidates.lazy.compactMap { value -> Double? in
+            guard let value, value.isFinite else { return nil }
+            let watts = abs(value)
+            return watts >= 0.05 ? watts : nil
+        }.first
+    }
+
+    private var accessibilityText: String {
+        "\(statusTitle) · \(powerDetail) · \(snapshot.batteryPercent)%"
+    }
+
+    private var revealAnimation: Animation {
+        reduceMotion
+            ? .linear(duration: 0.01)
+            : NotchDesign.Motion.hover
+    }
+
+    private var textAnimation: Animation {
+        guard !reduceMotion else { return .linear(duration: 0.01) }
+        if isRevealed {
+            return NotchDesign.Motion.hover.delay(0.035)
+        }
+        return .easeOut(duration: 0.12)
+    }
+
+    private var collapsedTextOffset: CGFloat {
+        side == .left ? 14 : -14
+    }
+
+    private var textAnchor: UnitPoint {
+        side == .left ? .trailing : .leading
+    }
+}
+
 private struct LivingNotch: View {
     @ObservedObject var model: AppModel
     let hoveredHeight: CGFloat
-    let mediaOverlaySide: NotchWingSide?
+    let compactOverlaySide: NotchWingSide?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let shoulderRadius = NotchLayout.shoulderRadius
 
@@ -1038,10 +1314,10 @@ private struct LivingNotch: View {
                 content: model.leftWingContent
             )
             .frame(width: leftWidth, height: height)
-            .opacity(mediaOverlaySide == .left ? 0 : 1)
+            .opacity(compactOverlaySide == .left ? 0 : 1)
             .animation(
-                compactMediaSlotAnimation(for: .left),
-                value: mediaOverlaySide
+                compactOverlaySlotAnimation(for: .left),
+                value: compactOverlaySide
             )
 
             ZStack {
@@ -1071,20 +1347,20 @@ private struct LivingNotch: View {
                 content: model.rightWingContent
             )
             .frame(width: rightWidth, height: height)
-            .opacity(mediaOverlaySide == .right ? 0 : 1)
+            .opacity(compactOverlaySide == .right ? 0 : 1)
             .animation(
-                compactMediaSlotAnimation(for: .right),
-                value: mediaOverlaySide
+                compactOverlaySlotAnimation(for: .right),
+                value: compactOverlaySide
             )
         }
         .frame(width: compactWidth, height: height)
     }
 
-    private func compactMediaSlotAnimation(
+    private func compactOverlaySlotAnimation(
         for side: NotchWingSide
     ) -> Animation {
         guard !reduceMotion else { return .linear(duration: 0.01) }
-        if mediaOverlaySide == side {
+        if compactOverlaySide == side {
             return .easeOut(duration: 0.08)
         }
         return .easeIn(duration: 0.10).delay(0.12)

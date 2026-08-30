@@ -302,6 +302,7 @@
 "电池供电" = "On Battery";
 "已连接电源" = "Power Connected";
 "正在充电" = "Charging";
+"已达充电上限" = "Charge Limit Reached";
 "已开启" = "On";
 "已关闭" = "Off";
 "已连接 · 音频输出" = "Connected · Audio Output";

@@ -5,7 +5,7 @@
   <p>原生、轻量、常驻的 macOS 刘海工具，集中呈现系统状态，并提供文件暂存与隐私优先的剪贴板历史。</p>
 
   <p>
-    <img src="https://img.shields.io/badge/version-26.8.31.0136-25D9C5?style=flat-square" alt="Version 26.8.31.0136">
+    <img src="https://img.shields.io/badge/version-26.8.31.0228-25D9C5?style=flat-square" alt="Version 26.8.31.0228">
     <img src="https://img.shields.io/badge/macOS-26%2B-000000?style=flat-square&amp;logo=apple&amp;logoColor=white" alt="macOS 26+">
     <img src="https://img.shields.io/badge/Swift-5-F05138?style=flat-square&amp;logo=swift&amp;logoColor=white" alt="Swift 5">
     <img src="https://img.shields.io/badge/UI-Liquid%20Glass-4B5563?style=flat-square" alt="Liquid Glass">
@@ -58,11 +58,11 @@
 
 | 模块 | 能力 | 说明 |
 | --- | --- | --- |
-| 刘海交互 | 静止、悬停预览、点击展开 | 窗口锚定屏幕顶边连续变形，左右内容按实体刘海镜像布局 |
+| 刘海交互 | 静止、圆环横向速览、悬停预览、点击展开 | 窗口锚定屏幕顶边连续变形，左右内容按实体刘海镜像布局 |
 | Codex 状态 | 5 小时 / 周额度与 credits 余额 | 通过本机 Codex App Server 读取账户实际返回的限额桶与 credits；面板可切换双限额和美元估算余额 |
 | 系统 HUD | 音量、显示亮度、AirPods | 系统状态变化时以紧凑 HUD 进入刘海，展示完成后自动收起 |
 | 媒体中心 | 正在播放、播放进度与基础控制 | 支持 Apple Music、Spotify、QQ 音乐、网易云音乐等系统媒体来源；可在面板中播放/暂停、上一首和下一首 |
-| 电源管理 | 电池健康、循环次数、实时功率 | 展示适配器、系统与电池之间的功率流；支持系统提供的充电上限档位 |
+| 电源管理 | 电池健康、循环次数、实时功率 | 电池圆环可横向速览供电状态、电量与功率；完整面板展示适配器、系统与电池之间的功率流，并支持系统提供的充电上限档位 |
 | 通知与废纸篓 | 通知来源、横幅处理、圆环提示图标、废纸篓操作 | 通知桥不保存正文；有通知时每个可见圆环显示可切换图标、颜色和动画的提示；Widget Extension 不计入通知；危险操作需要用户明确确认 |
 | 文件暂存架 | 拖入、拖出、打开、Finder 定位与会话暂存 | 最多保留 20 个本地文件或文件夹引用；清空只删除引用，不移动、复制或删除原文件 |
 | 剪贴板历史 | 文本、图片与本地文件 URL | 默认关闭，用户明确启用后才监控；支持会话、1 天和 7 天保留期限，并可重新复制或随时清空 |
@@ -74,16 +74,17 @@
 ## 交互方式
 
 1. **静止**：刘海保持紧凑，只呈现必要状态。
-2. **悬停**：展开为无回弹的快速预览，精确数值和媒体信息随即出现。
-3. **点击**：打开完整 Liquid Glass 工作区，在电源、通知、暂存和剪贴板四个分区间切换。
-4. **离开**：点击桌面或其他 App 后自动收起；面板内菜单和确认弹窗不会误触关闭。
+2. **圆环悬停**：媒体圆环横向展开播放控制；电池圆环横向展示供电状态、电量与实时功率。
+3. **刘海悬停**：展开为无回弹的快速预览，精确数值和媒体信息随即出现。
+4. **点击**：打开完整 Liquid Glass 工作区，在电源、通知、暂存和剪贴板四个分区间切换。
+5. **离开**：点击桌面或其他 App 后自动收起；面板内菜单和确认弹窗不会误触关闭。
 
 ## 安装与首次运行
 
 1. 前往 [Releases](https://github.com/0Hyacinth0/Notch-Triage/releases/latest) 下载最新发布包。
 2. 将 `NotchTriage.app` 移入“应用程序”文件夹并启动。
 
-> 如果“应用程序”中同时存在 `NotchTriage.app` 与旧的 `Notch Triage.app`，请先退出两者，再用 v26.8.31.0136 的 `NotchTriage.app` 覆盖并移除旧的空格命名副本，避免同一 Bundle ID 启动两个实例。
+> 如果“应用程序”中同时存在 `NotchTriage.app` 与旧的 `Notch Triage.app`，请先退出两者，再用 v26.8.31.0228 的 `NotchTriage.app` 覆盖并移除旧的空格命名副本，避免同一 Bundle ID 启动两个实例。
 
 3. 根据需要授予辅助功能、Finder 自动化、剪贴板访问或登录项权限。
 4. 点击刘海区域打开面板；剪贴板历史保持默认关闭，只有点击“启用剪贴板历史”后才开始监控新内容。

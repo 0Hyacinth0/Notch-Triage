@@ -91,9 +91,15 @@ private enum PowerSnapshotReader {
         let calculatedBatteryPower = currentAmps.flatMap { current in
             voltageVolts.map { current * $0 }
         }
-        let telemetryBatteryPower = double(telemetry["BatteryPower"])
+        let telemetryBatteryPower = signedDouble(telemetry["BatteryPower"])
             .map { $0 / 1_000 }
-        let batteryPower = calculatedBatteryPower ?? telemetryBatteryPower
+        let batteryDataPower = signedDouble(batteryData["BatteryPower"])
+            .map { $0 / 1_000 }
+        let batteryPower = preferredPower([
+            calculatedBatteryPower,
+            telemetryBatteryPower,
+            batteryDataPower,
+        ])
         let systemLoad = double(telemetry["SystemLoad"])
             .map { $0 / 1_000 }
 
@@ -227,6 +233,15 @@ private enum PowerSnapshotReader {
 
     private static func signedDouble(_ value: Any?) -> Double? {
         (value as? NSNumber).map { Double($0.int64Value) }
+    }
+
+    private static func preferredPower(_ values: [Double?]) -> Double? {
+        let finiteValues = values.compactMap { value -> Double? in
+            guard let value, value.isFinite else { return nil }
+            return value
+        }
+        return finiteValues.first(where: { abs($0) >= 0.05 })
+            ?? finiteValues.first
     }
 
     private static func bool(_ value: Any?) -> Bool {
