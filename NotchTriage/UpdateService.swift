@@ -1,4 +1,5 @@
 import CryptoKit
+import Darwin
 import Foundation
 
 actor UpdateService {
@@ -52,6 +53,14 @@ actor UpdateService {
         replacing currentAppURL: URL,
         onDownloadProgress: @escaping @Sendable (AppUpdateDownloadProgress) -> Void
     ) async throws -> PreparedAppUpdate {
+        guard let expectedDigest = release.digest?.lowercased(),
+              expectedDigest.hasPrefix("sha256:"),
+              expectedDigest.count == "sha256:".count + 64,
+              expectedDigest.dropFirst("sha256:".count)
+                .allSatisfy(\.isHexDigit) else {
+            throw UpdateServiceError.missingDigest
+        }
+
         var request = URLRequest(url: release.downloadURL)
         request.timeoutInterval = 120
         request.setValue("NotchTriage-Updater", forHTTPHeaderField: "User-Agent")
@@ -91,15 +100,12 @@ actor UpdateService {
             )
         }
 
-        if let expectedDigest = release.digest?.lowercased(),
-           expectedDigest.hasPrefix("sha256:") {
-            let data = try Data(contentsOf: downloadedURL, options: .mappedIfSafe)
-            let actualDigest = SHA256.hash(data: data)
-                .map { String(format: "%02x", $0) }
-                .joined()
-            guard actualDigest == String(expectedDigest.dropFirst("sha256:".count)) else {
-                throw UpdateServiceError.downloadDigestMismatch
-            }
+        let data = try Data(contentsOf: downloadedURL, options: .mappedIfSafe)
+        let actualDigest = SHA256.hash(data: data)
+            .map { String(format: "%02x", $0) }
+            .joined()
+        guard actualDigest == String(expectedDigest.dropFirst("sha256:".count)) else {
+            throw UpdateServiceError.downloadDigestMismatch
         }
 
         let mountURL = try mountDiskImage(at: downloadedURL)
@@ -226,30 +232,51 @@ actor UpdateService {
         guard let line = lines.first(where: { $0.hasPrefix("TeamIdentifier=") }) else {
             throw UpdateServiceError.missingSigningTeam
         }
-        return String(line.dropFirst("TeamIdentifier=".count))
+        let identifier = String(line.dropFirst("TeamIdentifier=".count))
             .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !identifier.isEmpty,
+              identifier.caseInsensitiveCompare("not set") != .orderedSame else {
+            throw UpdateServiceError.missingSigningTeam
+        }
+        return identifier
     }
 
     private func runProcess(
         executable: String,
-        arguments: [String]
+        arguments: [String],
+        timeout: TimeInterval = 120
     ) throws -> ProcessResult {
         let process = Process()
         let outputPipe = Pipe()
         let errorPipe = Pipe()
+        let termination = DispatchSemaphore(value: 0)
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
         process.standardOutput = outputPipe
         process.standardError = errorPipe
+        process.terminationHandler = { _ in
+            termination.signal()
+        }
 
         try process.run()
-        process.waitUntilExit()
 
-        return ProcessResult(
-            status: process.terminationStatus,
-            output: outputPipe.fileHandleForReading.readDataToEndOfFile(),
-            error: errorPipe.fileHandleForReading.readDataToEndOfFile()
+        let timeoutInterval = DispatchTimeInterval.microseconds(
+            Int(max(1, timeout) * 1_000_000)
         )
+        guard termination.wait(timeout: .now() + timeoutInterval) == .timedOut else {
+            return ProcessResult(
+                status: process.terminationStatus,
+                output: outputPipe.fileHandleForReading.readDataToEndOfFile(),
+                error: errorPipe.fileHandleForReading.readDataToEndOfFile()
+            )
+        }
+
+        process.terminate()
+        if termination.wait(timeout: .now() + .seconds(2)) == .timedOut {
+            kill(process.processIdentifier, SIGKILL)
+            _ = termination.wait(timeout: .now() + .seconds(1))
+        }
+        throw UpdateServiceError.processTimedOut(executable)
     }
 
     private static func normalizedVersion(_ version: String) -> String {
@@ -456,8 +483,10 @@ enum UpdateServiceError: LocalizedError {
     case missingInstaller
     case untrustedDownloadLocation
     case downloadFailed
+    case missingDigest
     case downloadSizeMismatch
     case downloadDigestMismatch
+    case processTimedOut(String)
     case mountFailed(String)
     case invalidInstaller
     case invalidBundleIdentifier
@@ -476,10 +505,14 @@ enum UpdateServiceError: LocalizedError {
             return "安装包下载地址不属于 Notch Triage 官方仓库"
         case .downloadFailed:
             return "安装包下载失败"
+        case .missingDigest:
+            return "Release 没有可验证的 SHA-256 摘要，已停止安装"
         case .downloadSizeMismatch:
             return "安装包大小与 GitHub 记录不一致"
         case .downloadDigestMismatch:
             return "安装包 SHA-256 校验失败"
+        case .processTimedOut(let executable):
+            return "系统验证进程超时：\(executable)"
         case .mountFailed(let detail):
             return "无法打开安装包：\(detail)"
         case .invalidInstaller:

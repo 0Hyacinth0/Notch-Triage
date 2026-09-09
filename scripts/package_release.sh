@@ -3,8 +3,8 @@ set -euo pipefail
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 readonly PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd -P)"
-readonly VERSION="26.8.31.0228"
-readonly BUILD="228"
+readonly VERSION="26.9.9.2236"
+readonly BUILD="229"
 readonly DIST_DIR="$PROJECT_DIR/dist"
 readonly DMG_PATH="$DIST_DIR/NotchTriage-${VERSION}-macOS-universal.dmg"
 

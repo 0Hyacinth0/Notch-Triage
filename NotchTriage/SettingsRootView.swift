@@ -842,7 +842,7 @@ struct SettingsRootView: View {
             return model.localized("下载并安装")
         }
         return model.updateStatus.isBusy
-            ? model.localized(model.updateStatus.menuTitle)
+            ? model.updateStatus.localizedMenuTitle(using: model.appLanguage)
             : model.localized("检查更新")
     }
 

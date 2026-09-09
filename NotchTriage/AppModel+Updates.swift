@@ -2,6 +2,27 @@ import AppKit
 import Foundation
 import SwiftUI
 
+extension AppUpdateStatus {
+    func localizedMenuTitle(using language: AppLanguage) -> String {
+        switch self {
+        case .idle:
+            return language.localized("检查更新")
+        case .checking:
+            return language.localized("正在检查更新…")
+        case .available(let version):
+            return language.localizedFormat("安装 v%@", version)
+        case .downloading(let version):
+            return language.localizedFormat("正在下载 v%@…", version)
+        case .installing(let version):
+            return language.localizedFormat("正在安装 v%@…", version)
+        case .upToDate(let version):
+            return language.localizedFormat("已是最新版 v%@", version)
+        case .failed(let message):
+            return message
+        }
+    }
+}
+
 extension AppModel {
     /// The settings window owns its update flow. Unlike the compact notch menu,
     /// it should start the download directly so progress remains visible in
@@ -66,7 +87,9 @@ extension AppModel {
                     if context.isManualCheck {
                         updatePrompt = AppUpdatePrompt(
                             title: "已经是最新版本",
-                            message: "当前版本为 v\(currentVersion)。",
+                            message: appLanguage == .english
+                                ? "Current version is v\(currentVersion)."
+                                : "当前版本为 v\(currentVersion)。",
                             release: nil
                         )
                     }
@@ -219,11 +242,18 @@ extension AppModel {
             ? String(summary.prefix(320)) + "…"
             : summary
         let message = abbreviatedNotes.isEmpty
-            ? "确认后将下载、验证并安装更新，然后重启 Notch Triage。"
+            ? (appLanguage == .english
+                ? "After confirmation, the update will be downloaded, verified, installed, and Notch Triage will restart."
+                : "确认后将下载、验证并安装更新，然后重启 Notch Triage。")
             : abbreviatedNotes
-                + "\n\n确认后将下载、验证并安装更新，然后重启 Notch Triage。"
+                + "\n\n"
+                + (appLanguage == .english
+                    ? "After confirmation, the update will be downloaded, verified, installed, and Notch Triage will restart."
+                    : "确认后将下载、验证并安装更新，然后重启 Notch Triage。")
         let prompt = AppUpdatePrompt(
-            title: "发现 \(release.displayVersion)",
+            title: appLanguage == .english
+                ? "Found \(release.displayVersion)"
+                : "发现 \(release.displayVersion)",
             message: message,
             release: release
         )

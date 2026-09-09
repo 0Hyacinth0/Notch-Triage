@@ -137,9 +137,14 @@
 "当前版本" = "Current Version";
 "等待检查" = "Waiting to Check";
 "正在检查 GitHub Release" = "Checking GitHub Release";
+"正在检查更新…" = "Checking for Updates…";
 "操作" = "Actions";
 "下载并安装" = "Download and Install";
 "检查更新" = "Check for Updates";
+"安装 v%@" = "Install v%@";
+"正在下载 v%@…" = "Downloading v%@…";
+"正在安装 v%@…" = "Installing v%@…";
+"已是最新版 v%@" = "Already up to date at v%@";
 "版本说明" = "Release Notes";
 "此版本没有附加说明。" = "This version has no additional notes.";
 "查看服务健康状态、最近事件和后台调度情况。" = "View service health, recent events, and background scheduling.";

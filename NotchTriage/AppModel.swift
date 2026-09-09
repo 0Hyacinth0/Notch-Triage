@@ -289,6 +289,14 @@ final class AppModel: ObservableObject {
         appLanguage.localized(source)
     }
 
+    func localizedFormat(_ source: String, _ arguments: CVarArg...) -> String {
+        String(
+            format: appLanguage.localized(source),
+            locale: appLanguage.locale,
+            arguments: arguments
+        )
+    }
+
     func replaceFileShelfItems(_ items: [FileShelfItem]) {
         fileShelfItems = items
     }
@@ -483,6 +491,13 @@ final class AppModel: ObservableObject {
         },
         onHealth: { [weak self] health in
             self?.applyHealth(health, to: .trash)
+        },
+        onError: { [weak self] message in
+            self?.updatePrompt = AppUpdatePrompt(
+                title: "无法清空废纸篓",
+                message: message,
+                release: nil
+            )
         }
     )
 
@@ -769,16 +784,7 @@ final class AppModel: ObservableObject {
     }
 
     func emptyTrash() {
-        if let message = trashService.emptyTrash() {
-            Task { @MainActor [weak self] in
-                await Task.yield()
-                self?.updatePrompt = AppUpdatePrompt(
-                    title: "无法清空废纸篓",
-                    message: message,
-                    release: nil
-                )
-            }
-        }
+        trashService.emptyTrash()
     }
 
     func refreshPower() {

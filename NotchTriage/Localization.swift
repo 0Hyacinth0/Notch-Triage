@@ -27,4 +27,12 @@ enum AppLanguage: String, CaseIterable, Codable, Identifiable, Sendable {
 
         return bundle.localizedString(forKey: source, value: source, table: nil)
     }
+
+    func localizedFormat(_ source: String, _ arguments: CVarArg...) -> String {
+        String(
+            format: localized(source),
+            locale: locale,
+            arguments: arguments
+        )
+    }
 }
