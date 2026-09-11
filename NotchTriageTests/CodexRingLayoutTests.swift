@@ -32,7 +32,7 @@ final class CodexRingLayoutTests: XCTestCase {
             ForEach(CodexRingLayout.allCases) { layout in
                 HStack(spacing: 24) {
                     Text(layout.title).frame(width: 160, alignment: .leading)
-                    ForEach([0.0, 0.01, 0.45, 0.75, 1.0], id: \.self) { value in
+                    ForEach([1.0, 0.75, 0.45, 0.01, 0.0], id: \.self) { value in
                         VStack(spacing: 10) {
                             CodexQuotaRings(layout: layout, fiveHour: value, weekly: value,
                                             style: model.ringAppearance.style(for: .codex))
