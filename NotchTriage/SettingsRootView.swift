@@ -215,6 +215,33 @@ struct SettingsRootView: View {
             }
             .buttonStyle(.borderless)
 
+            SettingsGroup(title: "Codex 额度圆环") {
+                Picker("圆环布局", selection: $model.codexRingLayout) {
+                    ForEach(CodexRingLayout.allCases) { layout in
+                        Text(model.localized(layout.title)).tag(layout)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                HStack(spacing: 16) {
+                    CodexQuotaRings(
+                        layout: model.codexRingLayout,
+                        fiveHour: 0.75,
+                        weekly: 0.45,
+                        style: model.ringAppearance.style(for: .codex)
+                    )
+                    .padding(14)
+                    .background(.black, in: RoundedRectangle(cornerRadius: 12))
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(model.localized(model.codexRingLayout.legend))
+                        Text("预览：5h 剩余 75% · 周额度剩余 45%")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Text("仅影响限额圆环；悬停可查看精确数值。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
             SettingsGroup(title: "Liquid Glass") {
                 LiquidGlassStylePreview(level: model.liquidGlassLevel)
 

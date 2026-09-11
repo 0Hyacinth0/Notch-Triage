@@ -1,4 +1,14 @@
 /* Settings */
+"Codex 额度圆环" = "Codex Quota Rings";
+"圆环布局" = "Ring Layout";
+"内外双弧" = "Concentric";
+"长弧＋底部短弧" = "Long + Bottom Arc";
+"左右双弧" = "Left + Right Arcs";
+"外圈：5h · 内圈：周额度" = "Outer: 5h · Inner: Weekly";
+"长弧：5h · 底部短弧：周额度" = "Long: 5h · Bottom: Weekly";
+"左弧：5h · 右弧：周额度" = "Left: 5h · Right: Weekly";
+"预览：5h 剩余 75% · 周额度剩余 45%" = "Preview: 5h 75% remaining · Weekly 45% remaining";
+"仅影响限额圆环；悬停可查看精确数值。" = "Applies to quota rings. Hover to see exact values.";
 "设置…" = "Settings…";
 "显示设置" = "Show Settings";
 "显示刘海面板" = "Show Notch Panel";

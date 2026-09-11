@@ -1631,24 +1631,14 @@ private struct LivingNotch: View {
             model: model,
             diameter: 20
         ) {
-            ZStack {
-                UsageArc(
-                    progress: model.fiveHourCodexLimit?.remainingFraction ?? 0,
-                    style: model.ringAppearance.style(for: .codex),
-                    lineWidth: 2.2
-                )
-
-                if let weekly = model.weeklyCodexLimit,
-                   weekly.id != model.fiveHourCodexLimit?.id {
-                    UsageArc(
-                        progress: weekly.remainingFraction,
-                        style: model.ringAppearance.style(for: .codex),
-                        lineWidth: 1.6
-                    )
-                    .frame(width: 13, height: 13)
-                    .opacity(0.72)
-                }
-            }
+            CodexQuotaRings(
+                layout: model.codexRingLayout,
+                fiveHour: model.fiveHourCodexLimit?.remainingFraction ?? 0,
+                weekly: model.weeklyCodexLimit?.id != model.fiveHourCodexLimit?.id
+                    ? model.weeklyCodexLimit?.remainingFraction : nil,
+                style: model.ringAppearance.style(for: .codex),
+                diameter: 20
+            )
         }
     }
 
@@ -1901,23 +1891,12 @@ private struct CompactCodexContent: View {
         ) {
             switch model.codexDisplayMode {
             case .weekly:
-                ZStack {
-                    UsageArc(
-                        progress: fiveHour?.remainingFraction ?? 0,
-                        style: style,
-                        lineWidth: 2.7
-                    )
-
-                    if let weekly, weekly.id != fiveHour?.id {
-                        UsageArc(
-                            progress: weekly.remainingFraction,
-                            style: style,
-                            lineWidth: 1.8
-                        )
-                        .frame(width: 14, height: 14)
-                        .opacity(0.72)
-                    }
-                }
+                CodexQuotaRings(
+                    layout: model.codexRingLayout,
+                    fiveHour: fiveHour?.remainingFraction ?? 0,
+                    weekly: weekly?.id != fiveHour?.id ? weekly?.remainingFraction : nil,
+                    style: style
+                )
             case .balance:
                 ZStack {
                     UsageArc(

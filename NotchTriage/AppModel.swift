@@ -30,6 +30,7 @@ final class AppModel: ObservableObject {
         static let notificationPromptAnimation = "notch.notificationPromptAnimation"
         static let legacyNotificationEyeStyle = "notch.notificationEyeStyle"
         static let codexDisplayMode = "notch.codexDisplayMode"
+        static let codexRingLayout = "notch.codexRingLayout"
         static let workspaceSection = "notch.workspace.lastSection"
         static let clipboardHistoryEnabled = "notch.clipboard.historyEnabled"
         static let clipboardRetentionPolicy = "notch.clipboard.retentionPolicy"
@@ -68,6 +69,11 @@ final class AppModel: ObservableObject {
     @Published private(set) var mediaCommandInFlight: MediaCommand? = nil
     @Published var codexLimits: [CodexLimitBucket] = []
     @Published var codexCredits: CodexCreditsBalance? = nil
+    @Published var codexRingLayout: CodexRingLayout {
+        didSet {
+            UserDefaults.standard.set(codexRingLayout.rawValue, forKey: PreferenceKey.codexRingLayout)
+        }
+    }
     @Published var codexDisplayMode: CodexDisplayMode {
         didSet {
             UserDefaults.standard.set(
@@ -382,6 +388,7 @@ final class AppModel: ObservableObject {
                 forKey: PreferenceKey.rightWingContent
             ) ?? ""
         ) ?? .codex
+        codexRingLayout = .restored(from: defaults.string(forKey: PreferenceKey.codexRingLayout))
         codexDisplayMode = CodexDisplayMode(
             rawValue: defaults.string(
                 forKey: PreferenceKey.codexDisplayMode
