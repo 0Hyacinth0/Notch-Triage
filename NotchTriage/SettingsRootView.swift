@@ -15,7 +15,7 @@ struct SettingsRootView: View {
         var title: String {
             switch self {
             case .appearance: return "外观"
-            case .behavior: return "行为"
+            case .behavior: return "通用"
             case .permissions: return "权限"
             case .updates: return "更新"
             case .diagnostics: return "诊断"
@@ -41,7 +41,7 @@ struct SettingsRootView: View {
             List(selection: selectionBinding) {
                 Section("Notch Triage") {
                     sidebarItem("外观", symbol: "rectangle.on.rectangle", destination: .appearance)
-                    sidebarItem("行为", symbol: "slider.horizontal.3", destination: .behavior)
+                    sidebarItem("通用", symbol: "slider.horizontal.3", destination: .behavior)
                     sidebarItem("权限", symbol: "lock.shield", destination: .permissions)
                     sidebarItem("更新", symbol: "arrow.trianglehead.2.clockwise.rotate.90", destination: .updates)
                     sidebarItem("诊断", symbol: "waveform.path.ecg", destination: .diagnostics)
@@ -144,78 +144,63 @@ struct SettingsRootView: View {
     private var appearancePage: some View {
         SettingsPage(
             title: "外观",
-            subtitle: "使用 Apple 原生 Liquid Glass，并跟随 macOS 的全局外观与辅助功能设置。",
+            subtitle: "选择刘海内容、圆环配色和展开面板的材质。",
             symbol: "rectangle.on.rectangle"
         ) {
-            SettingsGroup(title: "语言") {
+            SettingsGroup(title: "刘海布局") {
+                notchPreview
                 HStack(spacing: 12) {
-                    SettingsRowLabel(
-                        title: "界面语言",
-                        subtitle: "选择 Notch Triage 的显示语言。",
-                        symbol: "globe"
-                    )
-
-                    Spacer(minLength: 12)
-
-                    Picker(
-                        "界面语言",
-                        selection: Binding(
-                            get: { model.appLanguage },
-                            set: { model.setAppLanguage($0) }
-                        )
-                    ) {
-                        ForEach(AppLanguage.allCases) { language in
-                            Text(language.title).tag(language)
-                        }
-                    }
-                    .labelsHidden()
-                    .frame(width: 150)
-                }
-            }
-
-            SettingsGroup(title: "刘海内容") {
-                settingsPicker(
-                    title: "左侧",
-                    symbol: "arrow.left",
-                    selection: Binding(
+                    wingSelector("左侧", selection: Binding(
                         get: { model.leftWingContent },
                         set: { model.setLeftWingContent($0) }
-                    )
-                )
-
-                Divider()
-
-                settingsPicker(
-                    title: "右侧",
-                    symbol: "arrow.right",
-                    selection: Binding(
+                    ))
+                    Button { model.swapWingContents() } label: {
+                        Image(systemName: "arrow.left.arrow.right")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("左右互换")
+                    .accessibilityLabel("左右互换")
+                    wingSelector("右侧", selection: Binding(
                         get: { model.rightWingContent },
                         set: { model.setRightWingContent($0) }
-                    )
-                )
-            }
-
-            HStack(spacing: 10) {
-                WingPreviewCard(title: "左侧", content: model.leftWingContent)
-                WingPreviewCard(title: "右侧", content: model.rightWingContent)
-            }
-
-            HStack {
-                Button {
-                    model.swapWingContents()
-                } label: {
-                    Label("左右互换", systemImage: "arrow.left.arrow.right")
+                    ))
                 }
-
-                Button("恢复默认") {
-                    model.resetWingContents()
-                }
-
-                Spacer()
+                Button("重置布局") { model.resetWingContents() }
+                    .buttonStyle(.borderless)
             }
-            .buttonStyle(.borderless)
 
-            SettingsGroup(title: "Codex 额度圆环") {
+            SettingsGroup(title: "圆环样式") {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 100))], spacing: 8) {
+                    ForEach(RingTheme.allCases) { theme in
+                        Button { model.setRingTheme(theme) } label: {
+                            VStack(spacing: 8) {
+                                HStack(spacing: 8) {
+                                    ForEach(RingMetric.allCases) { metric in
+                                        Circle()
+                                            .stroke(theme.style(for: metric).shapeStyle, lineWidth: 3)
+                                            .frame(width: 18, height: 18)
+                                    }
+                                }
+                                Text(LocalizedStringKey(theme.title)).font(.caption)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(
+                                model.ringAppearance.theme == theme
+                                    ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.035),
+                                in: RoundedRectangle(cornerRadius: 10)
+                            )
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 10)
+                                    .stroke(model.ringAppearance.theme == theme ? Color.accentColor : .clear, lineWidth: 1)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityAddTraits(model.ringAppearance.theme == theme ? .isSelected : [])
+                    }
+                }
+                if model.leftWingContent == .codex || model.rightWingContent == .codex {
+                    DisclosureGroup("Codex 额度圆环") {
                 Picker("圆环布局", selection: $model.codexRingLayout) {
                     ForEach(CodexRingLayout.allCases) { layout in
                         Text(model.localized(layout.title)).tag(layout)
@@ -240,9 +225,16 @@ struct SettingsRootView: View {
                 }
                 Text("仅影响限额圆环；悬停可查看精确数值。")
                     .font(.caption).foregroundStyle(.secondary)
+
+                    }
+                }
+                DisclosureGroup("单独调整颜色") {
+                    AdvancedRingAppearanceView(model: model)
+                        .padding(.top, 8)
+                }
             }
 
-            SettingsGroup(title: "Liquid Glass") {
+            SettingsGroup(title: "面板材质") {
                 LiquidGlassStylePreview(level: model.liquidGlassLevel)
 
                 HStack(spacing: 12) {
@@ -272,55 +264,17 @@ struct SettingsRootView: View {
                 .foregroundStyle(.secondary)
             }
 
-            SettingsGroup(title: "圆环主题") {
-                HStack(alignment: .center, spacing: 12) {
-                    Image(systemName: "circle.lefthalf.filled")
-                        .foregroundStyle(.tint)
-                        .frame(width: 20)
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("全局主题模板")
-                            .font(.callout.weight(.medium))
-                        Text(LocalizedStringKey(model.ringAppearance.theme.subtitle))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Spacer(minLength: 12)
-
-                    Picker(
-                        "全局主题模板",
-                        selection: Binding(
-                            get: { model.ringAppearance.theme },
-                            set: { model.setRingTheme($0) }
-                        )
-                    ) {
-                        ForEach(RingTheme.allCases) { theme in
-                            Text(LocalizedStringKey(theme.title)).tag(theme)
-                        }
-                    }
-                    .labelsHidden()
-                    .frame(width: 150)
-                }
-
-                Divider()
-
-                HStack(spacing: 8) {
-                    ForEach(RingMetric.allCases) { metric in
-                        RingThemeSwatch(
-                            metric: metric,
-                            style: model.ringAppearance.style(for: metric)
-                        )
-                    }
-                    Spacer(minLength: 0)
-                }
-
-                Text("电池、额度和正在播放会统一使用这个模板；单独调整请展开高阶配置。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
             SettingsGroup(title: "通知提示") {
+                HStack(spacing: 14) {
+                    previewRing(model.leftWingContent, notification: true)
+                    previewRing(model.rightWingContent, notification: true)
+                    Text("通知会显示在当前圆环中央")
+                        .font(.caption).foregroundStyle(.white.opacity(0.7))
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity)
+                .background(.black, in: RoundedRectangle(cornerRadius: 12))
+                DisclosureGroup("调整通知提示") {
                 VStack(spacing: 12) {
                     notificationPromptRow(
                         icon: model.notificationPromptIcon.symbol,
@@ -384,24 +338,75 @@ struct SettingsRootView: View {
                     }
                 }
 
+                }
                 Text("有通知或新提示时，当前显示的每个圆环中央都会出现提示图标；两侧使用同一个节拍同步播放。没有圆环的一侧不会显示。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
-            DisclosureGroup {
-                AdvancedRingAppearanceView(model: model)
-                    .padding(.top, 6)
-            } label: {
-                Label("高阶圆环配置", systemImage: "slider.horizontal.2.square")
-                    .font(.callout.weight(.semibold))
+
+        }
+    }
+
+
+    private var notchPreview: some View {
+        HStack(spacing: 0) {
+            previewRing(model.leftWingContent)
+                .frame(width: 58)
+            RoundedRectangle(cornerRadius: 2)
+                .fill(.white.opacity(0.18))
+                .frame(width: 22, height: 3)
+                .frame(width: 130, height: 54, alignment: .bottom)
+                .padding(.bottom, 8)
+            previewRing(model.rightWingContent)
+                .frame(width: 58)
+        }
+        .background(.black, in: UnevenRoundedRectangle(bottomLeadingRadius: 16, bottomTrailingRadius: 16))
+        .frame(maxWidth: .infinity)
+        .padding(.bottom, 8)
+        .accessibilityLabel("刘海布局预览")
+    }
+
+    @ViewBuilder
+    private func previewRing(_ content: NotchWingContent, notification: Bool = false) -> some View {
+        switch content {
+        case .hidden:
+            Color.clear.frame(width: 26, height: 26)
+        case .codex:
+            ZStack {
+                CodexQuotaRings(layout: model.codexRingLayout, fiveHour: 0.75, weekly: 0.45,
+                    style: model.ringAppearance.style(for: .codex))
+                if notification { notificationPreviewIcon }
             }
-            .padding(14)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(.primary.opacity(0.08), lineWidth: 0.5)
+        case .battery, .media:
+            ZStack {
+                Circle().stroke(.white.opacity(0.15), lineWidth: 3)
+                Circle().trim(from: 0, to: 0.75)
+                    .stroke(model.ringAppearance.style(for: content == .battery ? .battery : .media).shapeStyle,
+                            style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                if notification { notificationPreviewIcon }
             }
+            .frame(width: 26, height: 26)
+        }
+    }
+
+    private var notificationPreviewIcon: some View {
+        Image(systemName: model.notificationPromptIcon.symbol)
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(model.notificationPromptColor.color)
+    }
+
+    private func wingSelector(_ title: String, selection: Binding<NotchWingContent>) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(LocalizedStringKey(title)).font(.caption).foregroundStyle(.secondary)
+            Picker(title, selection: selection) {
+                ForEach(NotchWingContent.allCases) { content in
+                    Text(LocalizedStringKey(content.title)).tag(content)
+                }
+            }
+            .labelsHidden()
+            .frame(maxWidth: .infinity)
         }
     }
 
@@ -467,10 +472,36 @@ struct SettingsRootView: View {
 
     private var behaviorPage: some View {
         SettingsPage(
-            title: "行为",
-            subtitle: "控制通知横幅、后台刷新和登录后的启动方式。",
+            title: "通用",
+            subtitle: "控制界面语言、通知横幅和登录后的启动方式。",
             symbol: "slider.horizontal.3"
         ) {
+            SettingsGroup(title: "语言") {
+                HStack(spacing: 12) {
+                    SettingsRowLabel(
+                        title: "界面语言",
+                        subtitle: "选择 Notch Triage 的显示语言。",
+                        symbol: "globe"
+                    )
+
+                    Spacer(minLength: 12)
+
+                    Picker(
+                        "界面语言",
+                        selection: Binding(
+                            get: { model.appLanguage },
+                            set: { model.setAppLanguage($0) }
+                        )
+                    ) {
+                        ForEach(AppLanguage.allCases) { language in
+                            Text(language.title).tag(language)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 150)
+                }
+            }
+
             SettingsGroup(title: "通知横幅") {
                 HStack(alignment: .center, spacing: 12) {
                     Toggle("自动收起横幅", isOn: $model.autoDismissBanners)
@@ -1084,7 +1115,7 @@ private struct AdvancedRingAppearanceView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("开启单项覆盖后，该圆环不再跟随全局主题。颜色支持环形渐变，也可以切换为纯色。")
+            Text("开启自定义后，该圆环使用独立配色；关闭后跟随主题。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -1099,7 +1130,7 @@ private struct AdvancedRingAppearanceView: View {
             Button {
                 model.resetRingAppearance()
             } label: {
-                Label("恢复所有圆环默认", systemImage: "arrow.counterclockwise")
+                Label("重置圆环颜色", systemImage: "arrow.counterclockwise")
             }
             .buttonStyle(.borderless)
         }
@@ -1124,7 +1155,7 @@ private struct RingStyleEditor: View {
                 get: { override.isEnabled },
                 set: { model.setRingOverrideEnabled($0, for: metric) }
             )) {
-                Label(LocalizedStringKey(metric.title), systemImage: metric.symbol)
+                Text("\(model.localized(metric.title)) · \(model.localized(override.isEnabled ? "自定义" : "跟随主题"))")
                     .font(.callout.weight(.medium))
             }
 

@@ -333,3 +333,19 @@
 "检查更新失败" = "Update Check Failed";
 "无法自动安装" = "Unable to Install Automatically";
 "更新安装失败" = "Update Installation Failed";
+
+"通用" = "General";
+"选择刘海内容、圆环配色和展开面板的材质。" = "Choose notch content, ring colors, and the expanded panel material.";
+"刘海布局" = "Notch Layout";
+"重置布局" = "Reset Layout";
+"圆环样式" = "Ring Style";
+"单独调整颜色" = "Customize Individual Colors";
+"面板材质" = "Panel Material";
+"通知会显示在当前圆环中央" = "Notifications appear in the center of visible rings";
+"调整通知提示" = "Customize Notification Indicators";
+"重置圆环颜色" = "Reset Ring Colors";
+"自定义" = "Custom";
+"跟随主题" = "Follow Theme";
+"刘海布局预览" = "Notch layout preview";
+"控制界面语言、通知横幅和登录后的启动方式。" = "Control language, notification banners, and launch at login.";
+"开启自定义后，该圆环使用独立配色；关闭后跟随主题。" = "Enable custom colors for this ring, or turn off to follow the theme.";
