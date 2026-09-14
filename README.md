@@ -5,7 +5,7 @@
   <p>原生、轻量、常驻的 macOS 刘海工具，集中呈现系统状态，并提供文件暂存与隐私优先的剪贴板历史。</p>
 
   <p>
-    <img src="https://img.shields.io/badge/version-26.9.14.1653-25D9C5?style=flat-square" alt="Version 26.9.14.1653">
+    <img src="https://img.shields.io/badge/version-26.9.14.1748-25D9C5?style=flat-square" alt="Version 26.9.14.1748">
     <img src="https://img.shields.io/badge/macOS-26%2B-000000?style=flat-square&amp;logo=apple&amp;logoColor=white" alt="macOS 26+">
     <img src="https://img.shields.io/badge/Swift-5-F05138?style=flat-square&amp;logo=swift&amp;logoColor=white" alt="Swift 5">
     <img src="https://img.shields.io/badge/UI-Liquid%20Glass-4B5563?style=flat-square" alt="Liquid Glass">

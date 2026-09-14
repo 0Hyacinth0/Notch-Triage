@@ -68,6 +68,7 @@ extension View {
     func nativeLiquidGlassSurface(
         level: Double,
         cornerRadius: CGFloat,
+        contentSize: CGSize,
         samplesDesktopBackdrop: Bool = false
     ) -> some View {
         modifier(
@@ -77,6 +78,7 @@ extension View {
                 samplesDesktopBackdrop: samplesDesktopBackdrop
             )
         )
+        .frame(width: contentSize.width, height: contentSize.height)
     }
 
     func panelGroupSurface(
@@ -146,6 +148,9 @@ private final class NativeLiquidGlassHostView<Content: View>: NSView {
         samplesDesktopBackdrop: Bool
     ) {
         hostingView = NSHostingView(rootView: rootView)
+        // The enclosing SwiftUI frame owns sizing. Nested hosting views must
+        // not feed content size constraints back into the containing window.
+        hostingView.sizingOptions = []
         super.init(frame: .zero)
 
         wantsLayer = true
@@ -211,10 +216,5 @@ private final class NativeLiquidGlassHostView<Content: View>: NSView {
         regularGlass.cornerRadius = cornerRadius
         regularGlass.alphaValue = appearance.regularLayerOpacity
         regularGlass.isHidden = appearance.regularLayerOpacity <= 0.001
-        invalidateIntrinsicContentSize()
-    }
-
-    override var intrinsicContentSize: NSSize {
-        hostingView.fittingSize
     }
 }

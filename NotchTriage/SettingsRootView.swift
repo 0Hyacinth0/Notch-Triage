@@ -1080,7 +1080,11 @@ private struct LiquidGlassStylePreview: View {
             }
             .padding(.horizontal, 16)
             .frame(width: 290, height: 58)
-            .nativeLiquidGlassSurface(level: level, cornerRadius: 19)
+            .nativeLiquidGlassSurface(
+                level: level,
+                cornerRadius: 19,
+                contentSize: CGSize(width: 290, height: 58)
+            )
         }
         .frame(height: 108)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))

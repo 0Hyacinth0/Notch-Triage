@@ -1967,6 +1967,10 @@ private struct ExpandedPanelSurface: View {
             .nativeLiquidGlassSurface(
                 level: model.liquidGlassLevel,
                 cornerRadius: NotchDesign.Radius.panel,
+                contentSize: CGSize(
+                    width: NotchLayout.expandedPanelWidth,
+                    height: NotchLayout.expandedPanelHeight
+                ),
                 samplesDesktopBackdrop: true
             )
             .opacity(isVisible ? 1 : 0)

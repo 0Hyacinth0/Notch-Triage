@@ -92,6 +92,9 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
                 }
             )
         )
+        // Window minimum size is managed explicitly below, not by repeatedly
+        // measuring the scroll view as its settings content changes.
+        hostingView.sizingOptions = []
         settingsWindow.contentView = hostingView
         window = settingsWindow
         self.titleSink = titleSink
