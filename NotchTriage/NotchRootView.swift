@@ -3,6 +3,7 @@ import SwiftUI
 
 struct NotchRootView: View {
     @ObservedObject var model: AppModel
+    @ObservedObject var panelGeometry: NotchPanelGeometryModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pointerRegion = NotchPointerRegion.outside
     @State private var requestedCompactReveal: CompactWingReveal?
@@ -20,7 +21,14 @@ struct NotchRootView: View {
                 ExpandedPanelSurface(model: model)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        // AppKit owns the panel's frame. Keep SwiftUI's proposed root size
+        // aligned with the controller's target to prevent NSHostingView from
+        // feeding changing ideal sizes back into the window during layout.
+        .frame(
+            width: panelGeometry.size.width,
+            height: panelGeometry.size.height,
+            alignment: .top
+        )
         .background {
             if model.isExpanded || model.isPanelClosing {
                 // Keep the expanded window's transparent gutters hit-testable
