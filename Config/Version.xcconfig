@@ -1,0 +1,3 @@
+// The single source of truth for app release metadata.
+MARKETING_VERSION = 26.9.23.0326
+CURRENT_PROJECT_VERSION = 234

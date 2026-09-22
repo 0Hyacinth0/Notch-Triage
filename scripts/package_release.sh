@@ -3,15 +3,38 @@ set -euo pipefail
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 readonly PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd -P)"
-readonly VERSION="26.9.14.1748"
-readonly BUILD="233"
-readonly DIST_DIR="$PROJECT_DIR/dist"
-readonly DMG_PATH="$DIST_DIR/NotchTriage-${VERSION}-macOS-universal.dmg"
 
 fail() {
   printf 'error: %s\n' "$1" >&2
   exit 1
 }
+
+readonly VERSION_CONFIG="$PROJECT_DIR/Config/Version.xcconfig"
+[[ -f "$VERSION_CONFIG" ]] || fail "release version config not found: $VERSION_CONFIG"
+
+read_xcconfig_value() {
+  local key="$1"
+  local value
+  value="$(awk -F '=' -v key="$key" '
+    $1 ~ "^[[:space:]]*" key "[[:space:]]*$" {
+      value = $2
+      sub(/^[[:space:]]+/, "", value)
+      sub(/[[:space:]]+$/, "", value)
+      print value
+      matches++
+    }
+    END { if (matches != 1) exit 1 }
+  ' "$VERSION_CONFIG")" || fail "expected exactly one $key in $VERSION_CONFIG"
+  printf '%s' "$value"
+}
+
+readonly VERSION="$(read_xcconfig_value MARKETING_VERSION)"
+readonly BUILD="$(read_xcconfig_value CURRENT_PROJECT_VERSION)"
+[[ "$VERSION" =~ ^[0-9]+(\.[0-9]+)+$ ]] || fail "invalid marketing version: $VERSION"
+[[ "$BUILD" =~ ^[0-9]+$ ]] || fail "invalid build number: $BUILD"
+
+readonly DIST_DIR="$PROJECT_DIR/dist"
+readonly DMG_PATH="$DIST_DIR/NotchTriage-${VERSION}-macOS-universal.dmg"
 
 mkdir -p "$DIST_DIR"
 if [[ -e "$DMG_PATH" || -L "$DMG_PATH" ]]; then

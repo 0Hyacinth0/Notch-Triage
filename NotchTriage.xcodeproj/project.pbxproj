@@ -38,6 +38,7 @@
 /* Begin PBXFileReference section */
 		NT0000000000000000000002 /* NotchTriage.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NotchTriage.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		NT0000000000000000000051 /* NotchTriageTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NotchTriageTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		NT00000000000000000000B0 /* Version.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config/Version.xcconfig; sourceTree = "<group>"; };
 		NT00000000000000000000A0 /* Vendor/MediaRemoteAdapter/MediaRemoteAdapter.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = Vendor/MediaRemoteAdapter/MediaRemoteAdapter.framework; sourceTree = "<group>"; };
 		NT00000000000000000000A1 /* MediaRemoteAdapter */ = {isa = PBXFileReference; lastKnownFileType = folder; name = MediaRemoteAdapter; path = Vendor/MediaRemoteAdapter/MediaRemoteAdapter; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -68,6 +69,7 @@
 		NT0000000000000000000003 = {
 			isa = PBXGroup;
 			children = (
+				NT00000000000000000000B0 /* Version.xcconfig */,
 				NT0000000000000000000001 /* NotchTriage */,
 				NT0000000000000000000050 /* NotchTriageTests */,
 				NT00000000000000000000A0 /* Vendor/MediaRemoteAdapter/MediaRemoteAdapter.framework */,
@@ -220,6 +222,7 @@
 /* Begin XCBuildConfiguration section */
 		NT0000000000000000000030 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = NT00000000000000000000B0 /* Version.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -281,6 +284,7 @@
 		};
 		NT0000000000000000000031 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = NT00000000000000000000B0 /* Version.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -340,7 +344,6 @@
 				CODE_SIGN_ENTITLEMENTS = NotchTriage/NotchTriage.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 233;
 				DEVELOPMENT_TEAM = VZ99K76PMS;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -354,7 +357,6 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 26.9.14.1748;
 				PRODUCT_BUNDLE_IDENTIFIER = com.hyacinth.notchtriage.debug;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = NO;
@@ -373,7 +375,6 @@
 				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 233;
 				DEVELOPMENT_TEAM = VZ99K76PMS;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -386,7 +387,6 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 26.9.14.1748;
 				PRODUCT_BUNDLE_IDENTIFIER = com.hyacinth.notchtriage;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = NO;
