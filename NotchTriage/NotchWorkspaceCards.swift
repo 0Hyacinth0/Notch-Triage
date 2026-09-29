@@ -1,18 +1,50 @@
 import AppKit
 import SwiftUI
 
+enum NotificationClearConfirmation {
+    case notificationCenter
+    case sessionRecords
+
+    var title: String {
+        switch self {
+        case .notificationCenter:
+            return "清理 macOS 通知中心？"
+        case .sessionRecords:
+            return "清除本次横幅记录？"
+        }
+    }
+
+    var actionTitle: String {
+        switch self {
+        case .notificationCenter:
+            return "清除全部通知"
+        case .sessionRecords:
+            return "清除本次记录"
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .notificationCenter:
+            return "将尝试清除系统通知中心中可见的全部通知，并复查清除按钮是否消失。"
+        case .sessionRecords:
+            return "只清除 Notch Triage 本次运行中的来源记录，不影响 macOS 通知中心。"
+        }
+    }
+}
+
 struct NotificationInbox: View {
     @ObservedObject var model: AppModel
-    @Binding var confirmClear: Bool
+    @Binding var clearConfirmation: NotificationClearConfirmation?
 
     var body: some View {
         VStack(spacing: 0) {
-            if model.notificationSources.isEmpty {
+            if model.notificationSources.isEmpty && model.notificationCenterSources.isEmpty {
                 VStack(spacing: 9) {
                     Image(systemName: "checkmark")
                         .font(.system(size: 22, weight: .light))
                         .foregroundStyle(.secondary)
-                    Text("没有待处理通知")
+                    Text("暂无可识别通知来源")
                         .font(.system(size: 13, weight: .medium))
                     Text(LocalizedStringKey(emptyDetail))
                         .font(.caption2)
@@ -23,12 +55,20 @@ struct NotificationInbox: View {
                 .padding(.horizontal, 20)
             } else {
                 ScrollView {
-                    LazyVStack(spacing: 2) {
-                        ForEach(model.notificationSources) { source in
-                            NotificationSourceRow(source: source)
+                    VStack(alignment: .leading, spacing: 4) {
+                        if !model.notificationSources.isEmpty {
+                            sourceSection(
+                                "本次启动期间观察到的横幅",
+                                sources: model.notificationSources
+                            )
+                        }
+                        if !model.notificationCenterSources.isEmpty {
+                            sourceSection(
+                                "通知中心当前可见来源",
+                                sources: model.notificationCenterSources
+                            )
                         }
                     }
-                    .padding(6)
                 }
             }
 
@@ -46,13 +86,31 @@ struct NotificationInbox: View {
 
                 Spacer()
 
+                Button {
+                    model.openNotificationCenter()
+                } label: {
+                    Image(systemName: "bell.badge")
+                }
+                .buttonStyle(.plain)
+                .help("打开通知中心并读取可识别来源")
+                .accessibilityLabel("读取通知中心")
+
                 if !model.notificationSources.isEmpty {
-                    Button("清除全部", role: .destructive) {
-                        confirmClear = true
+                    Button {
+                        clearConfirmation = .sessionRecords
+                    } label: {
+                        Image(systemName: "trash")
                     }
                     .buttonStyle(.plain)
-                    .font(.caption2.weight(.medium))
+                    .help("清除本次横幅记录")
+                    .accessibilityLabel("清除本次横幅记录")
                 }
+
+                Button("清理通知中心…", role: .destructive) {
+                    clearConfirmation = .notificationCenter
+                }
+                .buttonStyle(.plain)
+                .font(.caption2.weight(.medium))
             }
             .padding(.horizontal, 11)
             .frame(height: 35)
@@ -62,10 +120,34 @@ struct NotificationInbox: View {
 
     private var emptyDetail: String {
         switch model.notificationHealth {
-        case .warning, .failed:
-            return "授权辅助功能后，来源会显示在这里"
+        case .warning(let message), .failed(let message):
+            if message.localizedCaseInsensitiveContains("权限") {
+                return "请在系统设置中允许 Notch Triage 使用辅助功能。"
+            }
+            return "读取失败时，可打开通知中心再重试；清理结果无法复查时，本地记录会保留。"
         default:
-            return "通知内容仍由系统通知中心保存"
+            return "打开通知中心后，这里会临时显示可识别的来源；横幅记录仅保留本次启动期间的来源。"
+        }
+    }
+
+    private func sourceSection(
+        _ title: LocalizedStringKey,
+        sources: [NotificationSource]
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 10)
+                .padding(.top, 7)
+
+            LazyVStack(spacing: 2) {
+                ForEach(sources) { source in
+                    NotificationSourceRow(source: source)
+                }
+            }
+            .padding(6)
         }
     }
 }

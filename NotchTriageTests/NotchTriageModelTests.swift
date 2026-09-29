@@ -781,6 +781,66 @@ final class NotchTriageModelTests: XCTestCase {
         )
     }
 
+    func testNotificationSourceDetectionPrefersExplicitNameForSharedBundleIdentifier() {
+        let codex = NotificationSourceCandidate(
+            name: "Codex",
+            bundleIdentifier: "com.openai.chat"
+        )
+
+        XCTAssertEqual(
+            NotificationSourceDetection.detectApplication(
+                in: ["Codex", "com.openai.chat"],
+                candidates: [codex]
+            ),
+            NotificationSourceCandidate(name: "Codex", bundleIdentifier: nil)
+        )
+    }
+
+    func testNotificationSourceDetectionUsesGenericNameForAmbiguousBundleOnlyMatch() {
+        let source = NotificationSourceDetection.detectApplication(
+            in: ["com.openai.chat"],
+            candidates: [
+                NotificationSourceCandidate(
+                    name: "Codex",
+                    bundleIdentifier: "com.openai.chat"
+                )
+            ]
+        )
+
+        XCTAssertEqual(
+            source,
+            NotificationSourceCandidate(name: "OpenAI", bundleIdentifier: "com.openai.chat")
+        )
+    }
+
+    func testClearAllAccessibilityLabelsRecognizeCommonSystemLocales() {
+        for label in ["Clear All Notifications", "全部清除", "すべて消去", "Alle löschen"] {
+            XCTAssertTrue(
+                NotificationClearAllLabelDetection.matches(label),
+                "Expected to recognize clear-all label: \(label)"
+            )
+        }
+    }
+
+    func testClearAllAccessibilityLabelsDoNotMatchSingleGroupClearButtons() {
+        XCTAssertFalse(NotificationClearAllLabelDetection.matches("Clear"))
+        XCTAssertFalse(NotificationClearAllLabelDetection.matches("Clear This Group"))
+    }
+
+    func testAutoDismissBannerPreferenceDefaultsOffAndPersistsChanges() throws {
+        let suiteName = "NotificationBannerPreferencesTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        XCTAssertFalse(NotificationBannerPreferences.restoreAutoDismissBanners(from: defaults))
+
+        NotificationBannerPreferences.saveAutoDismissBanners(true, to: defaults)
+        XCTAssertTrue(NotificationBannerPreferences.restoreAutoDismissBanners(from: defaults))
+
+        NotificationBannerPreferences.saveAutoDismissBanners(false, to: defaults)
+        XCTAssertFalse(NotificationBannerPreferences.restoreAutoDismissBanners(from: defaults))
+    }
+
     func testNotificationSourceDetectionUsesKnownAppNameAndGenericFallback() {
         XCTAssertEqual(
             NotificationSourceDetection.detect(

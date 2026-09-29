@@ -61,7 +61,7 @@ private struct ExpandedPanel: View {
 
     @ObservedObject var model: AppModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var confirmClearNotifications = false
+    @State private var notificationClearConfirmation: NotificationClearConfirmation?
     @State private var confirmEmptyTrash = false
 
     private var notificationCount: Int {
@@ -130,11 +130,36 @@ private struct ExpandedPanel: View {
             }
         }
         .confirmationDialog(
-            "清除系统通知中心中的全部通知？",
-            isPresented: $confirmClearNotifications
+            LocalizedStringKey(
+                notificationClearConfirmation?.title ?? "清理 macOS 通知中心？"
+            ),
+            isPresented: Binding(
+                get: { notificationClearConfirmation != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        notificationClearConfirmation = nil
+                    }
+                }
+            ),
+            titleVisibility: .visible
         ) {
-            Button("清除全部通知", role: .destructive) {
-                model.clearAllNotifications()
+            if let action = notificationClearConfirmation {
+                Button(LocalizedStringKey(action.actionTitle), role: .destructive) {
+                    switch action {
+                    case .notificationCenter:
+                        model.clearAllNotifications()
+                    case .sessionRecords:
+                        model.clearObservedBannerRecords()
+                    }
+                    notificationClearConfirmation = nil
+                }
+            }
+            Button("取消", role: .cancel) {
+                notificationClearConfirmation = nil
+            }
+        } message: {
+            if let action = notificationClearConfirmation {
+                Text(LocalizedStringKey(action.message))
             }
         }
         .confirmationDialog(
@@ -326,7 +351,7 @@ private struct ExpandedPanel: View {
             HStack(alignment: .top, spacing: Layout.columnSpacing) {
                 NotificationInbox(
                     model: model,
-                    confirmClear: $confirmClearNotifications
+                    clearConfirmation: $notificationClearConfirmation
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 

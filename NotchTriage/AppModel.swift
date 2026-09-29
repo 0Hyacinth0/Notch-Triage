@@ -2,6 +2,22 @@ import AppKit
 import Foundation
 import SwiftUI
 
+enum NotificationBannerPreferences {
+    static let autoDismissBannersKey = "notch.autoDismissBanners"
+    static let defaultAutoDismissBanners = false
+
+    static func restoreAutoDismissBanners(from defaults: UserDefaults) -> Bool {
+        guard defaults.object(forKey: autoDismissBannersKey) != nil else {
+            return defaultAutoDismissBanners
+        }
+        return defaults.bool(forKey: autoDismissBannersKey)
+    }
+
+    static func saveAutoDismissBanners(_ enabled: Bool, to defaults: UserDefaults) {
+        defaults.set(enabled, forKey: autoDismissBannersKey)
+    }
+}
+
 @MainActor
 final class AppModel: ObservableObject {
     enum CodexDisplayMode: String, CaseIterable, Codable, Identifiable, Sendable {
@@ -83,6 +99,7 @@ final class AppModel: ObservableObject {
         }
     }
     @Published var notificationSources: [NotificationSource] = []
+    @Published var notificationCenterSources: [NotificationSource] = []
     @Published var notificationPulse: NotificationPulse?
     @Published var trashCount: Int?
     @Published var power = PowerSnapshot.empty
@@ -161,8 +178,12 @@ final class AppModel: ObservableObject {
 
     let diagnostics = DiagnosticsStore()
 
-    @Published var autoDismissBanners = true {
+    @Published var autoDismissBanners: Bool {
         didSet {
+            NotificationBannerPreferences.saveAutoDismissBanners(
+                autoDismissBanners,
+                to: UserDefaults.standard
+            )
             notificationService.autoDismissBanners = autoDismissBanners
         }
     }
@@ -360,6 +381,9 @@ final class AppModel: ObservableObject {
 
     init() {
         let defaults = UserDefaults.standard
+        autoDismissBanners = NotificationBannerPreferences.restoreAutoDismissBanners(
+            from: defaults
+        )
         appLanguage = AppLanguage(
             rawValue: defaults.string(forKey: PreferenceKey.appLanguage) ?? ""
         ) ?? .simplifiedChinese
@@ -468,6 +492,10 @@ final class AppModel: ObservableObject {
     private lazy var notificationService = NotificationBridge(
         onSources: { [weak self] sources in
             self?.notificationSources = sources
+        },
+        onNotificationCenterSources: { [weak self] sources in
+            guard let self, self.notificationCenterSources != sources else { return }
+            self.notificationCenterSources = sources
         },
         onPulse: { [weak self] pulse in
             self?.showNotificationPulse(pulse)
@@ -746,6 +774,14 @@ final class AppModel: ObservableObject {
 
     func clearAllNotifications() {
         notificationService.clearAllNotifications()
+    }
+
+    func clearObservedBannerRecords() {
+        notificationService.clearObservedBannerRecords()
+    }
+
+    func openNotificationCenter() {
+        notificationService.openNotificationCenter()
     }
 
     func refreshCodex() {

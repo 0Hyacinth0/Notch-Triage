@@ -511,7 +511,7 @@ struct SettingsRootView: View {
 
                     SettingsRowLabel(
                         title: "自动收起横幅",
-                        subtitle: "新通知提示完成后自动恢复为紧凑状态。",
+                        subtitle: "检测到新横幅后尝试收起 macOS 通知横幅；来源记录仍保留在这里。",
                         symbol: "rectangle.compress.vertical"
                     )
                     Spacer(minLength: 0)
@@ -654,7 +654,7 @@ struct SettingsRootView: View {
                 Divider()
 
                 HStack {
-                    Text("用于读取和清理通知中心中的通知。")
+                    Text("用于读取通知中心当前可见的通知来源，并尝试清理可见通知。")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                     Spacer(minLength: 12)
@@ -673,7 +673,7 @@ struct SettingsRootView: View {
             SettingsGroup(title: "权限说明") {
                 permissionExplanation(
                     "辅助功能",
-                    "读取窗口和通知层级，并执行清理通知操作。"
+                    "读取横幅和可见通知中心来源，并通过辅助功能调用系统清理操作。"
                 )
                 Divider()
                 permissionExplanation(
