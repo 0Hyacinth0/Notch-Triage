@@ -35,6 +35,12 @@ readonly BUILD="$(read_xcconfig_value CURRENT_PROJECT_VERSION)"
 
 readonly DIST_DIR="$PROJECT_DIR/dist"
 readonly DMG_PATH="$DIST_DIR/NotchTriage-${VERSION}-macOS-universal.dmg"
+readonly SOURCE_HOME_DIRECTORY="$(/usr/bin/dscl . -read "/Users/$(/usr/bin/id -un)" NFSHomeDirectory 2>/dev/null | awk '{print $2}')"
+[[ -n "$SOURCE_HOME_DIRECTORY" ]] || fail "could not locate the source user's home directory"
+readonly SOURCE_PREFIX_MAP="${SOURCE_HOME_DIRECTORY}=/source"
+readonly OTHER_SWIFT_FLAGS_VALUE="\$(inherited) -debug-prefix-map ${SOURCE_PREFIX_MAP} -file-prefix-map ${SOURCE_PREFIX_MAP} -coverage-prefix-map ${SOURCE_PREFIX_MAP}"
+readonly OTHER_C_FLAGS_VALUE="\$(inherited) -fdebug-prefix-map=${SOURCE_PREFIX_MAP} -ffile-prefix-map=${SOURCE_PREFIX_MAP} -fcoverage-prefix-map=${SOURCE_PREFIX_MAP}"
+readonly OTHER_CPLUSPLUS_FLAGS_VALUE="\$(inherited) -fdebug-prefix-map=${SOURCE_PREFIX_MAP} -ffile-prefix-map=${SOURCE_PREFIX_MAP} -fcoverage-prefix-map=${SOURCE_PREFIX_MAP}"
 
 mkdir -p "$DIST_DIR"
 if [[ -e "$DMG_PATH" || -L "$DMG_PATH" ]]; then
@@ -66,6 +72,11 @@ printf 'Building NotchTriage %s (build %s) for arm64 and x86_64...\n' "$VERSION"
   -derivedDataPath "$DERIVED_DATA_PATH" \
   ARCHS='arm64 x86_64' \
   ONLY_ACTIVE_ARCH=NO \
+  ENABLE_CODE_COVERAGE=NO \
+  CLANG_COVERAGE_MAPPING=NO \
+  "OTHER_SWIFT_FLAGS=$OTHER_SWIFT_FLAGS_VALUE" \
+  "OTHER_CFLAGS=$OTHER_C_FLAGS_VALUE" \
+  "OTHER_CPLUSPLUSFLAGS=$OTHER_CPLUSPLUS_FLAGS_VALUE" \
   build
 
 readonly APP_SOURCE="$DERIVED_DATA_PATH/Build/Products/Release/NotchTriage.app"
@@ -96,7 +107,28 @@ normalized_architectures="$(printf '%s\n' "$ARCHITECTURES" | tr ' ' '\n' | sort 
 printf 'Validated architectures: %s.\n' "$ARCHITECTURES"
 
 codesign --verify --deep --strict --verbose=2 "$APP_SOURCE"
-printf 'Validated code signature.\n'
+readonly SIGNING_METADATA="$(codesign -d --verbose=4 "$APP_SOURCE" 2>&1)"
+readonly SIGNING_IDENTITY="$(printf '%s\n' "$SIGNING_METADATA" | sed -n 's/^Authority=//p' | head -n 1)"
+readonly SIGNING_TEAM_IDENTIFIER="$(printf '%s\n' "$SIGNING_METADATA" | sed -n 's/^TeamIdentifier=//p' | head -n 1)"
+[[ -n "$SIGNING_IDENTITY" ]] || fail "Release app does not have a certificate-based signing identity"
+[[ -n "$SIGNING_TEAM_IDENTIFIER" && "$SIGNING_TEAM_IDENTIFIER" != 'not set' ]] || fail "Release app does not have a signing team identifier"
+
+# Strip symbol-table debug entries from packaged Mach-O files, then restore the
+# existing signing identity so the updater continues to see the same Team ID.
+while IFS= read -r -d '' candidate; do
+  if [[ "$(/usr/bin/file -b "$candidate")" == *Mach-O* ]]; then
+    /usr/bin/strip -S "$candidate"
+  fi
+done < <(find "$STAGING_DIR/NotchTriage.app" -type f -print0)
+
+codesign --force --deep --sign "$SIGNING_IDENTITY" \
+  --preserve-metadata=entitlements,flags,runtime,requirements \
+  "$STAGING_DIR/NotchTriage.app"
+codesign --verify --deep --strict --verbose=2 "$STAGING_DIR/NotchTriage.app"
+readonly STAGING_SIGNING_METADATA="$(codesign -d --verbose=4 "$STAGING_DIR/NotchTriage.app" 2>&1)"
+readonly STAGING_SIGNING_TEAM_IDENTIFIER="$(printf '%s\n' "$STAGING_SIGNING_METADATA" | sed -n 's/^TeamIdentifier=//p' | head -n 1)"
+[[ "$STAGING_SIGNING_TEAM_IDENTIFIER" == "$SIGNING_TEAM_IDENTIFIER" ]] || fail "Re-signed package changed the signing team identifier"
+printf 'Validated code signature and signing team.\n'
 
 printf 'Creating %s...\n' "$DMG_PATH"
 hdiutil create \
