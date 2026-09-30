@@ -177,10 +177,7 @@ struct SettingsRootView: View {
                 Text("悬停在正在播放或电池圆环上时，会向外横向展开，显示播放快捷控制或电量与供电信息。Codex 额度圆环不受影响。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                RingHoverExpansionPreview(
-                    mediaStyle: model.ringAppearance.style(for: .media),
-                    batteryStyle: model.ringAppearance.style(for: .battery)
-                )
+                RingHoverExpansionPreview(model: model)
             }
 
             SettingsGroup(title: "圆环样式") {
@@ -364,18 +361,16 @@ struct SettingsRootView: View {
 
 
     private var notchPreview: some View {
-        HStack(spacing: 0) {
+        SettingsNotchPreview(
+            notchWidth: model.notchWidth,
+            height: min(model.menuBarHeight, 40),
+            leftWingWidth: model.leftWingContent == .hidden ? 0 : NotchLayout.compactWingSlotWidth,
+            rightWingWidth: model.rightWingContent == .hidden ? 0 : NotchLayout.compactWingSlotWidth
+        ) {
             previewRing(model.leftWingContent)
-                .frame(width: 58, height: 54)
-            RoundedRectangle(cornerRadius: 2)
-                .fill(.white.opacity(0.18))
-                .frame(width: 22, height: 3)
-                .frame(width: 130, height: 54, alignment: .bottom)
-                .padding(.bottom, 8)
+        } rightWing: {
             previewRing(model.rightWingContent)
-                .frame(width: 58, height: 54)
         }
-        .background(.black, in: UnevenRoundedRectangle(bottomLeadingRadius: 16, bottomTrailingRadius: 16))
         .frame(maxWidth: .infinity)
         .padding(.bottom, 8)
         .accessibilityLabel("刘海布局预览")
@@ -385,7 +380,7 @@ struct SettingsRootView: View {
     private func previewRing(_ content: NotchWingContent, notification: Bool = false) -> some View {
         switch content {
         case .hidden:
-            Color.clear.frame(width: 26, height: 26)
+            Color.clear.frame(width: 22, height: 22)
         case .codex:
             ZStack {
                 CodexQuotaRings(
@@ -393,20 +388,20 @@ struct SettingsRootView: View {
                     fiveHour: 0.75,
                     weekly: 0.45,
                     style: model.ringAppearance.style(for: .codex),
-                    diameter: 26
+                    diameter: 22
                 )
                 if notification { notificationPreviewIcon }
             }
         case .battery, .media:
             ZStack {
-                Circle().stroke(.white.opacity(0.15), lineWidth: 3)
-                Circle().trim(from: 0, to: 0.75)
-                    .stroke(model.ringAppearance.style(for: content == .battery ? .battery : .media).shapeStyle,
-                            style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
+                UsageArc(
+                    progress: content == .battery ? 0.86 : 0.75,
+                    style: model.ringAppearance.style(for: content == .battery ? .battery : .media),
+                    lineWidth: 3.2
+                )
                 if notification { notificationPreviewIcon }
             }
-            .frame(width: 26, height: 26)
+            .frame(width: 22, height: 22)
         }
     }
 

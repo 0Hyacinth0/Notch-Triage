@@ -354,6 +354,7 @@
 "媒体与电池圆环横向展开" = "Expand Media and Battery Rings Horizontally";
 "悬停在正在播放或电池圆环上时，会向外横向展开，显示播放快捷控制或电量与供电信息。Codex 额度圆环不受影响。" = "Hover over the Now Playing or battery ring to expand it outward and show playback controls or battery and power details. Codex quota rings are not affected.";
 "悬停效果预览" = "Hover Effect Preview";
+"演示布局：左侧正在播放，右侧电池。" = "Demo layout: Now Playing on the left, battery on the right.";
 "正在播放与电池圆环横向展开效果预览" = "Preview of Now Playing and battery rings expanding horizontally";
 "正在充电 · 32 W" = "Charging · 32 W";
 "重置布局" = "Reset Layout";

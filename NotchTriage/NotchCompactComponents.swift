@@ -126,6 +126,29 @@ struct CompactMediaTransportControls: View {
     let isRevealed: Bool
     let reduceMotion: Bool
 
+    var body: some View {
+        CompactMediaTransportSurface(
+            side: side,
+            isRevealed: isRevealed,
+            reduceMotion: reduceMotion
+        ) { command in
+            CompactMediaTransportButton(
+                model: model,
+                snapshot: snapshot,
+                command: command
+            )
+        }
+    }
+}
+
+// The live controls and settings demonstration share their geometry and
+// animation. Only the live wrapper sends commands to the media source.
+struct CompactMediaTransportSurface<Control: View>: View {
+    let side: NotchWingSide
+    let isRevealed: Bool
+    let reduceMotion: Bool
+    @ViewBuilder var control: (MediaCommand) -> Control
+
     private var commands: [MediaCommand] {
         switch side {
         case .left:
@@ -147,11 +170,7 @@ struct CompactMediaTransportControls: View {
 
             HStack(spacing: 8) {
                 ForEach(Array(commands.enumerated()), id: \.element.rawValue) { index, command in
-                    CompactMediaTransportButton(
-                        model: model,
-                        snapshot: snapshot,
-                        command: command
-                    )
+                    control(command)
                     .opacity(isRevealed ? 1 : 0)
                     .scaleEffect(isRevealed ? 1 : 0.82)
                     .offset(
@@ -265,13 +284,6 @@ private struct CompactMediaTransportButton: View {
         model.mediaCommandInFlight == command
     }
 
-    private var imageName: String {
-        if command == .togglePlayPause {
-            return snapshot.isPlaying ? "pause.fill" : "play.fill"
-        }
-        return command.systemImage
-    }
-
     private var helpText: String {
         let title = model.localized(command.title)
         if let reason = model.mediaCommandAvailability.disabledReason(for: command) {
@@ -280,50 +292,16 @@ private struct CompactMediaTransportButton: View {
         return title
     }
 
-    private var diameter: CGFloat {
-        command == .togglePlayPause ? 30 : 28
-    }
-
     var body: some View {
         Button {
             model.sendMediaCommand(command)
         } label: {
-            ZStack {
-                if command == .togglePlayPause {
-                    Circle()
-                        .fill(.white.opacity(0.045))
-                }
-
-                if command == .togglePlayPause, !isSending {
-                    MediaProgressRing(
-                        snapshot: snapshot,
-                        style: model.ringAppearance.style(for: .media),
-                        diameter: 30,
-                        lineWidth: 2.5
-                    )
-                }
-
-                if isSending {
-                    ProgressView()
-                        .controlSize(.mini)
-                        .tint(.white)
-                } else {
-                    Image(systemName: imageName)
-                        .font(
-                            .system(
-                                size: command == .togglePlayPause ? 11.5 : 11,
-                                weight: .semibold
-                            )
-                        )
-                        .foregroundStyle(
-                            .white.opacity(
-                                command == .togglePlayPause ? 1 : 0.86
-                            )
-                        )
-                }
-            }
-            .frame(width: diameter, height: diameter)
-            .contentShape(Circle())
+            CompactMediaTransportLabel(
+                snapshot: snapshot,
+                style: model.ringAppearance.style(for: .media),
+                command: command,
+                isSending: isSending
+            )
         }
         .buttonStyle(CompactMediaTransportButtonStyle())
         .disabled(!isEnabled)
@@ -333,6 +311,57 @@ private struct CompactMediaTransportButton: View {
         .accessibilityValue(
             model.localized(isSending ? "正在发送" : (isEnabled ? "可用" : "不可用"))
         )
+    }
+}
+
+struct CompactMediaTransportLabel: View {
+    let snapshot: MediaSnapshot
+    let style: RingStyle
+    let command: MediaCommand
+    var isSending = false
+
+    private var imageName: String {
+        command == .togglePlayPause
+            ? (snapshot.isPlaying ? "pause.fill" : "play.fill")
+            : command.systemImage
+    }
+
+    var body: some View {
+        ZStack {
+            if command == .togglePlayPause {
+                Circle()
+                    .fill(.white.opacity(0.045))
+            }
+
+            if command == .togglePlayPause, !isSending {
+                MediaProgressRing(
+                    snapshot: snapshot,
+                    style: style,
+                    diameter: 30,
+                    lineWidth: 2.5
+                )
+            }
+
+            if isSending {
+                ProgressView()
+                    .controlSize(.mini)
+                    .tint(.white)
+            } else {
+                Image(systemName: imageName)
+                    .font(.system(
+                        size: command == .togglePlayPause ? 11.5 : 11,
+                        weight: .semibold
+                    ))
+                    .foregroundStyle(.white.opacity(
+                        command == .togglePlayPause ? 1 : 0.86
+                    ))
+            }
+        }
+        .frame(
+            width: command == .togglePlayPause ? 30 : 28,
+            height: command == .togglePlayPause ? 30 : 28
+        )
+        .contentShape(Circle())
     }
 }
 
