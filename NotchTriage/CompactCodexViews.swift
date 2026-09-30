@@ -61,7 +61,7 @@ struct CodexBalancePresentation: Equatable {
         case .unlimited:
             return "credits 无上限"
         case .unavailable:
-            return "账户未启用 credits"
+            return "当前没有可用 credits"
         case .unknown:
             return "credits 暂未返回"
         case .available(_, let value):
@@ -193,19 +193,16 @@ struct CompactCodexContent: View {
     let style: RingStyle
 
     private var fiveHour: CodexLimitBucket? {
-        AppModel.fiveHourCodexLimit(from: limits)
+        AppModel.fiveHourCodexLimit(from: model.aiUsage.selectedSnapshot?.limits ?? [])
     }
 
     private var weekly: CodexLimitBucket? {
-        AppModel.weeklyCodexLimit(from: limits)
+        AppModel.weeklyCodexLimit(from: model.aiUsage.selectedSnapshot?.limits ?? [])
     }
 
-    private var balance: CodexBalancePresentation {
-        CodexBalancePresentation(
-            credits: model.codexCredits,
-            healthMessage: health.message
-        )
-    }
+    private var balance: (main: String, detail: String, hint: String) { model.aiUsage.selectedValue }
+    private var valueLabel: String { model.aiUsage.selected.name + "，" + balance.main + "，" + balance.detail }
+
 
     var body: some View {
         AttentionRing(
@@ -223,12 +220,12 @@ struct CompactCodexContent: View {
             case .balance:
                 ZStack {
                     UsageArc(
-                        progress: 1,
+                        progress: model.aiUsage.selectedHasValue ? 1 : 0,
                         style: style,
                         lineWidth: 3.2
                     )
 
-                    Image(systemName: "dollarsign")
+                    Image(systemName: model.aiUsage.selectedSymbol)
                         .font(.system(size: 9.5, weight: .bold, design: .rounded))
                 }
             }
@@ -248,7 +245,7 @@ struct CompactCodexContent: View {
         case .weekly:
             return quotaLabel(separator: " · ")
         case .balance:
-            return balance.accessibilityLabel + " · " + balance.hint
+            return valueLabel + " · " + balance.hint
         }
     }
 
@@ -257,7 +254,7 @@ struct CompactCodexContent: View {
         case .weekly:
             return quotaLabel(separator: "，")
         case .balance:
-            return balance.accessibilityLabel
+            return valueLabel
         }
     }
 
@@ -272,9 +269,9 @@ struct CompactCodexContent: View {
         ].compactMap { $0 }
 
         guard !labels.isEmpty else {
-            return "ChatGPT 与 Codex 限额" + separator + health.message
+            return model.aiUsage.selected.provider.title + separator + model.aiQuotaMessage
         }
-        return "ChatGPT 与 Codex " + labels.joined(separator: separator)
+        return model.aiUsage.selected.provider.title + " " + labels.joined(separator: separator) + (model.aiUsage.isStale(model.aiUsage.selected) ? separator + "上次数据 · 可能已过期" : "")
     }
 
 }

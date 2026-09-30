@@ -83,6 +83,7 @@ struct RingHoverExpansionPreview: View {
     private var slotWidth: CGFloat { NotchLayout.compactWingSlotWidth }
 
     var body: some View {
+        let halfNotchWidth = model.notchWidth / 2
         VStack(alignment: .leading, spacing: 10) {
             Text("悬停效果预览")
                 .font(.caption.weight(.medium))
@@ -142,7 +143,7 @@ struct RingHoverExpansionPreview: View {
                     .fixedSize(horizontal: true, vertical: false)
                     .frame(height: height)
                     .alignmentGuide(HorizontalAlignment.center) { _ in
-                        -model.notchWidth / 2
+                        -halfNotchWidth
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)

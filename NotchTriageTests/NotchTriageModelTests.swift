@@ -268,7 +268,7 @@ final class NotchTriageModelTests: XCTestCase {
         )
         XCTAssertEqual(unavailable.state, .unavailable)
         XCTAssertEqual(unavailable.estimatedUSDLabel, "不可用")
-        XCTAssertEqual(unavailable.creditsLabel, "账户未启用 credits")
+        XCTAssertEqual(unavailable.creditsLabel, "当前没有可用 credits")
 
         let unknown = CodexBalancePresentation(
             credits: CodexCreditsBalance(

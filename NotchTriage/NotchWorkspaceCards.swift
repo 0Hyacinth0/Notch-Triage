@@ -193,7 +193,7 @@ struct CodexUsageCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack {
-                Text("Codex")
+                Text(model.aiUsage.selected.provider.title)
                     .font(.system(size: 12.5, weight: .semibold))
                 Spacer()
                 Button {
@@ -207,8 +207,8 @@ struct CodexUsageCard: View {
             }
 
             Picker("Codex 显示", selection: $model.codexDisplayMode) {
-                Text("限额").tag(AppModel.CodexDisplayMode.weekly)
-                Text("余额").tag(AppModel.CodexDisplayMode.balance)
+                Text("套餐额度").tag(AppModel.CodexDisplayMode.weekly)
+                Text("余额 / 消费").tag(AppModel.CodexDisplayMode.balance)
             }
             .labelsHidden()
             .pickerStyle(.segmented)
@@ -222,15 +222,25 @@ struct CodexUsageCard: View {
                     balanceContent
                 }
             }
+            HStack(spacing: 4) {
+                StatusDot(health: model.aiUsage.selectedHealth)
+                Text(LocalizedStringKey(model.aiUsage.isStale(model.aiUsage.selected) ? "上次数据 · 可能已过期" : model.aiUsage.selectedHealth.message))
+                    .font(.system(size: 8.5)).foregroundStyle(.secondary).lineLimit(2)
+            }
         }
         .padding(12)
         .frame(maxWidth: .infinity, minHeight: 154, alignment: .topLeading)
         .panelGroupSurface()
     }
 
+    @ViewBuilder
     private var limitsContent: some View {
+        if fiveHour == nil {
+            Text(LocalizedStringKey(model.aiQuotaMessage)).font(.caption).foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, minHeight: 60)
+        } else {
         HStack(spacing: 8) {
-            quotaColumn(title: "5 小时", bucket: fiveHour)
+            quotaColumn(title: fiveHour?.windowLabel ?? "额度", bucket: fiveHour)
 
             if let weekly, weekly.id != fiveHour?.id {
                 Divider()
@@ -241,6 +251,7 @@ struct CodexUsageCard: View {
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(quotaAccessibilityLabel)
+        }
     }
 
     private func quotaColumn(
@@ -280,7 +291,7 @@ struct CodexUsageCard: View {
                     .fill(.tint.opacity(0.14))
                 Circle()
                     .stroke(.tint.opacity(0.42), lineWidth: 1)
-                Image(systemName: "dollarsign")
+                Image(systemName: model.aiUsage.selectedSymbol)
                     .font(.system(size: 17, weight: .semibold, design: .rounded))
                     .foregroundStyle(.tint)
             }
@@ -304,14 +315,11 @@ struct CodexUsageCard: View {
             }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Codex credits 余额，\(estimatedUSDLabel)，\(creditsLabel)")
+        .accessibilityLabel(model.aiUsage.selected.name + "，\(estimatedUSDLabel)，\(creditsLabel)")
     }
 
-    private var balancePresentation: CodexBalancePresentation {
-        CodexBalancePresentation(
-            credits: model.codexCredits,
-            healthMessage: model.codexHealth.message
-        )
+    private var balancePresentation: (main: String, detail: String, hint: String) {
+        model.aiUsage.selectedValue
     }
 
     private func percentLabel(for bucket: CodexLimitBucket?) -> String {
@@ -320,7 +328,7 @@ struct CodexUsageCard: View {
     }
 
     private func resetLabel(for bucket: CodexLimitBucket?) -> String {
-        guard let reset = bucket?.resetsAt else { return "正在连接" }
+        guard let reset = bucket?.resetsAt else { return "暂无数据" }
         return reset.formatted(date: .omitted, time: .shortened)
             + " "
             + model.localized("重置")
@@ -334,11 +342,11 @@ struct CodexUsageCard: View {
     }
 
     private var estimatedUSDLabel: String {
-        balancePresentation.estimatedUSDLabel
+        balancePresentation.main
     }
 
     private var creditsLabel: String {
-        balancePresentation.creditsLabel
+        balancePresentation.detail
     }
 
     private var balanceHint: String {

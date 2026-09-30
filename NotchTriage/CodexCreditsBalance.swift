@@ -43,10 +43,7 @@ struct CodexCreditsBalance: Equatable {
             let normalized = resolvedBalance.trimmingCharacters(
                 in: .whitespacesAndNewlines
             )
-            let parsed = Decimal(
-                string: normalized,
-                locale: Locale(identifier: "en_US_POSIX")
-            )
+            let parsed = AIUsageNumber.decimal(normalized).flatMap { $0 >= 0 ? $0 : nil }
             credits = parsed
             estimatedUSD = parsed.map { $0 / Self.creditsPerUSD }
         } else {
@@ -89,8 +86,7 @@ enum CodexUsageParser {
     ) -> CodexUsageSnapshot? {
         if let result = message["result"] as? [String: Any],
            containsRateLimits(in: result) {
-            // A complete read is authoritative when it includes a credits
-            // object, so an explicit null balance can clear an old snapshot.
+            // A complete read is authoritative even if it omits credits.
             // (A sparse updated notification uses the preserving path below.)
             return parsePayload(
                 result,
@@ -207,11 +203,13 @@ enum CodexUsageParser {
         name: String
     ) -> CodexLimitBucket? {
         guard let usedPercent = number(raw["usedPercent"]),
-              let windowMinutesDouble = number(raw["windowDurationMins"]) else {
+              let windowMinutesDouble = number(raw["windowDurationMins"]),
+              usedPercent.isFinite, windowMinutesDouble.isFinite,
+              windowMinutesDouble >= 1, windowMinutesDouble <= 525_600 else {
             return nil
         }
 
-        let resetDate = number(raw["resetsAt"]).map {
+        let resetDate = number(raw["resetsAt"]).flatMap { $0.isFinite && abs($0) < 1e12 ? $0 : nil }.map {
             Date(timeIntervalSince1970: $0)
         }
 
@@ -261,9 +259,8 @@ enum CodexUsageParser {
             }
         }
 
-        // Missing or null credits are intentionally non-destructive for sparse
-        // updates (and for older servers that do not expose credits yet).
-        return previous
+        // Only sparse updates may retain previous credits. Complete reads clear them.
+        return preservePreviousBalance ? previous : nil
     }
 
     private static func makeCredits(

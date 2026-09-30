@@ -7,6 +7,7 @@ struct SettingsRootView: View {
     private enum Destination: String, Hashable {
         case appearance
         case behavior
+        case aiUsage
         case permissions
         case updates
         case diagnostics
@@ -16,6 +17,7 @@ struct SettingsRootView: View {
             switch self {
             case .appearance: return "外观"
             case .behavior: return "通用"
+            case .aiUsage: return "AI 套餐用量"
             case .permissions: return "权限"
             case .updates: return "更新"
             case .diagnostics: return "诊断"
@@ -41,6 +43,7 @@ struct SettingsRootView: View {
             List(selection: selectionBinding) {
                 Section("Notch Triage") {
                     sidebarItem("外观", symbol: "rectangle.on.rectangle", destination: .appearance)
+                    sidebarItem("AI 套餐用量", symbol: "gauge.with.dots.needle.67percent", destination: .aiUsage)
                     sidebarItem("通用", symbol: "slider.horizontal.3", destination: .behavior)
                     sidebarItem("权限", symbol: "lock.shield", destination: .permissions)
                     sidebarItem("更新", symbol: "arrow.trianglehead.2.clockwise.rotate.90", destination: .updates)
@@ -128,6 +131,8 @@ struct SettingsRootView: View {
         switch currentDestination {
         case .appearance:
             appearancePage
+        case .aiUsage:
+            AIUsageSettingsView(model: model)
         case .behavior:
             behaviorPage
         case .permissions:
@@ -174,7 +179,7 @@ struct SettingsRootView: View {
                     "媒体与电池圆环横向展开",
                     isOn: $model.compactRingHoverExpansionEnabled
                 )
-                Text("悬停在正在播放或电池圆环上时，会向外横向展开，显示播放快捷控制或电量与供电信息。Codex 额度圆环不受影响。")
+                Text("悬停在正在播放或电池圆环上时，会向外横向展开，显示播放快捷控制或电量与供电信息。AI 用量圆环不受影响。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 RingHoverExpansionPreview(model: model)
@@ -210,35 +215,8 @@ struct SettingsRootView: View {
                         .accessibilityAddTraits(model.ringAppearance.theme == theme ? .isSelected : [])
                     }
                 }
-                if model.leftWingContent == .codex || model.rightWingContent == .codex {
-                    DisclosureGroup("Codex 额度圆环") {
-                Picker("圆环布局", selection: $model.codexRingLayout) {
-                    ForEach(CodexRingLayout.allCases) { layout in
-                        Text(model.localized(layout.title)).tag(layout)
-                    }
-                }
-                .pickerStyle(.segmented)
-
-                HStack(spacing: 16) {
-                    CodexQuotaRings(
-                        layout: model.codexRingLayout,
-                        fiveHour: 0.75,
-                        weekly: 0.45,
-                        style: model.ringAppearance.style(for: .codex)
-                    )
-                    .padding(14)
-                    .background(.black, in: RoundedRectangle(cornerRadius: 12))
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(model.localized(model.codexRingLayout.legend))
-                        Text("预览：5h 剩余 75% · 周额度剩余 45%")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-                Text("仅影响限额圆环；悬停可查看精确数值。")
-                    .font(.caption).foregroundStyle(.secondary)
-
-                    }
-                }
+                Button("配置 AI 套餐用量与额度圆环…") { selectedPane = Destination.aiUsage.rawValue }
+                    .buttonStyle(.borderless)
                 DisclosureGroup("单独调整颜色") {
                     AdvancedRingAppearanceView(model: model)
                         .padding(.top, 8)
@@ -802,7 +780,7 @@ struct SettingsRootView: View {
                              : "版本 v\(model.currentVersion)")
                             .font(.callout)
                             .foregroundStyle(.secondary)
-                        Text("Codex · 媒体 · 电源 · 通知 · 系统 HUD")
+                        Text("AI 套餐用量 · 媒体 · 电源 · 通知 · 系统 HUD")
                             .font(.caption)
                             .foregroundStyle(.tertiary)
                     }

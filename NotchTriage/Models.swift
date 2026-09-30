@@ -49,7 +49,7 @@ enum RingMetric: String, CaseIterable, Codable, Identifiable, Sendable {
     var title: String {
         switch self {
         case .battery: return "电池"
-        case .codex: return "ChatGPT / Codex 额度"
+        case .codex: return "AI 套餐用量"
         case .media: return "正在播放"
         }
     }
@@ -468,7 +468,7 @@ enum NotchWingContent: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .battery: return "电池状态"
-        case .codex: return "ChatGPT / Codex 额度"
+        case .codex: return "AI 套餐用量"
         case .media: return "正在播放"
         case .hidden: return "不显示"
         }

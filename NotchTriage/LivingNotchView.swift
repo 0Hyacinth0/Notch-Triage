@@ -350,7 +350,7 @@ struct LivingNotch: View {
 
                 VStack(alignment: side == .left ? .leading : .trailing, spacing: 0) {
                     if let fiveHour = model.fiveHourCodexLimit {
-                        Text("5h \(Int(fiveHour.remainingPercent.rounded()))%")
+                        Text("\(fiveHour.windowLabel) \(Int(fiveHour.remainingPercent.rounded()))%")
                             .font(.system(size: 9.5, weight: .bold, design: .rounded))
                             .monospacedDigit()
                             .lineLimit(1)
@@ -376,7 +376,7 @@ struct LivingNotch: View {
                 if side == .left {
                     hoverCodexFallbackIcon
                 }
-                Text("正在连接")
+                Text(LocalizedStringKey(model.aiQuotaMessage))
                     .font(.system(size: 9, weight: .medium))
                     .foregroundStyle(.white.opacity(0.48))
                 if side == .right {
@@ -387,10 +387,8 @@ struct LivingNotch: View {
     }
 
     private func hoverBalanceCodexStatus(side: NotchWingSide) -> some View {
-        let balance = CodexBalancePresentation(
-            credits: model.codexCredits,
-            healthMessage: model.codexHealth.message
-        )
+        let balance = model.aiUsage.selectedValue
+        let valueLabel = model.aiUsage.selected.name + "，" + balance.main + "，" + balance.detail
 
         return HStack(spacing: 7) {
             if side == .left {
@@ -398,13 +396,13 @@ struct LivingNotch: View {
             }
 
             VStack(alignment: side == .left ? .leading : .trailing, spacing: 0) {
-                Text(LocalizedStringKey(balance.estimatedUSDLabel))
+                Text(LocalizedStringKey(balance.main))
                     .font(.system(size: 10.5, weight: .bold, design: .rounded))
                     .monospacedDigit()
                     .lineLimit(1)
                     .minimumScaleFactor(0.72)
                     .contentTransition(.numericText())
-                Text(LocalizedStringKey(balance.creditsLabel))
+                Text(LocalizedStringKey(balance.detail))
                     .font(.system(size: 8.5, weight: .medium))
                     .foregroundStyle(.white.opacity(0.48))
                     .lineLimit(1)
@@ -415,9 +413,9 @@ struct LivingNotch: View {
                 hoverCodexBalanceRing
             }
         }
-        .help(balance.accessibilityLabel)
+        .help(valueLabel)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(balance.accessibilityLabel)
+        .accessibilityLabel(valueLabel)
     }
 
     private var hoverMediaRing: some View {
@@ -470,12 +468,12 @@ struct LivingNotch: View {
         ) {
             ZStack {
                 UsageArc(
-                    progress: 1,
+                    progress: model.aiUsage.selectedHasValue ? 1 : 0,
                     style: model.ringAppearance.style(for: .codex),
                     lineWidth: 2.6
                 )
 
-                Image(systemName: "dollarsign")
+                Image(systemName: model.aiUsage.selectedSymbol)
                     .font(.system(size: 9, weight: .bold, design: .rounded))
             }
         }

@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Foundation
 import SwiftUI
 
@@ -84,6 +85,11 @@ final class AppModel: ObservableObject {
     @Published var notchWidth: CGFloat = 186
     @Published var media = MediaSnapshot.idle
     @Published private(set) var mediaCommandInFlight: MediaCommand? = nil
+    let aiUsage = AIUsageStore()
+    @Published private(set) var codexExecutablePath = ""
+    @Published private(set) var codexClientVersion: String?
+    private var aiUsageObservation: AnyCancellable?
+
     @Published var codexLimits: [CodexLimitBucket] = []
     @Published var codexCredits: CodexCreditsBalance? = nil
     @Published var codexRingLayout: CodexRingLayout {
@@ -217,18 +223,23 @@ final class AppModel: ObservableObject {
 
     /// The one-week rolling bucket, falling back to the largest available
     /// window when the server does not expose exactly 10,080 minutes.
+    var aiQuotaMessage: String {
+        if aiUsage.selectedSnapshot != nil, aiUsage.selectedSnapshot?.limits.isEmpty == true { return "此连接未提供套餐额度，可选择余额 / 消费" }
+        return aiUsage.selectedHealth.message
+    }
+
     var weeklyCodexLimit: CodexLimitBucket? {
-        Self.weeklyCodexLimit(from: codexLimits)
+        Self.weeklyCodexLimit(from: aiUsage.selectedSnapshot?.limits ?? [])
     }
 
     /// The five-hour rolling bucket, falling back to the shortest available
     /// window when the server does not expose exactly 300 minutes.
     var fiveHourCodexLimit: CodexLimitBucket? {
-        Self.fiveHourCodexLimit(from: codexLimits)
+        Self.fiveHourCodexLimit(from: aiUsage.selectedSnapshot?.limits ?? [])
     }
 
     var codexQuotaLimits: [CodexLimitBucket] {
-        Self.codexQuotaLimits(from: codexLimits)
+        Self.codexQuotaLimits(from: aiUsage.selectedSnapshot?.limits ?? [])
     }
 
     nonisolated static func fiveHourCodexLimit(
@@ -467,6 +478,7 @@ final class AppModel: ObservableObject {
             persistedLevel: defaults.object(forKey: PreferenceKey.liquidGlassLevel),
             legacyStyle: defaults.string(forKey: PreferenceKey.legacyLiquidGlassStyle)
         ).level
+        aiUsageObservation = aiUsage.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
         notificationAnimationTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(1_200))
@@ -477,18 +489,28 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private lazy var codexService = CodexUsageService(
-        onUsage: { [weak self] limits, credits in
-            self?.codexLimits = limits
-            self?.codexCredits = credits
-            self?.applyHealth(.ready(
-                limits.isEmpty ? "当前没有返回限额桶" : "已读取 \(limits.count) 个动态限额桶"
-            ), to: .codex)
-        },
-        onHealth: { [weak self] health in
-            self?.applyHealth(health, to: .codex)
+    private lazy var codexService: CodexUsageService = {
+        let service = CodexUsageService(
+            onUsage: { [weak self] limits, credits in
+                self?.codexLimits = limits
+                self?.codexCredits = credits
+                self?.aiUsage.acceptCodex(limits: limits, credits: credits)
+            },
+            onHealth: { [weak self] health in
+                self?.aiUsage.updateCodexHealth(health)
+                self?.applyHealth(health, to: .codex)
+            }
+        )
+        service.onConnection = { [weak self] path, version in
+            self?.codexExecutablePath = path
+            self?.codexClientVersion = version
         }
-    )
+        service.onAccountChanged = { [weak self] in
+            self?.codexLimits = []; self?.codexCredits = nil
+            self?.aiUsage.invalidateCodex()
+        }
+        return service
+    }()
 
     private lazy var mediaService = MediaService(
         onSnapshot: { [weak self] snapshot in
@@ -597,7 +619,10 @@ final class AppModel: ObservableObject {
             id: .codex,
             compactInterval: 60,
             interactiveInterval: 60,
-            action: { [weak self] in self?.codexService.refresh() }
+            action: { [weak self] in
+                self?.codexService.refresh()
+                self?.aiUsage.refreshAll()
+            }
         ),
         .init(
             id: .brightness,
@@ -623,6 +648,7 @@ final class AppModel: ObservableObject {
     func start() {
         areApplicationServicesRunning = true
         codexService.start()
+        aiUsage.refreshAll()
         mediaService.start()
         notificationService.autoDismissBanners = autoDismissBanners
         notificationService.start(promptForAccessibility: true)
@@ -668,6 +694,7 @@ final class AppModel: ObservableObject {
         pendingFileDropSessionID = nil
         accessibilityRequestTask?.cancel()
         codexService.stop()
+        aiUsage.stop()
         mediaService.stop()
         notificationService.stop()
         trashService.stop()
@@ -798,8 +825,11 @@ final class AppModel: ObservableObject {
     }
 
     func refreshCodex() {
-        codexService.refresh()
+        if aiUsage.selected.provider == .codex { codexService.refresh() }
+        else { aiUsage.refresh(aiUsage.selected) }
     }
+
+    func reconnectCodex() { codexService.reconnect() }
 
     func sendMediaCommand(_ command: MediaCommand) {
         guard mediaCommandAvailability.isEnabled(for: command) else { return }

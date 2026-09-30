@@ -32,3 +32,10 @@ dist/
 .env.*
 !.env.example
 *.log
+
+# Local documentation, screenshots, audits and credentials
+/docs/
+/audits/
+*.local.json
+*.pem
+*.key

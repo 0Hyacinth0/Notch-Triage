@@ -1,6 +1,16 @@
 import SwiftUI
 
 @main
+enum NotchTriageMain {
+    static func main() {
+        let arguments = CommandLine.arguments
+        if arguments.count == 3, arguments[1] == "--claude-statusline" {
+            exit(ClaudeStatuslineRunner.run(configurationURL: URL(fileURLWithPath: arguments[2])))
+        }
+        NotchTriageApp.main()
+    }
+}
+
 struct NotchTriageApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @AppStorage("notch.appLanguage") private var appLanguageRawValue =
