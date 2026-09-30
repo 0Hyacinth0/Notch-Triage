@@ -350,6 +350,12 @@
 "通用" = "General";
 "选择刘海内容、圆环配色和展开面板的材质。" = "Choose notch content, ring colors, and the expanded panel material.";
 "刘海布局" = "Notch Layout";
+"圆环悬停展开" = "Ring Hover Expansion";
+"媒体与电池圆环横向展开" = "Expand Media and Battery Rings Horizontally";
+"悬停在正在播放或电池圆环上时，会向外横向展开，显示播放快捷控制或电量与供电信息。Codex 额度圆环不受影响。" = "Hover over the Now Playing or battery ring to expand it outward and show playback controls or battery and power details. Codex quota rings are not affected.";
+"悬停效果预览" = "Hover Effect Preview";
+"正在播放与电池圆环横向展开效果预览" = "Preview of Now Playing and battery rings expanding horizontally";
+"正在充电 · 32 W" = "Charging · 32 W";
 "重置布局" = "Reset Layout";
 "圆环样式" = "Ring Style";
 "单独调整颜色" = "Customize Individual Colors";

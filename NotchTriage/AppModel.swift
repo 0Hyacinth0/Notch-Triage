@@ -38,6 +38,7 @@ final class AppModel: ObservableObject {
         static let appLanguage = "notch.appLanguage"
         static let leftWingContent = "notch.leftWingContent"
         static let rightWingContent = "notch.rightWingContent"
+        static let compactRingHoverExpansionEnabled = "notch.compactRingHoverExpansionEnabled"
         static let ringAppearance = "notch.ringAppearance"
         static let liquidGlassLevel = "notch.liquidGlassLevel.v2"
         static let legacyLiquidGlassStyle = "notch.liquidGlassStyle"
@@ -125,6 +126,15 @@ final class AppModel: ObservableObject {
             UserDefaults.standard.set(
                 rightWingContent.rawValue,
                 forKey: PreferenceKey.rightWingContent
+            )
+        }
+    }
+
+    @Published var compactRingHoverExpansionEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(
+                compactRingHoverExpansionEnabled,
+                forKey: PreferenceKey.compactRingHoverExpansionEnabled
             )
         }
     }
@@ -412,6 +422,9 @@ final class AppModel: ObservableObject {
                 forKey: PreferenceKey.rightWingContent
             ) ?? ""
         ) ?? .codex
+        compactRingHoverExpansionEnabled = defaults.object(
+            forKey: PreferenceKey.compactRingHoverExpansionEnabled
+        ) as? Bool ?? true
         codexRingLayout = .restored(from: defaults.string(forKey: PreferenceKey.codexRingLayout))
         codexDisplayMode = CodexDisplayMode(
             rawValue: defaults.string(

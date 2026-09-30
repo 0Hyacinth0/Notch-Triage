@@ -169,6 +169,20 @@ struct SettingsRootView: View {
                     .buttonStyle(.borderless)
             }
 
+            SettingsGroup(title: "圆环悬停展开") {
+                Toggle(
+                    "媒体与电池圆环横向展开",
+                    isOn: $model.compactRingHoverExpansionEnabled
+                )
+                Text("悬停在正在播放或电池圆环上时，会向外横向展开，显示播放快捷控制或电量与供电信息。Codex 额度圆环不受影响。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                RingHoverExpansionPreview(
+                    mediaStyle: model.ringAppearance.style(for: .media),
+                    batteryStyle: model.ringAppearance.style(for: .battery)
+                )
+            }
+
             SettingsGroup(title: "圆环样式") {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 100))], spacing: 8) {
                     ForEach(RingTheme.allCases) { theme in
@@ -352,14 +366,14 @@ struct SettingsRootView: View {
     private var notchPreview: some View {
         HStack(spacing: 0) {
             previewRing(model.leftWingContent)
-                .frame(width: 58)
+                .frame(width: 58, height: 54)
             RoundedRectangle(cornerRadius: 2)
                 .fill(.white.opacity(0.18))
                 .frame(width: 22, height: 3)
                 .frame(width: 130, height: 54, alignment: .bottom)
                 .padding(.bottom, 8)
             previewRing(model.rightWingContent)
-                .frame(width: 58)
+                .frame(width: 58, height: 54)
         }
         .background(.black, in: UnevenRoundedRectangle(bottomLeadingRadius: 16, bottomTrailingRadius: 16))
         .frame(maxWidth: .infinity)
@@ -374,8 +388,13 @@ struct SettingsRootView: View {
             Color.clear.frame(width: 26, height: 26)
         case .codex:
             ZStack {
-                CodexQuotaRings(layout: model.codexRingLayout, fiveHour: 0.75, weekly: 0.45,
-                    style: model.ringAppearance.style(for: .codex))
+                CodexQuotaRings(
+                    layout: model.codexRingLayout,
+                    fiveHour: 0.75,
+                    weekly: 0.45,
+                    style: model.ringAppearance.style(for: .codex),
+                    diameter: 26
+                )
                 if notification { notificationPreviewIcon }
             }
         case .battery, .media:

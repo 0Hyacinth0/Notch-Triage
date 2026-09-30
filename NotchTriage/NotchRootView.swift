@@ -125,6 +125,7 @@ struct NotchRootView: View {
               !model.isHoveringNotch,
               model.systemHUD == nil,
               !model.panelState.isPresentingFileDropTarget,
+              model.compactRingHoverExpansionEnabled,
               let reveal = requestedCompactReveal else {
             return nil
         }
