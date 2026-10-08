@@ -86,6 +86,7 @@ final class AppModel: ObservableObject {
     @Published var media = MediaSnapshot.idle
     @Published private(set) var mediaCommandInFlight: MediaCommand? = nil
     let aiUsage = AIUsageStore()
+    let lyrics = LyricsStore()
     @Published private(set) var codexExecutablePath = ""
     @Published private(set) var codexClientVersion: String?
     private var aiUsageObservation: AnyCancellable?
@@ -515,6 +516,7 @@ final class AppModel: ObservableObject {
     private lazy var mediaService = MediaService(
         onSnapshot: { [weak self] snapshot in
             self?.media = snapshot
+            self?.lyrics.receive(snapshot)
             self?.applyHealth(snapshot == .idle
                 ? .warning("未检测到正在播放的曲目")
                 : .ready("正在读取 \(snapshot.sourceName)"), to: .media)
@@ -647,6 +649,7 @@ final class AppModel: ObservableObject {
 
     func start() {
         areApplicationServicesRunning = true
+        lyrics.start()
         codexService.start()
         aiUsage.refreshAll()
         mediaService.start()
@@ -666,6 +669,7 @@ final class AppModel: ObservableObject {
 
     func stop() {
         areApplicationServicesRunning = false
+        lyrics.stop()
         stopClipboardHistoryLifecycle()
         acceptsSystemHUDEvents = false
         activityMonitor.stop()

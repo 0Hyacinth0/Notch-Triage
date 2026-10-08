@@ -6,6 +6,7 @@ import SwiftUI
 struct SettingsRootView: View {
     private enum Destination: String, Hashable {
         case appearance
+        case lyrics
         case behavior
         case aiUsage
         case permissions
@@ -16,6 +17,7 @@ struct SettingsRootView: View {
         var title: String {
             switch self {
             case .appearance: return "外观"
+            case .lyrics: return "歌词显示"
             case .behavior: return "通用"
             case .aiUsage: return "AI 套餐用量"
             case .permissions: return "权限"
@@ -43,6 +45,7 @@ struct SettingsRootView: View {
             List(selection: selectionBinding) {
                 Section("Notch Triage") {
                     sidebarItem("外观", symbol: "rectangle.on.rectangle", destination: .appearance)
+                    sidebarItem("歌词显示", symbol: "text.quote", destination: .lyrics)
                     sidebarItem("AI 套餐用量", symbol: "gauge.with.dots.needle.67percent", destination: .aiUsage)
                     sidebarItem("通用", symbol: "slider.horizontal.3", destination: .behavior)
                     sidebarItem("权限", symbol: "lock.shield", destination: .permissions)
@@ -131,6 +134,8 @@ struct SettingsRootView: View {
         switch currentDestination {
         case .appearance:
             appearancePage
+        case .lyrics:
+            LyricsSettingsView(model: model)
         case .aiUsage:
             AIUsageSettingsView(model: model)
         case .behavior:

@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         "Notch Triage remains available while its panel is collapsed"
     let model = AppModel()
     private var panelController: NotchPanelController?
+    private var lyricsController: LyricsOverlayController?
     private var settingsWindowController: SettingsWindowController?
 
     nonisolated static func shouldStartAppServices(
@@ -43,6 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let controller = NotchPanelController(model: model)
         panelController = controller
         controller.show()
+        lyricsController = LyricsOverlayController(model: model)
         model.start()
     }
 
@@ -545,13 +547,7 @@ final class NotchPanelController {
     }
 
     private func preferredScreen() -> NSScreen? {
-        if let builtIn = NSScreen.screens.first(where: {
-            ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] != nil)
-                && $0.safeAreaInsets.top > 0
-        }) {
-            return builtIn
-        }
-        return NSScreen.main ?? NSScreen.screens.first
+        NotchScreen.preferred
     }
 }
 

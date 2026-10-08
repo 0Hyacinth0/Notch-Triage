@@ -69,6 +69,7 @@ extension AppModel {
     func setBackgroundRefreshPaused(_ paused: Bool, reason: String) {
         isBackgroundRefreshPaused = paused
         refreshScheduler.setSuspended(paused)
+        lyrics.setSuspended(paused)
 
         if paused {
             fileDropActivationTask?.cancel()
