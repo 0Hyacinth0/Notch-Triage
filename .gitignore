@@ -39,3 +39,6 @@ dist/
 *.local.json
 *.pem
 *.key
+
+# Keep scripts out of the public repository
+/scripts/

@@ -1,4 +1,5 @@
 <div align="center">
+  <img src="./assets/notch-triage-logo.png" alt="Notch Triage Logo" width="132" height="132">
   <h1>Notch Triage</h1>
   <p><strong>把 MacBook 刘海变成真正有用的系统状态与效率中心。</strong></p>
   <p>原生、轻量、常驻的 macOS 刘海工具，集中呈现系统状态，并提供文件暂存与隐私优先的剪贴板历史。</p>
