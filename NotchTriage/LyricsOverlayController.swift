@@ -9,7 +9,7 @@ import SwiftUI
             if store.previewing {
                 LyricsDisplayView(document: .demo, appearance: store.appearance, elapsed: { _ in 0 }, demo: true)
             } else if let document = store.document {
-                LyricsDisplayView(document: document, appearance: store.appearance, elapsed: { store.elapsed(at: $0) }, playing: store.media.isPlaying)
+                LyricsDisplayView(document: document, appearance: store.appearance, elapsed: { store.elapsed(at: $0) }, playing: store.media.isPlaying, spectrum: store.spectrum)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -52,12 +52,14 @@ import SwiftUI
         guard !asleep, model.panelState.mode == .compact,
               store.previewing || (store.appearance.enabled && store.document != nil && store.canSynchronize),
               let screen = NotchScreen.preferred else {
+            store.setSpectrumVisible(false)
             panel.orderOut(nil)
             // Remove the animated tree as well as the window while hidden.
             panel.contentView = nil
             return
         }
-        let width = min(store.appearance.width, screen.frame.width - 40)
+        store.setSpectrumVisible(!store.previewing)
+        let width = min(LyricsDisplayMetrics.width(contentWidth: store.appearance.width, appearance: store.appearance), screen.frame.width - 8)
         let document = store.previewing ? LyricsDocument.demo : store.document ?? .demo
         // Allocate for every line, so the media polling interval cannot crop a
         // newly wrapped line between two snapshot updates.

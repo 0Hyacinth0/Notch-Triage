@@ -573,3 +573,59 @@
 
 "继续示意" = "Resume preview";
 "暂停示意" = "Pause preview";
+
+"中文显示" = "Chinese text";
+
+"简体中文" = "Simplified Chinese";
+
+"繁體中文" = "Traditional Chinese";
+
+"保留歌词原文" = "Keep original lyrics";
+
+"无逐字数据时估算动画" = "Estimate animation without word timestamps";
+
+"估算会将整句时间分配给文字，不能保证与演唱同步。默认只对真实逐字数据播放逐字动画。" = "Estimated timing divides a line across its text and may not match the singing. Word animation uses real timestamps by default.";
+
+"已连接 · 逐行时间轴（无逐字数据）" = "Connected · Line timestamps (no word timing)";
+
+"QQ 音乐" = "QQ Music";
+
+"自动查询网易云音乐、QQ 音乐与 LRCLIB，会发送歌名和歌手，并用专辑和时长筛选版本。优先使用真实逐字时间轴；逐行数据默认整句显示。支持导入 LRC、增强 LRC、YRC 和解码后的 QRC。" = "Searches NetEase Music, QQ Music and LRCLIB using track and artist names; album and duration help match versions. Real word timestamps take priority. Line-only lyrics display the whole line by default. Import LRC, enhanced LRC, YRC or decoded QRC.";
+
+"律动样式" = "Visualizer style";
+
+"柔光频谱" = "Glowing spectrum";
+
+"流动波形" = "Flowing waveform";
+
+"水波纹" = "Water ripples";
+
+"装饰距文字" = "Gap from text";
+
+"单侧装饰宽度" = "Width on each side";
+
+"装饰高度" = "Visualizer height";
+
+"启用真实频谱" = "Enable real spectrum";
+
+"真实频谱未启用" = "Real spectrum is off";
+
+"真实频谱已暂停" = "Real spectrum paused";
+
+"正在分析系统音频" = "Analyzing system audio";
+
+"等待系统音频信号" = "Waiting for system audio";
+
+"等待音频信号；无信号时请检查系统音频权限" = "Waiting for audio; check system audio permission if no signal arrives";
+
+"无法启动频谱，请检查系统音频权限后重试" = "Unable to start spectrum; check system audio permission and retry";
+
+"重试音频连接" = "Retry audio connection";
+
+"系统音频权限设置" = "System audio permissions";
+
+"真实频谱分析系统输出音频，首次启用需要系统音频权限；音频不保存、不上传，也不使用麦克风。关闭歌词、暂停播放或锁屏时停止采集。未启用或没有信号时保持静止。" = "The real spectrum analyzes system output audio and requires system audio permission. Audio is not saved or uploaded; the microphone is not used. Capture stops when lyrics are disabled, playback pauses or the screen locks. It stays still when disabled or no signal is available.";
+
+"预览中的频谱为示意动画；实际显示使用音频信号。系统“减少动态效果”会关闭律动动画。" = "The preview uses a demonstration animation; the live display uses audio signals. Reduce Motion turns off visualizer animation.";
+
+"等待歌词显示和音乐播放" = "Waiting for visible lyrics and music playback";

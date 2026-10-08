@@ -94,6 +94,8 @@ bundle_build="$("$PLISTBUDDY" -c 'Print :CFBundleVersion' "$APP_PLIST")"
 [[ "$bundle_version" == "$VERSION" ]] || fail "expected version $VERSION, found $bundle_version"
 [[ "$bundle_build" == "$BUILD" ]] || fail "expected build $BUILD, found $bundle_build"
 printf 'Validated version %s, build %s.\n' "$bundle_version" "$bundle_build"
+audio_capture_usage="$("$PLISTBUDDY" -c 'Print :NSAudioCaptureUsageDescription' "$APP_PLIST")"
+[[ -n "$audio_capture_usage" ]] || fail "system audio permission usage description is missing"
 
 readonly EXECUTABLE_NAME="$("$PLISTBUDDY" -c 'Print :CFBundleExecutable' "$APP_PLIST")"
 readonly EXECUTABLE_PATH="$APP_SOURCE/Contents/MacOS/$EXECUTABLE_NAME"

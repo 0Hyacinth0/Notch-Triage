@@ -43,6 +43,9 @@ struct LyricsSettingsView: View {
                     Text("系统字体").tag("System")
                     ForEach(NSFontManager.shared.availableFontFamilies.sorted(), id: \.self) { Text($0).tag($0) }
                 }
+                Picker("中文显示", selection: Binding(get: { store.appearance.variant }, set: { store.appearance.chineseVariant = $0 })) {
+                    ForEach(LyricsChineseVariant.allCases, id: \.self) { Text(LocalizedStringKey($0.title)).tag($0) }
+                }
                 slider("字号", value: $store.appearance.fontSize, range: 8...120, suffix: "pt")
                 Toggle("显示下一句", isOn: $store.appearance.showNext)
                 DisclosureGroup("自定义颜色") {
@@ -57,6 +60,9 @@ struct LyricsSettingsView: View {
                 Picker("高亮形式", selection: $store.appearance.motion) {
                     ForEach(LyricsAnimation.allCases, id: \.self) { Text(LocalizedStringKey($0.title)).tag($0) }
                 }.pickerStyle(.segmented)
+                Toggle("无逐字数据时估算动画", isOn: Binding(get: { store.appearance.usesEstimatedTiming }, set: { store.appearance.estimatedAnimation = $0 }))
+                Text("估算会将整句时间分配给文字，不能保证与演唱同步。默认只对真实逐字数据播放逐字动画。")
+                    .font(.caption).foregroundStyle(.secondary)
                 Text(LocalizedStringKey(motionDescription)).font(.caption).foregroundStyle(.secondary)
                 if store.appearance.motion == .wave { slider("波浪高度", value: $store.appearance.lift, range: 0...40, suffix: "pt") }
                 if store.appearance.motion == .dock {
@@ -70,7 +76,25 @@ struct LyricsSettingsView: View {
                 Toggle("呼吸光效", isOn: Binding(get: { store.appearance.hasBreathing }, set: { store.appearance.breathing = $0 }))
                     .disabled(store.appearance.glow == 0)
                 Toggle("两侧律动装饰", isOn: Binding(get: { store.appearance.hasOrnaments }, set: { store.appearance.ornaments = $0 }))
-                Text("细线随歌词时间轴律动，不代表音频频谱。系统“减少动态效果”会关闭位移、放大与呼吸。")
+                if store.appearance.hasOrnaments {
+                    Picker("律动样式", selection: Binding(get: { store.appearance.ornament }, set: { store.appearance.ornamentStyle = $0 })) {
+                        ForEach(LyricsOrnamentStyle.allCases, id: \.self) { Text(LocalizedStringKey($0.title)).tag($0) }
+                    }.pickerStyle(.segmented)
+                    slider("装饰距文字", value: Binding(get: { store.appearance.sideGap }, set: { store.appearance.ornamentGap = $0 }), range: 0...160, suffix: "pt")
+                    slider("单侧装饰宽度", value: Binding(get: { store.appearance.sideWidth }, set: { store.appearance.ornamentWidth = $0 }), range: 24...180, suffix: "pt")
+                    slider("装饰高度", value: Binding(get: { store.appearance.sideHeight }, set: { store.appearance.ornamentHeight = $0 }), range: 8...120, suffix: "pt")
+                    Toggle("启用真实频谱", isOn: Binding(get: { store.appearance.capturesSpectrum }, set: { store.appearance.spectrumEnabled = $0 }))
+                    LyricsSpectrumStatus(spectrum: store.spectrum, model: model)
+                    HStack {
+                        Button("重试音频连接") { store.retrySpectrum() }.disabled(!store.appearance.capturesSpectrum || !store.appearance.enabled)
+                        Button("系统音频权限设置") {
+                            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AudioCapture")!)
+                        }
+                    }
+                    Text("真实频谱分析系统输出音频，首次启用需要系统音频权限；音频不保存、不上传，也不使用麦克风。关闭歌词、暂停播放或锁屏时停止采集。未启用或没有信号时保持静止。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Text("预览中的频谱为示意动画；实际显示使用音频信号。系统“减少动态效果”会关闭律动动画。")
                     .font(.caption).foregroundStyle(.secondary)
             }
             SettingsGroup(title: "位置") {
@@ -87,7 +111,7 @@ struct LyricsSettingsView: View {
                 }
                 slider("歌词提前量", value: $store.appearance.offset, range: -5...5, suffix: "s")
                 DisclosureGroup("同步说明与隐私") {
-                    Text("自动查询 LRCLIB 与网易云音乐，会发送歌名和歌手。逐行歌词按句推进动画；逐字歌词可精确同步。支持导入 LRC、增强 LRC 和 YRC。")
+                    Text("自动查询网易云音乐、QQ 音乐与 LRCLIB，会发送歌名和歌手，并用专辑和时长筛选版本。优先使用真实逐字时间轴；逐行数据默认整句显示。支持导入 LRC、增强 LRC、YRC 和解码后的 QRC。")
                         .font(.caption).foregroundStyle(.secondary)
                     Text("正值使歌词提前，负值使歌词延后。")
                         .font(.caption).foregroundStyle(.secondary)
@@ -131,7 +155,7 @@ struct LyricsSettingsView: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
     private var virtualWidth: CGFloat {
-        min(store.appearance.width, (NotchScreen.preferred?.frame.width ?? 1440) - 40)
+        min(LyricsDisplayMetrics.width(contentWidth: store.appearance.width, appearance: store.appearance), (NotchScreen.preferred?.frame.width ?? 1440) - 8)
     }
     private var preview: some View {
         let scale = min(1, previewWidth / virtualWidth)
@@ -184,4 +208,10 @@ struct LyricsSettingsView: View {
             Slider(value: value, in: range)
         }
     }
+}
+
+private struct LyricsSpectrumStatus: View {
+    @ObservedObject var spectrum: LyricsSpectrum
+    @ObservedObject var model: AppModel
+    var body: some View { Text(model.localized(spectrum.status)).font(.caption).foregroundStyle(.secondary) }
 }

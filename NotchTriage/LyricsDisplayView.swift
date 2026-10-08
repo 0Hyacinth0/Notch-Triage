@@ -22,7 +22,7 @@ private struct LyricShape {
         let font = appearance.font
         let attributed = NSAttributedString(string: line.text, attributes: [.font: font])
         let typesetter = CTTypesetterCreateWithAttributedString(attributed)
-        let available = max(font.pointSize, width - 24 - (appearance.hasOrnaments ? 96 : 0) - (appearance.motion == .dock ? font.pointSize * appearance.dockAmount * 3 : 0))
+        let available = max(font.pointSize, width - 2 * LyricsDisplayMetrics.effectInset(appearance) - 24 - appearance.ornamentSpace - (appearance.motion == .dock ? font.pointSize * appearance.dockAmount * 3 : 0))
         var boundaries: [(Range<Int>, Int)] = []
         var offset = 0
         for (i, word) in line.words.enumerated() {
@@ -81,7 +81,7 @@ private struct LyricShape {
     private static var entries: [String: LyricShape] = [:]
     static func shape(for line: LyricLine?, appearance: LyricsAppearance, width: CGFloat) -> LyricShape {
         let line = line ?? LyricLine(start: 0, end: 1, text: "")
-        let key = "\(appearance.fontFamily)|\(appearance.fontSize)|\(width)|\(appearance.motion.rawValue)|\(appearance.dockAmount)|\(appearance.hasOrnaments)|\(line.text)|\(line.words.map(\.text).joined(separator: "\u{1}"))"
+        let key = "\(appearance.fontFamily)|\(appearance.fontSize)|\(width)|\(appearance.motion.rawValue)|\(appearance.dockAmount)|\(appearance.hasOrnaments)|\(appearance.sideGap)|\(appearance.sideWidth)|\(LyricsDisplayMetrics.effectInset(appearance))|\(line.text)|\(line.words.map(\.text).joined(separator: "\u{1}"))"
         if let cached = entries[key] { return cached }
         let shape = LyricShape(line: line, appearance: appearance, width: width)
         if entries.count >= 360 { entries.removeAll(keepingCapacity: true) }
@@ -94,15 +94,26 @@ enum LyricsDisplayMetrics {
     // The window extends upwards by this amount, so the resting glyph ink,
     // rather than its shadow or motion padding, sits at the configured gap.
     static func topInset(_ appearance: LyricsAppearance) -> CGFloat {
-        max(appearance.lift, appearance.outerGlowRadius) + 2
+        effectInset(appearance) + (appearance.motion == .wave ? appearance.lift : 0) + (appearance.hasOrnaments ? max(0, appearance.sideHeight - appearance.font.pointSize) / 2 : 0)
+    }
+    // Gaussian blur needs roughly three radii before its tail is invisible.
+    // Reserve that space inside the canvas and transparent window on all sides.
+    static func effectInset(_ appearance: LyricsAppearance) -> CGFloat {
+        max(12, appearance.outerGlowRadius * 3) + 4
+    }
+    static func width(contentWidth: CGFloat, appearance: LyricsAppearance) -> CGFloat {
+        let dockRoom = appearance.motion == .dock ? appearance.font.pointSize * appearance.dockAmount * 3 : 0
+        let minimum = appearance.font.pointSize + dockRoom + 24 + appearance.ornamentSpace
+        return max(contentWidth, minimum) + 2 * effectInset(appearance)
     }
     @MainActor static func height(document: LyricsDocument, time: Double, appearance: LyricsAppearance, width: CGFloat) -> CGFloat {
-        let line = document.index(at: time).map { document.lines[$0] }
+        let display = document.displaying(appearance.variant)
+        let line = display.index(at: time).map { display.lines[$0] }
         let shape = LyricShapeCache.shape(for: line, appearance: appearance, width: width)
         return canvasHeight(shape: shape, appearance: appearance) + (appearance.showNext ? max(12, appearance.fontSize * 0.56) * 1.5 + 7 : 0)
     }
-    private static func canvasHeight(shape: LyricShape, appearance: LyricsAppearance) -> CGFloat {
-        topInset(appearance) + shape.height + appearance.fontSize * appearance.dockAmount + max(14, appearance.outerGlowRadius)
+    fileprivate static func canvasHeight(shape: LyricShape, appearance: LyricsAppearance) -> CGFloat {
+        topInset(appearance) + max(shape.height, appearance.hasOrnaments ? appearance.sideHeight : 0) + (appearance.motion == .dock ? appearance.fontSize * appearance.dockAmount : 0) + effectInset(appearance)
     }
 }
 
@@ -112,13 +123,16 @@ struct LyricsDisplayView: View {
     var elapsed: (Date) -> Double
     var playing = true
     var demo = false
+    var spectrum: LyricsSpectrum? = nil
+    var demonstrateSpectrum = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
+        let display = document.displaying(appearance.variant)
         GeometryReader { geometry in
             TimelineView(.animation(minimumInterval: 1.0 / 60, paused: !playing)) { timeline in
                 let time = demo ? timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 15) : elapsed(timeline.date)
-                let index = document.index(at: time)
-                let line = index.map { document.lines[$0] }
+                let index = display.index(at: time)
+                let line = index.map { display.lines[$0] }
                 let shape = LyricShapeCache.shape(for: line, appearance: appearance, width: geometry.size.width)
                 let focus = readingFocus(line: line, shape: shape, time: time)
                 let envelopes = shape.glyphs.indices.map { i -> Double in
@@ -127,6 +141,12 @@ struct LyricsDisplayView: View {
                     let reach = appearance.motion == .dock ? 2.4 : 0.85
                     return distance < reach ? pow(cos(distance / reach * .pi / 2), 2) : 0
                 }
+                let ornamentTextWidth = shape.rowWidths.indices.map { row -> CGFloat in
+                    let expansion = appearance.motion == .dock ? shape.glyphs.indices.reduce(CGFloat(0)) { total, i in
+                        total + (shape.glyphs[i].row == row ? shape.glyphs[i].width * appearance.dockAmount * envelopes[i] : 0)
+                    } : 0
+                    return shape.rowWidths[row] + expansion
+                }.max() ?? 0
                 VStack(spacing: 7) {
                     Canvas { context, size in
                         guard let line else { return }
@@ -136,9 +156,6 @@ struct LyricsDisplayView: View {
                             for i in shape.glyphs.indices {
                                 extras[shape.glyphs[i].row, default: 0] += shape.glyphs[i].width * appearance.dockAmount * envelopes[i]
                             }
-                        }
-                        if appearance.hasOrnaments {
-                            drawOrnaments(context: context, size: size, shape: shape, time: time)
                         }
                         var preceding: [Int: CGFloat] = [:]
                         for (i, glyph) in shape.glyphs.enumerated() {
@@ -154,7 +171,7 @@ struct LyricsDisplayView: View {
                                 tx: dx + glyph.x * (1 - magnification),
                                 ty: LyricsDisplayMetrics.topInset(appearance) - shape.inkTop - lift + anchorY * (1 - magnification))
                             let word = glyph.word.flatMap { line.words.indices.contains($0) ? line.words[$0] : nil }
-                            let sung = word.map { min(1, max(0, (time - $0.start) / max(0.01, $0.end - $0.start))) } ?? min(1, max(0, progress * Double(shape.glyphs.count) - Double(i)))
+                            let sung = word.map { min(1, max(0, (time - $0.start) / max(0.01, $0.end - $0.start))) } ?? (appearance.usesEstimatedTiming ? min(1, max(0, progress * Double(shape.glyphs.count) - Double(i))) : 1)
                             let path = glyph.path.applying(transform)
                             var base = context
                             base.addFilter(.shadow(color: .black.opacity(0.75), radius: 3, x: 0, y: 1))
@@ -175,26 +192,40 @@ struct LyricsDisplayView: View {
                             let position = min(1, max(0, (glyph.x + glyph.width / 2) / max(1, shape.rowWidths[glyph.row])))
                             let tint = mixed(appearance.highlight, appearance.endColor, position)
                             let breath = !reduceMotion && appearance.hasBreathing ? 0.88 + 0.12 * sin(time * 2.1 + position * 1.8) : 1
-                            // Draw the broad bloom separately from the crisp inner glow.
-                            // The glyph core is drawn last and never blurred.
+                            // Blur dedicated glyph layers instead of attenuating a shadow
+                            // multiple times. Keep the crisp core outside both filters.
+                            // Start from the unclipped context so sweep highlights can glow
+                            // beyond their advancing edge instead of cutting the halo off.
                             if appearance.glow > 0 {
-                                var bloom = lit
-                                bloom.addFilter(.shadow(color: tint.color.opacity(appearance.glow * (0.22 + envelope * 0.2) * breath), radius: appearance.outerGlowRadius))
-                                bloom.opacity *= 0.42
-                                bloom.fill(path, with: .color(tint.color))
-                                var inner = lit
-                                inner.addFilter(.shadow(color: tint.color.opacity(appearance.glow * (0.55 + envelope * 0.35) * breath), radius: max(1, appearance.fontSize * 0.06)))
-                                inner.fill(path, with: .color(tint.color))
+                                let strength = max(0, min(1, appearance.glow))
+                                let activation = lit.opacity
+                                var bloom = context
+                                bloom.opacity = min(1, activation * strength * (0.9 + envelope * 0.3) * breath)
+                                bloom.addFilter(.blur(radius: appearance.outerGlowRadius * 0.65))
+                                bloom.drawLayer { layer in
+                                    layer.fill(path, with: .color(tint.color))
+                                }
+                                var inner = context
+                                inner.opacity = min(1, activation * strength * (0.85 + envelope * 0.25) * breath)
+                                inner.addFilter(.blur(radius: max(1.2, appearance.fontSize * 0.075)))
+                                inner.drawLayer { layer in
+                                    layer.fill(path, with: .color(tint.color))
+                                }
                             }
                             let core = appearance.lightPreset == .aurora ? mixed(tint, .white, 0.78) : appearance.lightPreset == .custom || appearance.lightPreset == nil ? tint : mixed(tint, .white, 0.2)
                             lit.fill(path, with: .color(core.color))
                         }
                     }
-                    .frame(height: LyricsDisplayMetrics.topInset(appearance) + shape.height + (appearance.motion == .dock ? appearance.fontSize * appearance.dockAmount : 0) + max(14, appearance.outerGlowRadius))
+                    .frame(height: LyricsDisplayMetrics.canvasHeight(shape: shape, appearance: appearance))
+                    .overlay {
+                        if appearance.hasOrnaments, line != nil {
+                            LyricsOrnamentsView(appearance: appearance, textWidth: ornamentTextWidth, centerY: LyricsDisplayMetrics.topInset(appearance) + shape.height / 2, spectrum: spectrum, demonstration: demo || demonstrateSpectrum)
+                        }
+                    }
                     .id(line?.start)
                     .transition(.opacity)
                     if appearance.showNext {
-                        Text(index.flatMap { $0 + 1 < document.lines.count ? document.lines[$0 + 1].text : nil } ?? " ")
+                        Text(index.flatMap { $0 + 1 < display.lines.count ? display.lines[$0 + 1].text : nil } ?? " ")
                             .font(appearance.fontFamily == "System" ? .system(size: max(12, appearance.fontSize * 0.56), weight: .medium) : .custom(appearance.fontFamily, size: max(12, appearance.fontSize * 0.56)))
                             .foregroundStyle(appearance.resting.color.opacity(0.75))
                             .lineLimit(1).minimumScaleFactor(0.5)
@@ -205,25 +236,10 @@ struct LyricsDisplayView: View {
                 .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: index)
             }
         }
-        .accessibilityLabel(document.lines.map(\.text).joined(separator: "，"))
+        .accessibilityLabel(display.lines.map(\.text).joined(separator: "，"))
     }
     private func mixed(_ a: RingColor, _ b: RingColor, _ t: Double) -> RingColor {
         RingColor(red: a.red + (b.red - a.red) * t, green: a.green + (b.green - a.green) * t, blue: a.blue + (b.blue - a.blue) * t, opacity: a.opacity + (b.opacity - a.opacity) * t)
-    }
-    private func drawOrnaments(context: GraphicsContext, size: CGSize, shape: LyricShape, time: Double) {
-        let centerY = LyricsDisplayMetrics.topInset(appearance) + min(shape.height, appearance.fontSize) / 2
-        for side in 0..<2 {
-            for bar in 0..<8 {
-                let phase = reduceMotion ? 0.5 : 0.5 + 0.5 * sin(time * 2 + Double(bar) * 0.8)
-                let height = appearance.fontSize * (0.15 + phase * 0.65) * (0.35 + 0.65 * Double(bar + 1) / 8)
-                let x = side == 0 ? CGFloat(8 + bar * 5) : size.width - CGFloat(8 + bar * 5)
-                var path = Path(); path.move(to: CGPoint(x: x, y: centerY - height / 2)); path.addLine(to: CGPoint(x: x, y: centerY + height / 2))
-                var layer = context
-                let tint = side == 0 ? appearance.highlight.color : appearance.endColor.color
-                if appearance.glow > 0 { layer.addFilter(.shadow(color: tint.opacity(appearance.glow * 0.35), radius: 4)) }
-                layer.stroke(path, with: .color(tint.opacity(0.2 + phase * 0.3)), style: StrokeStyle(lineWidth: 1, lineCap: .round))
-            }
-        }
     }
     private func readingFocus(line: LyricLine?, shape: LyricShape, time: Double) -> Double {
         guard let line, time >= line.start, time < line.end else { return -10 }
@@ -235,7 +251,7 @@ struct LyricsDisplayView: View {
                 return Double(first) - 0.5 + t * Double(last - first + 1)
             }
         }
-        if !line.words.isEmpty { return -10 }
+        if !line.words.isEmpty || !appearance.usesEstimatedTiming { return -10 }
         let t = (time - line.start) / max(0.01, line.end - line.start)
         return -0.5 + t * Double(shape.glyphs.count)
     }

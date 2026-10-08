@@ -239,7 +239,8 @@ enum QQMusicSnapshotEnricher {
                 : snapshot.isPlaying,
             prohibitsSkip: snapshot.prohibitsSkip,
             progressAnchorDate: snapshot.progressAnchorDate,
-            playbackRate: snapshot.playbackRate
+            playbackRate: snapshot.playbackRate,
+            album: snapshot.album
         )
     }
 
@@ -516,7 +517,8 @@ final class MediaService {
             isPlaying: rate > 0,
             prohibitsSkip: prohibitsSkip,
             progressAnchorDate: timestamp,
-            playbackRate: rate
+            playbackRate: rate,
+            album: stringValue(in: info, suffix: "Album") ?? ""
         )
     }
 
@@ -802,7 +804,7 @@ final class MediaService {
             if application "Music" is running then
                 tell application "Music"
                     if player state is not stopped then
-                        return {name of current track, artist of current track, duration of current track, player position, (player state is playing)}
+                        return {name of current track, artist of current track, duration of current track, player position, (player state is playing), album of current track}
                     end if
                 end tell
             end if
@@ -829,7 +831,7 @@ final class MediaService {
             if application "Spotify" is running then
                 tell application "Spotify"
                     if player state is not stopped then
-                        return {name of current track, artist of current track, duration of current track, player position, (player state is playing)}
+                        return {name of current track, artist of current track, duration of current track, player position, (player state is playing), album of current track}
                     end if
                 end tell
             end if
@@ -847,6 +849,7 @@ final class MediaService {
         bundleIdentifier: String,
         durationScale: Double
     ) -> MediaSnapshot? {
+        let requestStarted = Date()
         var error: NSDictionary?
         guard let descriptor = NSAppleScript(source: script)?.executeAndReturnError(&error),
               descriptor.numberOfItems >= 5 else {
@@ -868,7 +871,9 @@ final class MediaService {
             artist: descriptor.atIndex(2)?.stringValue ?? "",
             duration: (descriptor.atIndex(3)?.doubleValue ?? 0) * durationScale,
             elapsed: descriptor.atIndex(4)?.doubleValue ?? 0,
-            isPlaying: descriptor.atIndex(5)?.booleanValue ?? false
+            isPlaying: descriptor.atIndex(5)?.booleanValue ?? false,
+            progressAnchorDate: requestStarted.addingTimeInterval(Date().timeIntervalSince(requestStarted) / 2),
+            album: descriptor.numberOfItems >= 6 ? descriptor.atIndex(6)?.stringValue ?? "" : ""
         )
     }
 }

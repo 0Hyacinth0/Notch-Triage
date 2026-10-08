@@ -14,6 +14,8 @@ struct LyricLine: Codable, Equatable, Sendable {
 struct LyricsDocument: Codable, Equatable, Sendable {
     var lines: [LyricLine]
     var source: String
+    var matchScore: Double? = nil
+    var trackIdentifier: String? = nil
     var hasWordTiming: Bool { lines.contains { !$0.words.isEmpty } }
     func index(at time: Double) -> Int? { lines.lastIndex { $0.start <= time } }
 
@@ -36,6 +38,8 @@ enum LyricsParser {
         let stamp = try! NSRegularExpression(pattern: #"\[(\d+):(\d+(?:\.\d+)?)\]"#)
         let enhanced = try! NSRegularExpression(pattern: #"<(\d+):(\d+(?:\.\d+)?)>([^<]*)"#)
         let yrcLine = try! NSRegularExpression(pattern: #"^\[(\d+),(\d+)\]"#)
+        let kWord = try! NSRegularExpression(pattern: #"\(0,(\d+)\)([^\(]*)"#)
+        let qWord = try! NSRegularExpression(pattern: #"([^\(]*?)\((\d+),(\d+)\)"#)
         let yrcWord = try! NSRegularExpression(pattern: #"\((\d+),(\d+),\d+\)([^\(]*)"#)
         let offsetRE = try! NSRegularExpression(pattern: #"(?i)\[offset:([+-]?\d+)\]"#)
         let ns = input as NSString
@@ -48,9 +52,28 @@ enum LyricsParser {
             if let header = yrcLine.firstMatch(in: raw, range: range) {
                 let start = (Double(str.substring(with: header.range(at: 1))) ?? 0) / 1000
                 let end = start + (Double(str.substring(with: header.range(at: 2))) ?? 0) / 1000
-                let words = yrcWord.matches(in: raw, range: range).map { match -> LyricWord in
+                let yrcWords = yrcWord.matches(in: raw, range: range).map { match -> LyricWord in
                     let t = (Double(str.substring(with: match.range(at: 1))) ?? 0) / 1000
                     return LyricWord(text: str.substring(with: match.range(at: 3)), start: t + offset, end: t + offset + (Double(str.substring(with: match.range(at: 2))) ?? 0) / 1000)
+                }
+                var words = yrcWords
+                if words.isEmpty {
+                    let body = str.substring(from: NSMaxRange(header.range))
+                    let fragment = body as NSString
+                    let bodyRange = NSRange(location: 0, length: fragment.length)
+                    var cursor = start + offset
+                    words = kWord.matches(in: body, range: bodyRange).map { match in
+                        let duration = (Double(fragment.substring(with: match.range(at: 1))) ?? 0) / 1000
+                        let word = LyricWord(text: fragment.substring(with: match.range(at: 2)), start: cursor, end: cursor + duration)
+                        cursor += duration
+                        return word
+                    }
+                    if words.isEmpty {
+                        words = qWord.matches(in: body, range: bodyRange).map { match in
+                            let t = (Double(fragment.substring(with: match.range(at: 2))) ?? 0) / 1000 + offset
+                            return LyricWord(text: fragment.substring(with: match.range(at: 1)), start: t, end: t + (Double(fragment.substring(with: match.range(at: 3))) ?? 0) / 1000)
+                        }
+                    }
                 }
                 if !words.isEmpty { lines.append(LyricLine(start: start + offset, end: end + offset, text: words.map(\.text).joined(), words: words)) }
                 continue
@@ -83,5 +106,39 @@ enum LyricsParser {
         }
         lines.removeAll { $0.text.trimmingCharacters(in: .whitespaces).isEmpty }
         return lines.isEmpty ? nil : LyricsDocument(lines: lines, source: source)
+    }
+}
+
+
+enum LyricsChineseVariant: String, Codable, CaseIterable {
+    case simplified, traditional, original
+    var title: String {
+        switch self { case .simplified: return "简体中文"; case .traditional: return "繁體中文"; case .original: return "保留歌词原文" }
+    }
+    func convert(_ text: String) -> String {
+        switch self {
+        case .original: return text
+        case .simplified: return text.applyingTransform(StringTransform(rawValue: "Traditional-Simplified"), reverse: false) ?? text
+        case .traditional: return text.applyingTransform(StringTransform(rawValue: "Simplified-Traditional"), reverse: false) ?? text
+        }
+    }
+}
+extension LyricsDocument {
+    func displaying(_ variant: LyricsChineseVariant) -> LyricsDocument {
+        guard variant != .original else { return self }
+        var result = self
+        for i in result.lines.indices {
+            if result.lines[i].words.isEmpty {
+                result.lines[i].text = variant.convert(result.lines[i].text)
+            } else {
+                // Transform each timed fragment, then rebuild text from those same
+                // fragments. This keeps glyph indices aligned with word timings.
+                for j in result.lines[i].words.indices {
+                    result.lines[i].words[j].text = variant.convert(result.lines[i].words[j].text)
+                }
+                result.lines[i].text = result.lines[i].words.map(\.text).joined()
+            }
+        }
+        return result
     }
 }

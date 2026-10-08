@@ -351,6 +351,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Notch Triage Debug";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_FILE = Config/AppInfo.plist;
 				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Notch Triage uses player and Finder automation to read media status and manage the Trash.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026.";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -381,6 +382,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_FILE = Config/AppInfo.plist;
 				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Notch Triage uses player and Finder automation to read media status and manage the Trash.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026.";
 				LD_RUNPATH_SEARCH_PATHS = (

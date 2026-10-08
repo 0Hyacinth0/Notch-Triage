@@ -655,6 +655,7 @@ struct CodexLimitBucket: Identifiable, Equatable {
 }
 
 struct MediaSnapshot: Equatable {
+    var album: String
     var sourceName: String
     var bundleIdentifier: String?
     var title: String
@@ -684,8 +685,10 @@ struct MediaSnapshot: Equatable {
         isPlaying: Bool,
         prohibitsSkip: Bool = false,
         progressAnchorDate: Date? = nil,
-        playbackRate: Double? = nil
+        playbackRate: Double? = nil,
+        album: String = ""
     ) {
+        self.album = album
         self.sourceName = sourceName
         self.bundleIdentifier = bundleIdentifier
         self.title = title

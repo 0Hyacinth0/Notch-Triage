@@ -29,6 +29,10 @@ enum LyricsLightPreset: String, Codable, CaseIterable {
         }
     }
 }
+enum LyricsOrnamentStyle: String, Codable, CaseIterable {
+    case spectrum, waveform, ripple
+    var title: String { switch self { case .spectrum: return "柔光频谱"; case .waveform: return "流动波形"; case .ripple: return "水波纹" } }
+}
 struct LyricsAppearance: Codable, Equatable {
     var enabled = false
     var fontFamily = "System"
@@ -49,6 +53,21 @@ struct LyricsAppearance: Codable, Equatable {
     var glowSpread: Double? = 0.55
     var breathing: Bool? = true
     var ornaments: Bool? = false
+    var ornamentStyle: LyricsOrnamentStyle? = .spectrum
+    var ornamentGap: Double? = 18
+    var ornamentWidth: Double? = 64
+    var ornamentHeight: Double? = 36
+    var spectrumEnabled: Bool? = false
+    var ornament: LyricsOrnamentStyle { ornamentStyle ?? .spectrum }
+    var sideGap: Double { max(0, min(160, ornamentGap ?? 18)) }
+    var sideWidth: Double { max(24, min(180, ornamentWidth ?? 64)) }
+    var sideHeight: Double { max(8, min(120, ornamentHeight ?? 36)) }
+    var capturesSpectrum: Bool { spectrumEnabled ?? false }
+    var ornamentSpace: Double { hasOrnaments ? (sideWidth + sideGap) * 2 : 0 }
+    var chineseVariant: LyricsChineseVariant? = .simplified
+    var estimatedAnimation: Bool? = false
+    var variant: LyricsChineseVariant { chineseVariant ?? .simplified }
+    var usesEstimatedTiming: Bool { estimatedAnimation ?? false }
     var spread: Double { max(0, min(1, glowSpread ?? 0.45)) }
     var hasBreathing: Bool { breathing ?? false }
     var hasOrnaments: Bool { ornaments ?? false }
@@ -72,6 +91,7 @@ struct LyricsAppearance: Codable, Equatable {
 @MainActor final class LyricsStore: ObservableObject {
     @Published var appearance: LyricsAppearance { didSet {
         if let data = try? JSONEncoder().encode(appearance) { UserDefaults.standard.set(data, forKey: "NotchTriage.Lyrics.appearance") }
+        updateSpectrum()
         if oldValue.enabled != appearance.enabled {
             if appearance.enabled { receive(media, force: true) } else { request?.cancel(); document = nil; status = "歌词显示已关闭" }
         }
@@ -80,12 +100,15 @@ struct LyricsAppearance: Codable, Equatable {
     @Published private(set) var media = MediaSnapshot.idle
     @Published private(set) var status = "歌词显示已关闭"
     @Published private(set) var previewing = false
+    let spectrum = LyricsSpectrum()
     private var request: Task<Void, Never>?
     private var previewTask: Task<Void, Never>?
     private var generation = UUID()
     private var key = ""
     private var running = false
     private var suspended = false
+    private var spectrumVisible = false
+    private var clock = LyricsPlaybackClock()
     private var cache: [String: LyricsDocument] = [:]
     private let cacheURL: URL
 
@@ -95,41 +118,49 @@ struct LyricsAppearance: Codable, Equatable {
         cacheURL = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("NotchTriage/lyrics.json")
         if let data = try? Data(contentsOf: cacheURL), data.count < 8_000_000 { cache = (try? JSONDecoder().decode([String: LyricsDocument].self, from: data)) ?? [:] }
     }
-    func start() { running = true }
+    func start() { running = true; updateSpectrum() }
     func setSuspended(_ value: Bool) {
         suspended = value
-        if value { request?.cancel() } else if appearance.enabled { receive(media, force: document == nil) }
+        updateSpectrum()
+        if value { request?.cancel() } else if appearance.enabled { receive(media, force: document?.hasWordTiming != true) }
     }
-    func stop() { running = false; request?.cancel(); previewTask?.cancel(); previewing = false }
+    func stop() { running = false; spectrum.stop(); request?.cancel(); previewTask?.cancel(); previewing = false }
     var canSynchronize: Bool { media.duration > 0 }
-    func elapsed(at date: Date) -> Double { media.estimatedElapsed(at: date) + appearance.offset }
+    func elapsed(at date: Date) -> Double { clock.elapsed() + appearance.offset }
     func receive(_ snapshot: MediaSnapshot, force: Bool = false) {
         var snapshot = snapshot
         if snapshot.duration > 0, snapshot.progressAnchorDate == nil { snapshot.progressAnchorDate = Date() }
         media = snapshot
+        clock.update(snapshot)
+        updateSpectrum()
         guard running, !suspended, appearance.enabled else { return }
-        let newKey = "\(snapshot.title)|\(snapshot.artist)|\(Int(snapshot.duration.rounded()))"
+        let newKey = "\(snapshot.title)|\(snapshot.artist)|\(Int(snapshot.duration.rounded()))|\(snapshot.album)"
         guard force || key != newKey else { return }
-        let previous = newKey == key ? document ?? cache[newKey] : nil
+        let previous = newKey == key ? document ?? cache[newKey] : cache[newKey]
         key = newKey
         generation = UUID(); let ticket = generation
         request?.cancel(); document = previous
         guard snapshot != .idle, !snapshot.title.isEmpty, !snapshot.artist.isEmpty else { status = "等待正在播放的歌曲"; return }
-        if !force, let cached = cache[key] { document = cached; updateStatus(); return }
+        if !force, let cached = cache[key] { document = cached; updateStatus(); if cached.hasWordTiming { return } }
         status = "正在查找歌词…"
         request = Task { [weak self] in
-            let result = await LyricsProvider.lookup(snapshot)
+            let result = await LyricsProvider.lookup(snapshot) { [weak self] candidate in
+                guard !Task.isCancelled, let self, self.running, !self.suspended, self.appearance.enabled, self.generation == ticket else { return }
+                if LyricsProvider.isBetter(candidate, than: self.document) {
+                    self.document = candidate; self.updateStatus()
+                }
+            }
             let found = result.document
             guard !Task.isCancelled, let self, self.running, !self.suspended, self.appearance.enabled, self.generation == ticket else { return }
-            self.document = found ?? previous
-            if let found { self.cache[self.key] = found; self.saveCache() }
+            self.document = LyricsProvider.best([found, self.document, previous].compactMap { $0 })
+            if let selected = self.document { self.cache[self.key] = selected; self.saveCache() }
             self.updateStatus()
             if found == nil && previous == nil && result.unavailable { self.status = "歌词服务暂时不可用，可重试或导入歌词" }
         }
     }
     private func updateStatus() {
         guard let document else { status = "未找到匹配歌词，可导入 LRC / YRC"; return }
-        status = !canSynchronize ? "播放器未提供进度，暂时无法同步" : document.hasWordTiming ? "已连接 · 逐字时间轴" : "已连接 · 逐行时间轴"
+        status = !canSynchronize ? "播放器未提供进度，暂时无法同步" : document.hasWordTiming ? "已连接 · 逐字时间轴" : "已连接 · 逐行时间轴（无逐字数据）"
     }
     private func saveCache() {
         if cache.count > 60 {
@@ -141,10 +172,19 @@ struct LyricsAppearance: Codable, Equatable {
         try? FileManager.default.createDirectory(at: cacheURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         if let data = try? JSONEncoder().encode(cache) { try? data.write(to: cacheURL, options: .atomic) }
     }
+    private func updateSpectrum() {
+        if !appearance.capturesSpectrum { spectrum.disable(); return }
+        spectrum.setActive(spectrumVisible && running && !suspended && appearance.enabled && appearance.hasOrnaments && appearance.capturesSpectrum && media.isPlaying)
+    }
+    func setSpectrumVisible(_ value: Bool) {
+        guard spectrumVisible != value else { return }
+        spectrumVisible = value; updateSpectrum()
+    }
+    func retrySpectrum() { spectrum.resetFailure(); updateSpectrum() }
     func retry() { receive(media, force: true) }
     func importLyrics() {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [UTType(filenameExtension: "lrc") ?? .plainText, UTType(filenameExtension: "yrc") ?? .plainText, .plainText]
+        panel.allowedContentTypes = [UTType(filenameExtension: "lrc") ?? .plainText, UTType(filenameExtension: "yrc") ?? .plainText, UTType(filenameExtension: "qrc") ?? .plainText, .plainText]
         panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
         guard let data = try? Data(contentsOf: url), data.count < 1_000_000, let text = String(data: data, encoding: .utf8), let parsed = LyricsParser.parse(text, source: "本地导入", duration: media.duration) else { status = "导入失败：需要 UTF-8 编码的带时间轴歌词"; return }

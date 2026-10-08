@@ -75,7 +75,8 @@ enum MediaRemoteAdapterParser {
             isPlaying: isPlaying,
             prohibitsSkip: prohibitsSkip,
             progressAnchorDate: timestamp,
-            playbackRate: rate
+            playbackRate: rate,
+            album: stringValue(dictionary["album"]) ?? ""
         )
     }
 
