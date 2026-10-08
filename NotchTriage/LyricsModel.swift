@@ -10,14 +10,20 @@ struct LyricLine: Codable, Equatable, Sendable {
     var end: Double
     var text: String
     var words: [LyricWord] = []
+    var hasWordTiming: Bool { words.contains { $0.end - $0.start >= 0.02 && !$0.text.trimmingCharacters(in: .whitespaces).isEmpty } }
 }
 struct LyricsDocument: Codable, Equatable, Sendable {
     var lines: [LyricLine]
     var source: String
     var matchScore: Double? = nil
     var trackIdentifier: String? = nil
-    var hasWordTiming: Bool { lines.contains { !$0.words.isEmpty } }
-    func index(at time: Double) -> Int? { lines.lastIndex { $0.start <= time } }
+    var parserRevision: Int? = nil
+    var hasWordTiming: Bool { lines.contains { $0.hasWordTiming } }
+    func index(at time: Double) -> Int? {
+        var low = 0, high = lines.count
+        while low < high { let mid = (low + high) / 2; if lines[mid].start <= time { low = mid + 1 } else { high = mid } }
+        return low > 0 ? low - 1 : nil
+    }
 
     static let demo: LyricsDocument = {
         let phrases = ["让音乐轻轻流过夜色", "每一个字 都有自己的光", "Follow the rhythm of the night"]
@@ -32,9 +38,11 @@ struct LyricsDocument: Codable, Equatable, Sendable {
     }()
 }
 
+enum LyricsTimestampFormat { case automatic, lrc, yrc, klyric, qrc }
+
 enum LyricsParser {
     // Enhanced LRC uses absolute word timestamps; YRC uses absolute millisecond starts.
-    static func parse(_ input: String, source: String, duration: Double = 0) -> LyricsDocument? {
+    static func parse(_ input: String, source: String, duration: Double = 0, format: LyricsTimestampFormat = .automatic) -> LyricsDocument? {
         let stamp = try! NSRegularExpression(pattern: #"\[(\d+):(\d+(?:\.\d+)?)\]"#)
         let enhanced = try! NSRegularExpression(pattern: #"<(\d+):(\d+(?:\.\d+)?)>([^<]*)"#)
         let yrcLine = try! NSRegularExpression(pattern: #"^\[(\d+),(\d+)\]"#)
@@ -62,7 +70,11 @@ enum LyricsParser {
                     let fragment = body as NSString
                     let bodyRange = NSRange(location: 0, length: fragment.length)
                     var cursor = start + offset
-                    words = kWord.matches(in: body, range: bodyRange).map { match in
+                    // KLYRIC is tag-before-text; QRC is text-before-tag. A QRC
+                    // word at absolute time zero must never select the KLYRIC path.
+                    let isKLyric = format == .klyric || (format == .automatic && body.hasPrefix("(0,"))
+                    let fragments = isKLyric ? kWord.matches(in: body, range: bodyRange) : []
+                    words = fragments.map { match in
                         let duration = (Double(fragment.substring(with: match.range(at: 1))) ?? 0) / 1000
                         let word = LyricWord(text: fragment.substring(with: match.range(at: 2)), start: cursor, end: cursor + duration)
                         cursor += duration
@@ -105,7 +117,7 @@ enum LyricsParser {
             }
         }
         lines.removeAll { $0.text.trimmingCharacters(in: .whitespaces).isEmpty }
-        return lines.isEmpty ? nil : LyricsDocument(lines: lines, source: source)
+        return lines.isEmpty ? nil : LyricsDocument(lines: lines, source: source, parserRevision: 2)
     }
 }
 
@@ -115,12 +127,22 @@ enum LyricsChineseVariant: String, Codable, CaseIterable {
     var title: String {
         switch self { case .simplified: return "简体中文"; case .traditional: return "繁體中文"; case .original: return "保留歌词原文" }
     }
+    private static let conversions: NSCache<NSString, NSString> = {
+        let cache = NSCache<NSString, NSString>(); cache.countLimit = 4096; cache.totalCostLimit = 262_144
+        return cache
+    }()
     func convert(_ text: String) -> String {
+        guard self != .original else { return text }
+        let key = "\(rawValue)|\(text)" as NSString
+        if let cached = Self.conversions.object(forKey: key) { return cached as String }
+        let result: String
         switch self {
-        case .original: return text
-        case .simplified: return text.applyingTransform(StringTransform(rawValue: "Traditional-Simplified"), reverse: false) ?? text
-        case .traditional: return text.applyingTransform(StringTransform(rawValue: "Simplified-Traditional"), reverse: false) ?? text
+        case .original: result = text
+        case .simplified: result = text.applyingTransform(StringTransform(rawValue: "Traditional-Simplified"), reverse: false) ?? text
+        case .traditional: result = text.applyingTransform(StringTransform(rawValue: "Simplified-Traditional"), reverse: false) ?? text
         }
+        Self.conversions.setObject(result as NSString, forKey: key, cost: text.utf16.count)
+        return result
     }
 }
 extension LyricsDocument {

@@ -1,23 +1,40 @@
 import Foundation
 
-/// Anchor once against the media timestamp, then advance on the monotonic
-/// clock. Display frames must not accumulate polling or wall-clock drift.
+/// Advance on a monotonic clock; polling jitter must not rewind the karaoke cursor.
 struct LyricsPlaybackClock {
     private var position: Double = 0
     private var uptime: Double = ProcessInfo.processInfo.systemUptime
     private var rate: Double = 0
+    private var reportedRate: Double = 0
     private var duration: Double = 0
     private var identity = ""
-    mutating func update(_ media: MediaSnapshot) {
+    private var lastTimestamp: Date?
+    private var lastObserved: Double = 0
+    private var pendingSeek: Double?
+    mutating func update(_ media: MediaSnapshot, trackChanged: Bool = false, identity trackIdentity: String? = nil) {
         let now = ProcessInfo.processInfo.systemUptime
+        let key = trackIdentity ?? "\(media.title)|\(media.artist)"
+        if !trackChanged, key == identity, let timestamp = media.progressAnchorDate, let lastTimestamp, timestamp < lastTimestamp { return }
         let observed = media.estimatedElapsed()
-        let key = "\(media.title)|\(media.artist)|\(media.album)"
         let nextRate = media.isPlaying ? max(0, media.playbackRate ?? 1) : 0
         let predicted = elapsed(at: now)
-        // Small timestamp jitter is smoothed; seeking, pausing and switching
-        // tracks always replace the anchor immediately.
-        position = key == identity && nextRate == rate && abs(predicted - observed) < 0.12 ? predicted * 0.7 + observed * 0.3 : observed
-        identity = key; uptime = now; rate = nextRate; duration = media.duration
+        let delta = observed - predicted
+        if trackChanged || key != identity || nextRate != reportedRate {
+            position = observed; pendingSeek = nil; rate = nextRate
+        } else if abs(delta) <= 1.25 {
+            // Correct small, often rounded source offsets by changing speed slightly,
+            // rather than jumping backwards across words at every poll.
+            position = predicted; rate = nextRate == 0 ? 0 : nextRate * (1 + max(-0.08, min(0.08, delta * 0.12)))
+            pendingSeek = nil
+        } else if let pendingSeek, abs(delta - pendingSeek) < 0.75, nextRate == 0 || abs(observed - lastObserved) > 0.02 {
+            // A seek needs a second advancing observation. A repeated stale position
+            // or one delayed fallback snapshot cannot make the display jump back.
+            position = observed; self.pendingSeek = nil; rate = nextRate
+        } else {
+            position = predicted; pendingSeek = delta; rate = nextRate
+        }
+        identity = key; uptime = now; reportedRate = nextRate; duration = media.duration
+        lastTimestamp = media.progressAnchorDate; lastObserved = observed
     }
     func elapsed(at now: Double = ProcessInfo.processInfo.systemUptime) -> Double {
         let value = max(0, position + max(0, now - uptime) * rate)

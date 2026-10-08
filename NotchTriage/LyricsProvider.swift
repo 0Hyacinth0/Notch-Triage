@@ -34,6 +34,7 @@ struct LyricsProvider {
     static func isBetter(_ candidate: LyricsDocument, than existing: LyricsDocument?) -> Bool {
         guard let existing else { return true }
         if candidate.hasWordTiming != existing.hasWordTiming { return candidate.hasWordTiming }
+        if candidate.hasWordTiming, (candidate.parserRevision ?? 0) > (existing.parserRevision ?? 0) { return true }
         return (candidate.matchScore ?? 0) > (existing.matchScore ?? 0)
     }
     static func best(_ documents: [LyricsDocument]) -> LyricsDocument? {
@@ -61,17 +62,20 @@ struct LyricsProvider {
             try Task.checkCancellation()
             guard let id = song["id"] as? Int else { continue }
             let response: Any
-            do { response = try await json(LyricsEAPI.request(id: id)) } catch {
-                try Task.checkCancellation()
-                response = try await json(request("https://music.163.com/api/song/lyric/v1", ["id": String(id), "lv": "-1", "kv": "-1", "yv": "-1"]))
-            }
+            do {
+                do { response = try await json(LyricsEAPI.request(id: id)) } catch {
+                    try Task.checkCancellation()
+                    response = try await json(request("https://music.163.com/api/song/lyric/v1", ["id": String(id), "lv": "-1", "kv": "-1", "yv": "-1"]))
+                }
+            } catch { try Task.checkCancellation(); continue }
             guard let body = response as? [String: Any] else { continue }
             for field in ["yrc", "klyric", "lrc"] {
-                if let record = body[field] as? [String: Any], let raw = record["lyric"] as? String, var lyrics = LyricsParser.parse(raw, source: "网易云音乐", duration: media.duration) {
+                if let record = body[field] as? [String: Any], let raw = record["lyric"] as? String, var lyrics = LyricsParser.parse(raw, source: "网易云音乐", duration: media.duration, format: field == "klyric" ? .klyric : field == "yrc" ? .yrc : .lrc) {
                     lyrics.matchScore = scoreSong(song, media); lyrics.trackIdentifier = "netease:\(id)"
                     found.append(lyrics)
                 }
             }
+            if let timed = best(found), timed.hasWordTiming { return timed }
         }
         return best(found)
     }
@@ -98,10 +102,13 @@ struct LyricsProvider {
             query.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
             query.setValue("https://c.y.qq.com/", forHTTPHeaderField: "Referer")
             query.httpBody = Data("musicid=\(id)&version=15&miniversion=82&lrctype=4".utf8)
-            let raw = String(decoding: try await data(query), as: UTF8.self)
-            if var doc = try decodeQQ(raw, duration: media.duration) {
-                doc.matchScore = qqScore(song, media); doc.trackIdentifier = "qq:\(id)"; found.append(doc)
-            }
+            do {
+                let raw = String(decoding: try await data(query), as: UTF8.self)
+                if var doc = try decodeQQ(raw, duration: media.duration) {
+                    doc.matchScore = qqScore(song, media); doc.trackIdentifier = "qq:\(id)"; found.append(doc)
+                }
+            } catch { try Task.checkCancellation(); continue }
+            if let timed = best(found), timed.hasWordTiming { return timed }
         }
         return best(found)
     }
@@ -125,7 +132,7 @@ struct LyricsProvider {
             text = try inner.nodes(forXPath: "//@LyricContent").first?.stringValue ?? ""
         } else { text = decoded }
         let separated = text.replacingOccurrences(of: #"\s+(?=\[\d+,\d+\])"#, with: "\n", options: .regularExpression)
-        return LyricsParser.parse(separated, source: "QQ 音乐", duration: duration)
+        return LyricsParser.parse(separated, source: "QQ 音乐", duration: duration, format: .qrc)
     }
     static func lookup(_ media: MediaSnapshot, onCandidate: @escaping @MainActor @Sendable (LyricsDocument) -> Void) async -> (document: LyricsDocument?, unavailable: Bool) {
         await withTaskGroup(of: (LyricsDocument?, Bool).self) { group in

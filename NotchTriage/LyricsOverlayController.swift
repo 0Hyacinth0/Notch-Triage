@@ -22,6 +22,7 @@ import SwiftUI
     private let panel: NSPanel
     private var subscriptions = Set<AnyCancellable>()
     private var asleep = false
+    private var refreshPending = false
     private var measuredDocument: LyricsDocument?
     private var measuredAppearance: LyricsAppearance?
     private var measuredWidth: CGFloat = 0
@@ -35,9 +36,9 @@ import SwiftUI
         panel.ignoresMouseEvents = true; panel.hidesOnDeactivate = false
         model.lyrics.objectWillChange.sink { [weak self] in
             // Published emits before assignment; update visibility with the committed values.
-            DispatchQueue.main.async { self?.refresh() }
+            self?.scheduleRefresh()
         }.store(in: &subscriptions)
-        model.$panelState.sink { [weak self] _ in DispatchQueue.main.async { self?.refresh() } }.store(in: &subscriptions)
+        model.$panelState.sink { [weak self] _ in self?.scheduleRefresh() }.store(in: &subscriptions)
         NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification).sink { [weak self] _ in self?.refresh() }.store(in: &subscriptions)
         for event in [NSWorkspace.willSleepNotification, NSWorkspace.sessionDidResignActiveNotification] {
             NSWorkspace.shared.notificationCenter.publisher(for: event).sink { [weak self] _ in self?.asleep = true; self?.refresh() }.store(in: &subscriptions)
@@ -46,6 +47,11 @@ import SwiftUI
             NSWorkspace.shared.notificationCenter.publisher(for: event).sink { [weak self] _ in self?.asleep = false; self?.refresh() }.store(in: &subscriptions)
         }
         refresh()
+    }
+    private func scheduleRefresh() {
+        guard !refreshPending else { return }
+        refreshPending = true
+        DispatchQueue.main.async { [weak self] in self?.refreshPending = false; self?.refresh() }
     }
     private func refresh() {
         let store = model.lyrics
@@ -61,22 +67,23 @@ import SwiftUI
         store.setSpectrumVisible(!store.previewing)
         let width = min(LyricsDisplayMetrics.width(contentWidth: store.appearance.width, appearance: store.appearance), screen.frame.width - 8)
         let document = store.previewing ? LyricsDocument.demo : store.document ?? .demo
-        // Allocate for every line, so the media polling interval cannot crop a
-        // newly wrapped line between two snapshot updates.
+        // Single-line metrics no longer require shaping every lyric in the song
+        // synchronously before its first frame can appear.
         if measuredDocument != document || measuredAppearance != store.appearance || measuredWidth != width {
-            measuredHeight = document.lines.map { LyricsDisplayMetrics.height(document: document, time: $0.start, appearance: store.appearance, width: width) }.max() ?? 100
+            measuredHeight = LyricsDisplayMetrics.maximumHeight(store.appearance)
             measuredDocument = document; measuredAppearance = store.appearance; measuredWidth = width
         }
         let height = min(screen.frame.height - model.menuBarHeight, measuredHeight)
         let inset = LyricsDisplayMetrics.topInset(store.appearance)
         let menu = NotchLayout.menuBarHeight(screenFrame: screen.frame, visibleFrame: screen.visibleFrame)
-        panel.setFrame(NSRect(x: screen.frame.midX - width / 2, y: screen.frame.maxY - menu - store.appearance.gap + inset - height, width: width, height: height), display: true)
+        let frame = NSRect(x: screen.frame.midX - width / 2, y: screen.frame.maxY - menu - store.appearance.gap + inset - height, width: width, height: height)
+        if panel.frame != frame { panel.setFrame(frame, display: true) }
         if panel.contentView == nil {
             let hosting = NSHostingView(rootView: LyricsOverlayContent(store: store))
             hosting.sizingOptions = []
             panel.contentView = hosting
         }
-        panel.orderFrontRegardless()
+        if !panel.isVisible { panel.orderFrontRegardless() }
     }
 }
 

@@ -100,7 +100,7 @@ struct LyricsSettingsView: View {
             SettingsGroup(title: "位置") {
                 slider("显示宽度", value: $store.appearance.width, range: 200...2000, suffix: "pt")
                 slider("距刘海间隔", value: $store.appearance.gap, range: -30...160, suffix: "pt")
-                Text("间隔按可见文字计算；长句换行并保留字号。刘海面板展开时暂时隐藏歌词。")
+                Text("间隔按可见文字计算；长句保持单行并横向滚动，逐字歌词跟随演唱位置。刘海面板展开时暂时隐藏歌词。")
                     .font(.caption).foregroundStyle(.secondary)
             }
             SettingsGroup(title: "歌词来源与同步") {

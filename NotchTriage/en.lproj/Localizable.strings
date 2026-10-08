@@ -629,3 +629,5 @@
 "预览中的频谱为示意动画；实际显示使用音频信号。系统“减少动态效果”会关闭律动动画。" = "The preview uses a demonstration animation; the live display uses audio signals. Reduce Motion turns off visualizer animation.";
 
 "等待歌词显示和音乐播放" = "Waiting for visible lyrics and music playback";
+
+"间隔按可见文字计算；长句保持单行并横向滚动，逐字歌词跟随演唱位置。刘海面板展开时暂时隐藏歌词。" = "Gap is measured from visible text. Long lines scroll horizontally without wrapping; word-timed lyrics follow the singing position. Lyrics hide while the notch panel is expanded.";
