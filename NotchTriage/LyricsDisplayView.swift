@@ -219,7 +219,7 @@ struct LyricsDisplayView: View {
                     .frame(height: LyricsDisplayMetrics.canvasHeight(shape: shape, appearance: appearance))
                     .overlay {
                         if appearance.hasOrnaments, line != nil {
-                            LyricsOrnamentsView(appearance: appearance, textWidth: ornamentTextWidth, centerY: LyricsDisplayMetrics.topInset(appearance) + shape.height / 2, spectrum: spectrum, demonstration: demo || demonstrateSpectrum)
+                            LyricsOrnamentsView(appearance: appearance, textWidth: ornamentTextWidth, centerY: LyricsDisplayMetrics.topInset(appearance) + shape.height / 2, spectrum: spectrum, demonstration: demo || demonstrateSpectrum, paused: !playing)
                         }
                     }
                     .id(line?.start)

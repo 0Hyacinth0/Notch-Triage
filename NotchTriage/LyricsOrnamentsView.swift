@@ -6,13 +6,14 @@ struct LyricsOrnamentsView: View {
     var centerY: CGFloat
     var spectrum: LyricsSpectrum?
     var demonstration: Bool
+    var paused = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         Group {
             if let spectrum, !demonstration {
-                LiveLyricsOrnaments(appearance: appearance, textWidth: textWidth, centerY: centerY, spectrum: spectrum, reduceMotion: reduceMotion)
+                LiveLyricsOrnaments(appearance: appearance, textWidth: textWidth, centerY: centerY, spectrum: spectrum, reduceMotion: reduceMotion, paused: paused)
             } else {
-                LyricsOrnamentCanvas(appearance: appearance, textWidth: textWidth, centerY: centerY, frame: .silent, demonstration: demonstration, reduceMotion: reduceMotion)
+                LyricsOrnamentCanvas(appearance: appearance, textWidth: textWidth, centerY: centerY, frame: .silent, demonstration: demonstration, reduceMotion: reduceMotion, paused: paused)
             }
         }
         .allowsHitTesting(false).accessibilityHidden(true)
@@ -24,8 +25,9 @@ private struct LiveLyricsOrnaments: View {
     var centerY: CGFloat
     @ObservedObject var spectrum: LyricsSpectrum
     var reduceMotion: Bool
+    var paused = false
     var body: some View {
-        LyricsOrnamentCanvas(appearance: appearance, textWidth: textWidth, centerY: centerY, frame: spectrum.frame, demonstration: false, reduceMotion: reduceMotion)
+        LyricsOrnamentCanvas(appearance: appearance, textWidth: textWidth, centerY: centerY, frame: spectrum.frame, demonstration: false, reduceMotion: reduceMotion, paused: paused)
     }
 }
 private struct LyricsOrnamentCanvas: View {
@@ -35,8 +37,9 @@ private struct LyricsOrnamentCanvas: View {
     var frame: LyricsSpectrumFrame
     var demonstration: Bool
     var reduceMotion: Bool
+    var paused = false
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 60, paused: reduceMotion || (!demonstration && frame.bands.allSatisfy { $0 < 0.001 } && frame.previous.allSatisfy { $0 < 0.001 }))) { timeline in
+        TimelineView(.animation(minimumInterval: 1.0 / 60, paused: paused || reduceMotion || (!demonstration && frame.bands.allSatisfy { $0 < 0.001 } && frame.previous.allSatisfy { $0 < 0.001 }))) { timeline in
             let time = timeline.date.timeIntervalSinceReferenceDate
             let levels = levels(at: time)
             Canvas { context, size in
