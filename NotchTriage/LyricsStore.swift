@@ -180,7 +180,7 @@ struct LyricsAppearance: Codable, Equatable {
         guard spectrumVisible != value else { return }
         spectrumVisible = value; updateSpectrum()
     }
-    func retrySpectrum() { spectrum.resetFailure(); updateSpectrum() }
+    func retrySpectrum() { spectrum.stop(); spectrum.resetFailure(); updateSpectrum() }
     func retry() { receive(media, force: true) }
     func importLyrics() {
         let panel = NSOpenPanel()
