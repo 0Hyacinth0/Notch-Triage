@@ -138,7 +138,16 @@ hdiutil create \
   -srcfolder "$STAGING_DIR" \
   -format UDZO \
   "$TEMP_DMG_PATH"
-hdiutil verify "$TEMP_DMG_PATH"
+# DiskImages can briefly return EAGAIN immediately after image creation.
+verified=false
+for attempt in 1 2 3; do
+  if hdiutil verify "$TEMP_DMG_PATH"; then
+    verified=true
+    break
+  fi
+  sleep 1
+done
+[[ "$verified" == true ]] || fail "disk image integrity verification failed after three attempts"
 ditto "$TEMP_DMG_PATH" "$DMG_PATH"
 
 readonly SHA256="$(shasum -a 256 "$DMG_PATH" | awk '{print $1}')"
