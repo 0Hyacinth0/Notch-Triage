@@ -33,15 +33,15 @@ enum LyricsVisualStyle: String, Codable, CaseIterable {
     case classic, elastic, flowing
     var title: String {
         switch self {
-        case .classic: return "经典柔光"
+        case .classic: return "经典流光"
         case .elastic: return "弹性流光"
         case .flowing: return "流动亮芯"
         }
     }
     var detail: String {
         switch self {
-        case .classic: return "沿用当前的扫光与逐字动画。"
-        case .elastic: return "唱到的字轻微放大、拉伸、回弹，扫光与辉光同步移动。"
+        case .classic: return "逐字覆盖颜色与柔光，跟随所选动画跳动。"
+        case .elastic: return "唱到的字明显放大、拉伸并回弹，扫光与辉光同步移动。"
         case .flowing: return "亮芯在字形内流动，柔光贴着笔画边缘。"
         }
     }
@@ -89,7 +89,6 @@ struct LyricsAppearance: Codable, Equatable {
     var usesEstimatedTiming: Bool { estimatedAnimation ?? false }
     var spread: Double { max(0, min(1, glowSpread ?? 0.45)) }
     var style: LyricsVisualStyle { visualStyle ?? .classic }
-    var renderMotion: LyricsAnimation { style == .elastic ? .sweep : motion }
     var hasBreathing: Bool { breathing ?? false }
     var hasOrnaments: Bool { ornaments ?? false }
     var endColor: RingColor { glowEnd ?? highlight }

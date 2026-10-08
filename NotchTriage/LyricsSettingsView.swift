@@ -68,18 +68,13 @@ struct LyricsSettingsView: View {
                 }
             }
             SettingsGroup(title: "动画") {
-                if store.appearance.style == .elastic {
-                    Text("弹性流光自带逐字形变和扫光；切换到其他光效后仍保留原来的高亮形式。")
-                        .font(.caption).foregroundStyle(.secondary)
-                } else {
-                    Picker("高亮形式", selection: $store.appearance.motion) {
-                        ForEach(LyricsAnimation.allCases, id: \.self) { Text(LocalizedStringKey($0.title)).tag($0) }
-                    }.pickerStyle(.segmented)
-                    Text(LocalizedStringKey(motionDescription)).font(.caption).foregroundStyle(.secondary)
-                    if store.appearance.motion == .wave { slider("波浪高度", value: $store.appearance.lift, range: 0...40, suffix: "pt") }
-                    if store.appearance.motion == .dock {
-                        slider("放大幅度", value: Binding(get: { store.appearance.dockAmount }, set: { store.appearance.dockScale = $0 }), range: 0.1...1.2, suffix: "")
-                    }
+                Picker("高亮形式", selection: $store.appearance.motion) {
+                    ForEach(LyricsAnimation.allCases, id: \.self) { Text(LocalizedStringKey($0.title)).tag($0) }
+                }.pickerStyle(.segmented)
+                Text(LocalizedStringKey(motionDescription)).font(.caption).foregroundStyle(.secondary)
+                if store.appearance.motion == .wave { slider("波浪高度", value: $store.appearance.lift, range: 0...40, suffix: "pt") }
+                if store.appearance.motion == .dock {
+                    slider("放大幅度", value: Binding(get: { store.appearance.dockAmount }, set: { store.appearance.dockScale = $0 }), range: 0.1...1.2, suffix: "")
                 }
                 Toggle("无逐字数据时估算动画", isOn: Binding(get: { store.appearance.usesEstimatedTiming }, set: { store.appearance.estimatedAnimation = $0 }))
                 Text("估算会将整句时间分配给文字，不能保证与演唱同步。默认只对真实逐字数据播放逐字动画。")

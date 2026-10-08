@@ -549,14 +549,13 @@
 
 "光效预设" = "Light presets";
 "歌词视觉效果" = "Lyric visual effect";
-"经典柔光" = "Classic glow";
+"经典流光" = "Classic shimmer";
 "弹性流光" = "Elastic shimmer";
 "流动亮芯" = "Flowing core";
-"沿用当前的扫光与逐字动画。" = "Keep the current sweep and word animation.";
-"唱到的字轻微放大、拉伸、回弹，扫光与辉光同步移动。" = "The sung glyph gently grows, stretches and settles as light moves with it.";
+"逐字覆盖颜色与柔光，跟随所选动画跳动。" = "Color and soft glow cover each glyph in time with the selected animation.";
+"唱到的字明显放大、拉伸并回弹，扫光与辉光同步移动。" = "The sung glyph visibly grows, stretches and springs back as light moves with it.";
 "亮芯在字形内流动，柔光贴着笔画边缘。" = "A bright core travels inside each glyph, with soft light along its edges.";
 "切换后可在上方实时示意中查看；颜色与视觉效果可分别选择。" = "Preview changes above. Choose colors and the visual effect separately.";
-"弹性流光自带逐字形变和扫光；切换到其他光效后仍保留原来的高亮形式。" = "Elastic shimmer includes glyph motion and a sweep. Your previous highlight style is kept for the other effects.";
 "极光" = "Aurora";
 "月光" = "Moonlight";
 "暖金" = "Warm gold";
