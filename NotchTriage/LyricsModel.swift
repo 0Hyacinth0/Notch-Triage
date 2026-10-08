@@ -46,7 +46,7 @@ enum LyricsParser {
         let stamp = try! NSRegularExpression(pattern: #"\[(\d+):(\d+(?:\.\d+)?)\]"#)
         let enhanced = try! NSRegularExpression(pattern: #"<(\d+):(\d+(?:\.\d+)?)>([^<]*)"#)
         let yrcLine = try! NSRegularExpression(pattern: #"^\[(\d+),(\d+)\]"#)
-        let kWord = try! NSRegularExpression(pattern: #"\(0,(\d+)\)([^\(]*)"#)
+        let kWord = try! NSRegularExpression(pattern: #"\((\d+),(\d+)\)([^\(]*)"#)
         let qWord = try! NSRegularExpression(pattern: #"([^\(]*?)\((\d+),(\d+)\)"#)
         let yrcWord = try! NSRegularExpression(pattern: #"\((\d+),(\d+),\d+\)([^\(]*)"#)
         let offsetRE = try! NSRegularExpression(pattern: #"(?i)\[offset:([+-]?\d+)\]"#)
@@ -69,16 +69,14 @@ enum LyricsParser {
                     let body = str.substring(from: NSMaxRange(header.range))
                     let fragment = body as NSString
                     let bodyRange = NSRange(location: 0, length: fragment.length)
-                    var cursor = start + offset
-                    // KLYRIC is tag-before-text; QRC is text-before-tag. A QRC
-                    // word at absolute time zero must never select the KLYRIC path.
-                    let isKLyric = format == .klyric || (format == .automatic && body.hasPrefix("(0,"))
+                    // A leading timing tag belongs to the following text. Other
+                    // QRC lines put a timing tag after each word.
+                    let isKLyric = format == .klyric || body.hasPrefix("(")
                     let fragments = isKLyric ? kWord.matches(in: body, range: bodyRange) : []
                     words = fragments.map { match in
-                        let duration = (Double(fragment.substring(with: match.range(at: 1))) ?? 0) / 1000
-                        let word = LyricWord(text: fragment.substring(with: match.range(at: 2)), start: cursor, end: cursor + duration)
-                        cursor += duration
-                        return word
+                        let t = (Double(fragment.substring(with: match.range(at: 1))) ?? 0) / 1000
+                        let length = (Double(fragment.substring(with: match.range(at: 2))) ?? 0) / 1000
+                        return LyricWord(text: fragment.substring(with: match.range(at: 3)), start: start + offset + t, end: start + offset + t + length)
                     }
                     if words.isEmpty {
                         words = qWord.matches(in: body, range: bodyRange).map { match in

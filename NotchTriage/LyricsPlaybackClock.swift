@@ -10,31 +10,27 @@ struct LyricsPlaybackClock {
     private var identity = ""
     private var lastTimestamp: Date?
     private var lastObserved: Double = 0
-    private var pendingSeek: Double?
     mutating func update(_ media: MediaSnapshot, trackChanged: Bool = false, identity trackIdentity: String? = nil) {
         let now = ProcessInfo.processInfo.systemUptime
         let key = trackIdentity ?? "\(media.title)|\(media.artist)"
-        if !trackChanged, key == identity, let timestamp = media.progressAnchorDate, let lastTimestamp, timestamp < lastTimestamp { return }
         let observed = media.estimatedElapsed()
         let nextRate = media.isPlaying ? max(0, media.playbackRate ?? 1) : 0
         let predicted = elapsed(at: now)
         let delta = observed - predicted
-        if trackChanged || key != identity || nextRate != reportedRate {
-            position = observed; pendingSeek = nil; rate = nextRate
-        } else if abs(delta) <= 1.25 {
-            // Correct small, often rounded source offsets by changing speed slightly,
-            // rather than jumping backwards across words at every poll.
-            position = predicted; rate = nextRate == 0 ? 0 : nextRate * (1 + max(-0.08, min(0.08, delta * 0.12)))
-            pendingSeek = nil
-        } else if let pendingSeek, abs(delta - pendingSeek) < 0.75, nextRate == 0 || abs(observed - lastObserved) > 0.02 {
-            // A seek needs a second advancing observation. A repeated stale position
-            // or one delayed fallback snapshot cannot make the display jump back.
-            position = observed; self.pendingSeek = nil; rate = nextRate
+        let changedObservation = media.progressAnchorDate != lastTimestamp || abs(media.elapsed - lastObserved) > 0.001
+        if trackChanged || key != identity || nextRate != reportedRate || (changedObservation && abs(delta) >= 0.75) {
+            // A changed playback anchor can move backwards on a seek. Apply a
+            // real position jump immediately in either direction.
+            position = observed; rate = nextRate
+        } else if changedObservation {
+            position = predicted + max(-0.12, min(0.12, delta * 0.25))
+            rate = nextRate
         } else {
-            position = predicted; pendingSeek = delta; rate = nextRate
+            // Repeated snapshots carry no new timing information.
+            position = predicted; rate = nextRate
         }
         identity = key; uptime = now; reportedRate = nextRate; duration = media.duration
-        lastTimestamp = media.progressAnchorDate; lastObserved = observed
+        lastTimestamp = media.progressAnchorDate; lastObserved = media.elapsed
     }
     func elapsed(at now: Double = ProcessInfo.processInfo.systemUptime) -> Double {
         let value = max(0, position + max(0, now - uptime) * rate)

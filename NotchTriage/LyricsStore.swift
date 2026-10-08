@@ -160,7 +160,6 @@ struct LyricsAppearance: Codable, Equatable {
             if snapshot.album.isEmpty { snapshot.album = previous.album }
             if snapshot.duration <= 0 { snapshot.duration = previous.duration }
         }
-        if sameTrack, let current = media.progressAnchorDate, let incoming = snapshot.progressAnchorDate, incoming < current { return }
         media = snapshot
         clock.update(snapshot, trackChanged: !sameTrack, identity: "\(LyricsProvider.normalized(snapshot.title))|\(LyricsProvider.normalized(snapshot.artist))")
         updateSpectrum()
@@ -170,14 +169,19 @@ struct LyricsAppearance: Codable, Equatable {
         upgradeTask?.cancel(); upgradeTask = nil
         if !sameTrack { upgradeAttempts = 0 }
         let newKey = sameTrack && !key.isEmpty ? key : "\(LyricsProvider.normalized(snapshot.title))|\(LyricsProvider.normalized(snapshot.artist))|\(Int((snapshot.duration / 5).rounded()))|\(LyricsProvider.normalized(snapshot.album))"
-        let previous = sameTrack ? document ?? cache[newKey] : cache[newKey]
+        let previous = LyricsProvider.best([sameTrack ? document : nil, cache[newKey], legacyCache(for: snapshot)].compactMap { $0 })
         cachedTrackMedia = snapshot
         key = newKey
         generation = UUID(); let ticket = generation
         request?.cancel(); document = previous
         let replaceTimed = (force || (previous?.source != "本地导入" && (previous?.parserRevision ?? 0) < 2)) && previous?.hasWordTiming == true
         guard snapshot != .idle, !snapshot.title.isEmpty, !snapshot.artist.isEmpty else { status = "等待正在播放的歌曲"; return }
-        if !force, let cached = cache[key] { document = cached; updateStatus(); if cached.hasWordTiming && ((cached.parserRevision ?? 0) >= 2 || cached.source == "本地导入") { return } }
+        if !force, let cached = cache[key] {
+            document = LyricsProvider.best([cached, document].compactMap { $0 })
+            updateStatus()
+            if let document, document.hasWordTiming && (document.parserRevision ?? 0) >= 2 { return }
+            if document?.source == "本地导入" { return }
+        }
         status = "正在查找歌词…"
         request = Task { [weak self] in
             let result = await LyricsProvider.lookup(snapshot) { [weak self] candidate in
@@ -208,6 +212,21 @@ struct LyricsAppearance: Codable, Equatable {
     private func updateStatus() {
         guard let document else { status = "未找到匹配歌词，可导入 LRC / YRC"; return }
         status = !canSynchronize ? "播放器未提供进度，暂时无法同步" : document.hasWordTiming ? "已连接 · 逐字时间轴" : "已连接 · 逐行时间轴（无逐字数据）"
+    }
+    private func legacyCache(for snapshot: MediaSnapshot) -> LyricsDocument? {
+        let title = LyricsProvider.normalized(snapshot.title)
+        let artist = LyricsProvider.normalized(snapshot.artist)
+        let album = LyricsProvider.normalized(snapshot.album)
+        return cache.compactMap { oldKey, document -> LyricsDocument? in
+            let parts = oldKey.split(separator: "|", omittingEmptySubsequences: false).map(String.init)
+            guard parts.count == 4,
+                  LyricsProvider.normalized(parts[0]) == title,
+                  LyricsProvider.normalized(parts[1]) == artist,
+                  let length = Double(parts[2]),
+                  (snapshot.duration <= 0 || length <= 0 || abs(length - snapshot.duration) < 5),
+                  (album.isEmpty || parts[3].isEmpty || LyricsProvider.normalized(parts[3]) == album) else { return nil }
+            return document
+        }.reduce(nil) { LyricsProvider.best([$0, $1].compactMap { $0 }) }
     }
     private func saveCache() {
         if cache.count > 60 {
