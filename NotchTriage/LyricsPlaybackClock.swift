@@ -24,7 +24,6 @@ struct LyricsPlaybackClock {
         let predicted = elapsed(at: now)
         let delta = observed - predicted
         let changedObservation = media.progressAnchorDate != lastTimestamp || abs(media.elapsed - lastObserved) > 0.001
-        var correctedRate = nextRate
         if trackChanged || key != identity {
             position = observed; pendingSeek = nil
         } else if !changedObservation {
@@ -34,30 +33,28 @@ struct LyricsPlaybackClock {
             position = observed; pendingSeek = nil
         } else if nextRate == 0 {
             position = observed; pendingSeek = nil
-        } else if abs(delta) >= 0.75 {
-            // Players sometimes deliver an older position for a single poll.
-            // Correct a persistent small displacement through playback speed;
-            // it must never make a normally playing lyric move backwards.
+        } else if abs(delta) >= 2.5 {
+            // Some players report progress with roughly two seconds of jitter.
+            // A moderate seek needs two independent, consistent observations;
+            // a single late reading must not shift the lyrics.
             if let pendingSeek,
-               now - pendingSeek.startedAt < 10,
+               now - pendingSeek.startedAt >= 0.5,
+               now - pendingSeek.startedAt < 12,
                delta.sign == pendingSeek.difference.sign,
-               abs(delta - pendingSeek.difference) < 0.6 {
-                position = predicted
-                self.pendingSeek = (delta, pendingSeek.startedAt)
-                correctedRate = nextRate * (1 + max(-0.5, min(0.5, delta * 0.25)))
+               abs(delta - pendingSeek.difference) < 0.75 {
+                position = observed
+                self.pendingSeek = nil
             } else {
                 position = predicted
                 pendingSeek = (delta, now)
-                correctedRate = nextRate * (1 + max(-0.03, min(0.03, delta * 0.02)))
             }
         } else {
-            // Reconcile small drift through speed, without moving the cursor
-            // backwards between animation frames.
+            // Small discrepancies are source jitter. Speeding up or slowing
+            // down to chase them can make karaoke words drift after a seek.
             position = predicted
-            correctedRate = nextRate * (1 + max(-0.06, min(0.06, delta * 0.12)))
             pendingSeek = nil
         }
-        rate = correctedRate
+        rate = nextRate
         identity = key; uptime = now; duration = media.duration
         lastTimestamp = media.progressAnchorDate; lastObserved = media.elapsed
     }
