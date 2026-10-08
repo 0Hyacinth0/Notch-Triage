@@ -150,18 +150,21 @@ struct LyricsAppearance: Codable, Equatable {
             return
         }
         idleTask?.cancel(); idleTask = nil
-        let sameTrack = cachedTrackMedia.map {
+        let sameSong = cachedTrackMedia.map {
             LyricsProvider.normalized($0.title) == LyricsProvider.normalized(snapshot.title)
                 && LyricsProvider.normalized($0.artist) == LyricsProvider.normalized(snapshot.artist)
-                && ($0.duration <= 0 || snapshot.duration <= 0 || abs($0.duration - snapshot.duration) < 3)
-                && ($0.album.isEmpty || snapshot.album.isEmpty || LyricsProvider.normalized($0.album) == LyricsProvider.normalized(snapshot.album))
         } ?? false
+        // Album names and duration can change when the media adapter enriches
+        // the same playback session. They must not restart the lyric clock.
+        let sameTrack = sameSong && (cachedTrackMedia.map {
+            $0.duration <= 0 || snapshot.duration <= 0 || abs($0.duration - snapshot.duration) < 10
+        } ?? false)
         if sameTrack, let previous = cachedTrackMedia {
             if snapshot.album.isEmpty { snapshot.album = previous.album }
             if snapshot.duration <= 0 { snapshot.duration = previous.duration }
         }
         media = snapshot
-        clock.update(snapshot, trackChanged: !sameTrack, identity: "\(LyricsProvider.normalized(snapshot.title))|\(LyricsProvider.normalized(snapshot.artist))")
+        clock.update(snapshot, trackChanged: !sameSong, identity: "\(LyricsProvider.normalized(snapshot.title))|\(LyricsProvider.normalized(snapshot.artist))")
         updateSpectrum()
         guard running, !suspended, appearance.enabled else { return }
         cachedTrackMedia = snapshot
