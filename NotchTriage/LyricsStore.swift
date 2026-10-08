@@ -29,6 +29,23 @@ enum LyricsLightPreset: String, Codable, CaseIterable {
         }
     }
 }
+enum LyricsVisualStyle: String, Codable, CaseIterable {
+    case classic, elastic, flowing
+    var title: String {
+        switch self {
+        case .classic: return "经典柔光"
+        case .elastic: return "弹性流光"
+        case .flowing: return "流动亮芯"
+        }
+    }
+    var detail: String {
+        switch self {
+        case .classic: return "沿用当前的扫光与逐字动画。"
+        case .elastic: return "唱到的字轻微放大、拉伸、回弹，扫光与辉光同步移动。"
+        case .flowing: return "亮芯在字形内流动，柔光贴着笔画边缘。"
+        }
+    }
+}
 enum LyricsOrnamentStyle: String, Codable, CaseIterable {
     case spectrum, waveform, ripple
     var title: String { switch self { case .spectrum: return "柔光频谱"; case .waveform: return "流动波形"; case .ripple: return "水波纹" } }
@@ -49,6 +66,8 @@ struct LyricsAppearance: Codable, Equatable {
     // Optional storage preserves settings saved before Dock animation existed.
     var dockScale: Double? = nil
     var lightPreset: LyricsLightPreset? = .aurora
+    // Optional so preferences written by earlier releases keep their look.
+    var visualStyle: LyricsVisualStyle? = nil
     var glowEnd: RingColor? = LyricsLightPreset.aurora.colors.1
     var glowSpread: Double? = 0.55
     var breathing: Bool? = true
@@ -69,6 +88,8 @@ struct LyricsAppearance: Codable, Equatable {
     var variant: LyricsChineseVariant { chineseVariant ?? .simplified }
     var usesEstimatedTiming: Bool { estimatedAnimation ?? false }
     var spread: Double { max(0, min(1, glowSpread ?? 0.45)) }
+    var style: LyricsVisualStyle { visualStyle ?? .classic }
+    var renderMotion: LyricsAnimation { style == .elastic ? .sweep : motion }
     var hasBreathing: Bool { breathing ?? false }
     var hasOrnaments: Bool { ornaments ?? false }
     var endColor: RingColor { glowEnd ?? highlight }

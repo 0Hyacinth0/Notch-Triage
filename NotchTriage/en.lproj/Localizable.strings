@@ -548,6 +548,15 @@
 "自动查询 LRCLIB 与网易云音乐，会发送歌名和歌手。逐行歌词按句推进动画；逐字歌词可精确同步。支持导入 LRC、增强 LRC 和 YRC。" = "Lookup sends the song title and artist to LRCLIB and NetEase Music. Line timing animates across the phrase; word timing syncs precisely. Import LRC, enhanced LRC or YRC.";
 
 "光效预设" = "Light presets";
+"歌词视觉效果" = "Lyric visual effect";
+"经典柔光" = "Classic glow";
+"弹性流光" = "Elastic shimmer";
+"流动亮芯" = "Flowing core";
+"沿用当前的扫光与逐字动画。" = "Keep the current sweep and word animation.";
+"唱到的字轻微放大、拉伸、回弹，扫光与辉光同步移动。" = "The sung glyph gently grows, stretches and settles as light moves with it.";
+"亮芯在字形内流动，柔光贴着笔画边缘。" = "A bright core travels inside each glyph, with soft light along its edges.";
+"切换后可在上方实时示意中查看；颜色与视觉效果可分别选择。" = "Preview changes above. Choose colors and the visual effect separately.";
+"弹性流光自带逐字形变和扫光；切换到其他光效后仍保留原来的高亮形式。" = "Elastic shimmer includes glyph motion and a sweep. Your previous highlight style is kept for the other effects.";
 "极光" = "Aurora";
 "月光" = "Moonlight";
 "暖金" = "Warm gold";
@@ -567,6 +576,7 @@
 "同步说明与隐私" = "Synchronization and privacy";
 "让音乐流动" = "Let music flow";
 "预设只改变颜色和光效，保留字号、位置与动画选择。" = "Presets change colors and lighting while keeping your font size, position and animation.";
+"预设只改变颜色与光晕强度，保留字号、位置和视觉效果。" = "Presets change colors and glow strength while keeping your font size, position and visual effect.";
 "细线随歌词时间轴律动，不代表音频频谱。系统“减少动态效果”会关闭位移、放大与呼吸。" = "Accents follow the lyric clock, not an audio spectrum. Reduce Motion disables movement, magnification and breathing.";
 "间隔按可见文字计算；长句换行并保留字号。刘海面板展开时暂时隐藏歌词。" = "The gap follows visible text. Long lines wrap at your chosen font size. Lyrics hide when the notch panel opens.";
 "正值使歌词提前，负值使歌词延后。" = "Positive values advance lyrics; negative values delay them.";

@@ -29,13 +29,24 @@ struct LyricsSettingsView: View {
                     Button(store.previewing ? "结束刘海预览" : "在刘海下方预览 30 秒") { store.togglePreview() }
                 }
             }
+            SettingsGroup(title: "歌词视觉效果") {
+                Picker("歌词视觉效果", selection: Binding(get: { store.appearance.style }, set: { store.appearance.visualStyle = $0 })) {
+                    ForEach(LyricsVisualStyle.allCases, id: \.self) { style in
+                        Text(LocalizedStringKey(style.title)).tag(style)
+                    }
+                }.pickerStyle(.segmented)
+                Text(LocalizedStringKey(store.appearance.style.detail))
+                    .font(.caption).foregroundStyle(.secondary)
+                Text("切换后可在上方实时示意中查看；颜色与视觉效果可分别选择。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             SettingsGroup(title: "光效预设") {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                     ForEach(LyricsLightPreset.allCases.filter { $0 != .custom }, id: \.self) { preset in
                         presetCard(preset)
                     }
                 }
-                Text("预设只改变颜色和光效，保留字号、位置与动画选择。")
+                Text("预设只改变颜色与光晕强度，保留字号、位置和视觉效果。")
                     .font(.caption).foregroundStyle(.secondary)
             }
             SettingsGroup(title: "文字") {
@@ -57,17 +68,22 @@ struct LyricsSettingsView: View {
                 }
             }
             SettingsGroup(title: "动画") {
-                Picker("高亮形式", selection: $store.appearance.motion) {
-                    ForEach(LyricsAnimation.allCases, id: \.self) { Text(LocalizedStringKey($0.title)).tag($0) }
-                }.pickerStyle(.segmented)
+                if store.appearance.style == .elastic {
+                    Text("弹性流光自带逐字形变和扫光；切换到其他光效后仍保留原来的高亮形式。")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Picker("高亮形式", selection: $store.appearance.motion) {
+                        ForEach(LyricsAnimation.allCases, id: \.self) { Text(LocalizedStringKey($0.title)).tag($0) }
+                    }.pickerStyle(.segmented)
+                    Text(LocalizedStringKey(motionDescription)).font(.caption).foregroundStyle(.secondary)
+                    if store.appearance.motion == .wave { slider("波浪高度", value: $store.appearance.lift, range: 0...40, suffix: "pt") }
+                    if store.appearance.motion == .dock {
+                        slider("放大幅度", value: Binding(get: { store.appearance.dockAmount }, set: { store.appearance.dockScale = $0 }), range: 0.1...1.2, suffix: "")
+                    }
+                }
                 Toggle("无逐字数据时估算动画", isOn: Binding(get: { store.appearance.usesEstimatedTiming }, set: { store.appearance.estimatedAnimation = $0 }))
                 Text("估算会将整句时间分配给文字，不能保证与演唱同步。默认只对真实逐字数据播放逐字动画。")
                     .font(.caption).foregroundStyle(.secondary)
-                Text(LocalizedStringKey(motionDescription)).font(.caption).foregroundStyle(.secondary)
-                if store.appearance.motion == .wave { slider("波浪高度", value: $store.appearance.lift, range: 0...40, suffix: "pt") }
-                if store.appearance.motion == .dock {
-                    slider("放大幅度", value: Binding(get: { store.appearance.dockAmount }, set: { store.appearance.dockScale = $0 }), range: 0.1...1.2, suffix: "")
-                }
             }
             SettingsGroup(title: "光晕与律动") {
                 slider("光效强度", value: $store.appearance.glow, range: 0...1, suffix: "")
