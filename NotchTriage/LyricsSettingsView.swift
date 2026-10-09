@@ -29,7 +29,7 @@ struct LyricsSettingsView: View {
                     Button(store.previewing ? "结束刘海预览" : "在刘海下方预览 30 秒") { store.togglePreview() }
                 }
             }
-            SettingsGroup(title: "歌词视觉效果") {
+            SettingsGroup(title: "视觉与动画") {
                 Picker("歌词视觉效果", selection: Binding(get: { store.appearance.style }, set: { store.appearance.visualStyle = $0 })) {
                     ForEach(LyricsVisualStyle.allCases, id: \.self) { style in
                         Text(LocalizedStringKey(style.title)).tag(style)
@@ -37,37 +37,6 @@ struct LyricsSettingsView: View {
                 }.pickerStyle(.segmented)
                 Text(LocalizedStringKey(store.appearance.style.detail))
                     .font(.caption).foregroundStyle(.secondary)
-                Text("切换后可在上方实时示意中查看；颜色与视觉效果可分别选择。")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            SettingsGroup(title: "光效预设") {
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                    ForEach(LyricsLightPreset.allCases.filter { $0 != .custom }, id: \.self) { preset in
-                        presetCard(preset)
-                    }
-                }
-                Text("预设只改变颜色与光晕强度，保留字号、位置和视觉效果。")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            SettingsGroup(title: "文字") {
-                Picker("字体", selection: $store.appearance.fontFamily) {
-                    Text("系统字体").tag("System")
-                    ForEach(NSFontManager.shared.availableFontFamilies.sorted(), id: \.self) { Text($0).tag($0) }
-                }
-                Picker("中文显示", selection: Binding(get: { store.appearance.variant }, set: { store.appearance.chineseVariant = $0 })) {
-                    ForEach(LyricsChineseVariant.allCases, id: \.self) { Text(LocalizedStringKey($0.title)).tag($0) }
-                }
-                slider("字号", value: $store.appearance.fontSize, range: 8...120, suffix: "pt")
-                Toggle("显示下一句", isOn: $store.appearance.showNext)
-                DisclosureGroup("自定义颜色") {
-                    ColorPicker("光效主色", selection: colorBinding(\.highlight))
-                    ColorPicker("光效尾色", selection: Binding(get: { store.appearance.endColor.color }, set: {
-                        store.appearance.glowEnd = RingColor($0); store.appearance.lightPreset = .custom
-                    }))
-                    ColorPicker("待唱颜色", selection: colorBinding(\.resting))
-                }
-            }
-            SettingsGroup(title: "动画") {
                 Picker("高亮形式", selection: $store.appearance.motion) {
                     ForEach(LyricsAnimation.allCases, id: \.self) { Text(LocalizedStringKey($0.title)).tag($0) }
                 }.pickerStyle(.segmented)
@@ -76,43 +45,79 @@ struct LyricsSettingsView: View {
                 if store.appearance.motion == .dock {
                     slider("放大幅度", value: Binding(get: { store.appearance.dockAmount }, set: { store.appearance.dockScale = $0 }), range: 0.1...1.2, suffix: "")
                 }
-                Toggle("无逐字数据时估算动画", isOn: Binding(get: { store.appearance.usesEstimatedTiming }, set: { store.appearance.estimatedAnimation = $0 }))
-                Text("估算会将整句时间分配给文字，不能保证与演唱同步。默认只对真实逐字数据播放逐字动画。")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            SettingsGroup(title: "光晕与律动") {
-                slider("光效强度", value: $store.appearance.glow, range: 0...1, suffix: "")
-                slider("柔光范围", value: Binding(get: { store.appearance.spread }, set: { store.appearance.glowSpread = $0 }), range: 0...1, suffix: "")
-                    .disabled(store.appearance.glow == 0)
-                Toggle("呼吸光效", isOn: Binding(get: { store.appearance.hasBreathing }, set: { store.appearance.breathing = $0 }))
-                    .disabled(store.appearance.glow == 0)
-                Toggle("两侧律动装饰", isOn: Binding(get: { store.appearance.hasOrnaments }, set: { store.appearance.ornaments = $0 }))
-                if store.appearance.hasOrnaments {
-                    Picker("律动样式", selection: Binding(get: { store.appearance.ornament }, set: { store.appearance.ornamentStyle = $0 })) {
-                        ForEach(LyricsOrnamentStyle.allCases, id: \.self) { Text(LocalizedStringKey($0.title)).tag($0) }
-                    }.pickerStyle(.segmented)
-                    slider("装饰距文字", value: Binding(get: { store.appearance.sideGap }, set: { store.appearance.ornamentGap = $0 }), range: 0...160, suffix: "pt")
-                    slider("单侧装饰宽度", value: Binding(get: { store.appearance.sideWidth }, set: { store.appearance.ornamentWidth = $0 }), range: 24...180, suffix: "pt")
-                    slider("装饰高度", value: Binding(get: { store.appearance.sideHeight }, set: { store.appearance.ornamentHeight = $0 }), range: 8...120, suffix: "pt")
-                    Toggle("启用真实频谱", isOn: Binding(get: { store.appearance.capturesSpectrum }, set: { store.appearance.spectrumEnabled = $0 }))
-                    LyricsSpectrumStatus(spectrum: store.spectrum, model: model)
-                    HStack {
-                        Button("重试音频连接") { store.retrySpectrum() }.disabled(!store.appearance.capturesSpectrum || !store.appearance.enabled)
-                        Button("系统音频权限设置") {
-                            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AudioCapture")!)
-                        }
-                    }
-                    Text("真实频谱分析系统输出音频，首次启用需要系统音频权限；音频不保存、不上传，也不使用麦克风。关闭歌词、暂停播放或锁屏时停止采集。未启用或没有信号时保持静止。")
+                DisclosureGroup("逐字时间轴") {
+                    Toggle("无逐字数据时估算动画", isOn: Binding(get: { store.appearance.usesEstimatedTiming }, set: { store.appearance.estimatedAnimation = $0 }))
+                    Text("估算会将整句时间分配给文字，不能保证与演唱同步。默认只对真实逐字数据播放逐字动画。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                Text("预览中的频谱为示意动画；实际显示使用音频信号。系统“减少动态效果”会关闭律动动画。")
-                    .font(.caption).foregroundStyle(.secondary)
             }
-            SettingsGroup(title: "位置") {
+            SettingsGroup(title: "文字与位置") {
+                Picker("字体", selection: $store.appearance.fontFamily) {
+                    Text("系统字体").tag("System")
+                    ForEach(NSFontManager.shared.availableFontFamilies.sorted(), id: \.self) { Text($0).tag($0) }
+                }
+                slider("字号", value: $store.appearance.fontSize, range: 8...120, suffix: "pt")
+                Picker("中文显示", selection: Binding(get: { store.appearance.variant }, set: { store.appearance.chineseVariant = $0 })) {
+                    ForEach(LyricsChineseVariant.allCases, id: \.self) { Text(LocalizedStringKey($0.title)).tag($0) }
+                }
+                Toggle("显示下一句", isOn: $store.appearance.showNext)
                 slider("显示宽度", value: $store.appearance.width, range: 200...2000, suffix: "pt")
                 slider("距刘海间隔", value: $store.appearance.gap, range: -30...160, suffix: "pt")
-                Text("间隔按可见文字计算；长句保持单行并横向滚动，逐字歌词跟随演唱位置。刘海面板展开时暂时隐藏歌词。")
-                    .font(.caption).foregroundStyle(.secondary)
+                DisclosureGroup("显示说明") {
+                    Text("间隔按可见文字计算；长句保持单行并横向滚动，逐字歌词跟随演唱位置。刘海面板展开时暂时隐藏歌词。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            SettingsGroup(title: "更多外观选项") {
+                DisclosureGroup {
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                        ForEach(LyricsLightPreset.allCases.filter { $0 != .custom }, id: \.self) { preset in
+                            presetCard(preset)
+                        }
+                    }
+                    Text("预设只改变颜色与光晕强度，保留字号、位置和视觉效果。")
+                        .font(.caption).foregroundStyle(.secondary)
+                    ColorPicker("光效主色", selection: colorBinding(\.highlight))
+                    ColorPicker("光效尾色", selection: Binding(get: { store.appearance.endColor.color }, set: {
+                        store.appearance.glowEnd = RingColor($0); store.appearance.lightPreset = .custom
+                    }))
+                    ColorPicker("待唱颜色", selection: colorBinding(\.resting))
+                    slider("光效强度", value: $store.appearance.glow, range: 0...1, suffix: "")
+                    slider("柔光范围", value: Binding(get: { store.appearance.spread }, set: { store.appearance.glowSpread = $0 }), range: 0...1, suffix: "")
+                        .disabled(store.appearance.glow == 0)
+                    Toggle("呼吸光效", isOn: Binding(get: { store.appearance.hasBreathing }, set: { store.appearance.breathing = $0 }))
+                        .disabled(store.appearance.glow == 0)
+                } label: {
+                    HStack {
+                        Text("配色与光晕")
+                        Spacer()
+                        Text(LocalizedStringKey((store.appearance.lightPreset ?? .custom).title))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Toggle("两侧律动装饰", isOn: Binding(get: { store.appearance.hasOrnaments }, set: { store.appearance.ornaments = $0 }))
+                if store.appearance.hasOrnaments {
+                    DisclosureGroup("律动细节") {
+                        Picker("律动样式", selection: Binding(get: { store.appearance.ornament }, set: { store.appearance.ornamentStyle = $0 })) {
+                            ForEach(LyricsOrnamentStyle.allCases, id: \.self) { Text(LocalizedStringKey($0.title)).tag($0) }
+                        }.pickerStyle(.segmented)
+                        slider("装饰距文字", value: Binding(get: { store.appearance.sideGap }, set: { store.appearance.ornamentGap = $0 }), range: 0...160, suffix: "pt")
+                        slider("单侧装饰宽度", value: Binding(get: { store.appearance.sideWidth }, set: { store.appearance.ornamentWidth = $0 }), range: 24...180, suffix: "pt")
+                        slider("装饰高度", value: Binding(get: { store.appearance.sideHeight }, set: { store.appearance.ornamentHeight = $0 }), range: 8...120, suffix: "pt")
+                        Toggle("启用真实频谱", isOn: Binding(get: { store.appearance.capturesSpectrum }, set: { store.appearance.spectrumEnabled = $0 }))
+                        LyricsSpectrumStatus(spectrum: store.spectrum, model: model)
+                        HStack {
+                            Button("重试音频连接") { store.retrySpectrum() }.disabled(!store.appearance.capturesSpectrum || !store.appearance.enabled)
+                            Button("系统音频权限设置") {
+                                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AudioCapture")!)
+                            }
+                        }
+                        Text("真实频谱分析系统输出音频，首次启用需要系统音频权限；音频不保存、不上传，也不使用麦克风。关闭歌词、暂停播放或锁屏时停止采集。未启用或没有信号时保持静止。")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Text("预览中的频谱为示意动画；实际显示使用音频信号。系统“减少动态效果”会关闭律动动画。")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
             }
             SettingsGroup(title: "歌词来源与同步") {
                 if store.media != .idle { Text("\(store.media.title) · \(store.media.artist)").font(.callout).lineLimit(2) }
