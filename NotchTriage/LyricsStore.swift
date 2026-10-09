@@ -85,8 +85,12 @@ struct LyricsAppearance: Codable, Equatable {
     var ornamentSpace: Double { hasOrnaments ? (sideWidth + sideGap) * 2 : 0 }
     var chineseVariant: LyricsChineseVariant? = .simplified
     var estimatedAnimation: Bool? = false
+    var showTranslation: Bool? = false
+    var showRomanization: Bool? = false
     var variant: LyricsChineseVariant { chineseVariant ?? .simplified }
     var usesEstimatedTiming: Bool { estimatedAnimation ?? false }
+    var showsTranslation: Bool { showTranslation ?? false }
+    var showsRomanization: Bool { showRomanization ?? false }
     var spread: Double { max(0, min(1, glowSpread ?? 0.45)) }
     var style: LyricsVisualStyle { visualStyle ?? .classic }
     var hasBreathing: Bool { breathing ?? false }
@@ -109,6 +113,12 @@ struct LyricsAppearance: Codable, Equatable {
 }
 
 @MainActor final class LyricsStore: ObservableObject {
+    @Published var sourcePreferences: LyricsSourcePreferences { didSet {
+        if let data = try? JSONEncoder().encode(sourcePreferences) {
+            UserDefaults.standard.set(data, forKey: "NotchTriage.Lyrics.sourcePreferences")
+        }
+        if running, appearance.enabled { receive(media, force: true) }
+    } }
     @Published var appearance: LyricsAppearance { didSet {
         if let data = try? JSONEncoder().encode(appearance) { UserDefaults.standard.set(data, forKey: "NotchTriage.Lyrics.appearance") }
         updateSpectrum()
@@ -118,8 +128,11 @@ struct LyricsAppearance: Codable, Equatable {
         }
     } }
     @Published private(set) var document: LyricsDocument?
+    @Published private(set) var candidates: [LyricsDocument] = []
+    @Published private(set) var sourceStatus: [LyricsSourceID: String] = [:]
     @Published private(set) var media = MediaSnapshot.idle
     @Published private(set) var status = "歌词显示已关闭"
+    @Published private(set) var rematchFeedback: String?
     @Published private(set) var previewing = false
     let spectrum = LyricsSpectrum()
     private var request: Task<Void, Never>?
@@ -133,27 +146,53 @@ struct LyricsAppearance: Codable, Equatable {
     private var clockRecoveryTask: Task<Void, Never>?
     private var idleTask: Task<Void, Never>?
     private var upgradeTask: Task<Void, Never>?
+    private var localCacheTask: Task<Void, Never>?
     private var upgradeAttempts = 0
     private var cachedTrackMedia: MediaSnapshot?
     private var cache: [String: LyricsDocument] = [:]
+    private var pinnedSelections: [String: String] = [:]
     private let cacheURL: URL
 
     init() {
         let data = UserDefaults.standard.data(forKey: "NotchTriage.Lyrics.appearance")
         appearance = data.flatMap { try? JSONDecoder().decode(LyricsAppearance.self, from: $0) } ?? LyricsAppearance()
+        let sourceData = UserDefaults.standard.data(forKey: "NotchTriage.Lyrics.sourcePreferences")
+        sourcePreferences = sourceData.flatMap { try? JSONDecoder().decode(LyricsSourcePreferences.self, from: $0) } ?? LyricsSourcePreferences()
         cacheURL = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("NotchTriage/lyrics.json")
         if let data = try? Data(contentsOf: cacheURL), data.count < 8_000_000 { cache = (try? JSONDecoder().decode([String: LyricsDocument].self, from: data)) ?? [:] }
+        if let data = UserDefaults.standard.data(forKey: "NotchTriage.Lyrics.pinnedSelections") {
+            pinnedSelections = (try? JSONDecoder().decode([String: String].self, from: data)) ?? [:]
+        }
     }
     func start() { running = true; updateSpectrum(); updateClockRecovery() }
+    func resetForPlayerSwitch() {
+        idleTask?.cancel(); idleTask = nil
+        upgradeTask?.cancel(); upgradeTask = nil
+        localCacheTask?.cancel(); localCacheTask = nil
+        request?.cancel(); request = nil
+        generation = UUID()
+        media = .idle; document = nil; candidates = []; sourceStatus = [:]
+        key = ""; cachedTrackMedia = nil
+        clock.update(.idle, trackChanged: true)
+        updateClockRecovery(); updateSpectrum()
+        status = "等待正在播放的歌曲"
+    }
     func setSuspended(_ value: Bool) {
         suspended = value
         updateSpectrum()
         updateClockRecovery()
-        if value { request?.cancel(); idleTask?.cancel(); idleTask = nil; upgradeTask?.cancel(); upgradeTask = nil } else if appearance.enabled { receive(media, force: document?.hasWordTiming != true) }
+        if value { request?.cancel(); idleTask?.cancel(); idleTask = nil; upgradeTask?.cancel(); upgradeTask = nil; localCacheTask?.cancel(); localCacheTask = nil } else if appearance.enabled { receive(media, force: document?.hasWordTiming != true) }
     }
-    func stop() { running = false; clockRecoveryTask?.cancel(); clockRecoveryTask = nil; upgradeTask?.cancel(); upgradeTask = nil; idleTask?.cancel(); idleTask = nil; spectrum.stop(); request?.cancel(); previewTask?.cancel(); previewing = false }
+    func stop() { running = false; clockRecoveryTask?.cancel(); clockRecoveryTask = nil; upgradeTask?.cancel(); upgradeTask = nil; localCacheTask?.cancel(); localCacheTask = nil; idleTask?.cancel(); idleTask = nil; spectrum.stop(); request?.cancel(); previewTask?.cancel(); previewing = false }
     var canSynchronize: Bool { media.duration > 0 }
     var isPlaybackProgressing: Bool { clock.isAdvancing }
+    var progressSourceLabel: String {
+        switch media.positionSource {
+        case .playerScript: return "播放器播放头"
+        case .mediaRemote: return "系统媒体进度"
+        case .metadataOnly: return "仅歌曲信息，等待进度"
+        }
+    }
     func elapsed(at date: Date) -> Double { clock.elapsed() + appearance.offset }
     func receive(_ snapshot: MediaSnapshot, force: Bool = false) {
         var snapshot = snapshot
@@ -165,8 +204,8 @@ struct LyricsAppearance: Codable, Equatable {
                 idleTask = Task { [weak self] in
                     try? await Task.sleep(for: .seconds(2))
                     guard !Task.isCancelled, let self else { return }
-                    self.idleTask = nil; self.upgradeTask?.cancel(); self.upgradeTask = nil; self.request?.cancel(); self.generation = UUID()
-                    self.media = .idle; self.document = nil; self.key = ""; self.cachedTrackMedia = nil
+                    self.idleTask = nil; self.upgradeTask?.cancel(); self.upgradeTask = nil; self.localCacheTask?.cancel(); self.localCacheTask = nil; self.request?.cancel(); self.generation = UUID()
+                    self.media = .idle; self.document = nil; self.candidates = []; self.sourceStatus = [:]; self.key = ""; self.cachedTrackMedia = nil
                     self.clock.update(.idle, trackChanged: true); self.updateClockRecovery(); self.updateSpectrum()
                     self.status = "等待正在播放的歌曲"
                 }
@@ -177,6 +216,7 @@ struct LyricsAppearance: Codable, Equatable {
         let sameSong = cachedTrackMedia.map {
             LyricsProvider.normalized($0.title) == LyricsProvider.normalized(snapshot.title)
                 && LyricsProvider.normalized($0.artist) == LyricsProvider.normalized(snapshot.artist)
+                && $0.bundleIdentifier?.lowercased() == snapshot.bundleIdentifier?.lowercased()
         } ?? false
         // Album names and duration can change when the media adapter enriches
         // the same playback session. They must not restart the lyric clock.
@@ -186,9 +226,23 @@ struct LyricsAppearance: Codable, Equatable {
         if sameTrack, let previous = cachedTrackMedia {
             if snapshot.album.isEmpty { snapshot.album = previous.album }
             if snapshot.duration <= 0 { snapshot.duration = previous.duration }
+            if previous.positionSource == .playerScript,
+               snapshot.positionSource == .mediaRemote,
+               let measuredAt = previous.progressAnchorDate,
+               Date().timeIntervalSince(measuredAt) < 8 {
+                let now = Date()
+                let precisePosition = previous.estimatedElapsed(at: now)
+                // A large disagreement can be an external seek. Let that new
+                // reading through until the next player-owned probe confirms it.
+                if abs(snapshot.estimatedElapsed(at: now) - precisePosition) < 2 {
+                    snapshot.elapsed = precisePosition
+                    snapshot.progressAnchorDate = now
+                    snapshot.positionSource = .playerScript
+                }
+            }
         }
         media = snapshot
-        clock.update(snapshot, trackChanged: !sameSong, identity: "\(LyricsProvider.normalized(snapshot.title))|\(LyricsProvider.normalized(snapshot.artist))")
+        clock.update(snapshot, trackChanged: !sameSong, identity: "\(snapshot.bundleIdentifier?.lowercased() ?? "")|\(LyricsProvider.normalized(snapshot.title))|\(LyricsProvider.normalized(snapshot.artist))")
         updateClockRecovery()
         if document != nil { updateStatus() }
         updateSpectrum()
@@ -196,38 +250,62 @@ struct LyricsAppearance: Codable, Equatable {
         cachedTrackMedia = snapshot
         guard force || !sameTrack || key.isEmpty else { return }
         upgradeTask?.cancel(); upgradeTask = nil
+        localCacheTask?.cancel(); localCacheTask = nil
         if !sameTrack { upgradeAttempts = 0 }
         let newKey = sameTrack && !key.isEmpty ? key : "\(LyricsProvider.normalized(snapshot.title))|\(LyricsProvider.normalized(snapshot.artist))|\(Int((snapshot.duration / 5).rounded()))|\(LyricsProvider.normalized(snapshot.album))"
-        let previous = LyricsProvider.best([sameTrack ? document : nil, cache[newKey], legacyCache(for: snapshot)].compactMap { $0 })
+        let previous = [sameTrack ? document : nil, cache[newKey], legacyCache(for: snapshot)]
+            .compactMap { $0 }
+            .map { adaptedToCurrentPlayer($0, media: snapshot) }
+            .filter { candidate in
+                (candidate.source == "本地导入" || LyricsProvider.hasActualLyrics(candidate, duration: snapshot.duration))
+                    && (candidate.source == "本地导入" || LyricsSourceID.from(candidate).map {
+                    sourcePreferences.orderedEnabledSources(for: snapshot).contains($0)
+                } == true)
+            }
+            .reduce(nil as LyricsDocument?) { current, candidate in
+                sourcePreferences.prefers(candidate, to: current) ? candidate : current
+            }
         cachedTrackMedia = snapshot
         key = newKey
+        if !sameTrack { candidates = []; sourceStatus = [:]; rematchFeedback = nil }
         generation = UUID(); let ticket = generation
         request?.cancel(); document = previous
-        let replaceTimed = (force || (previous?.source != "本地导入" && (previous?.parserRevision ?? 0) < 2)) && previous?.hasWordTiming == true
         guard snapshot != .idle, !snapshot.title.isEmpty, !snapshot.artist.isEmpty else { status = "等待正在播放的歌曲"; return }
-        if !force, let cached = cache[key] {
-            document = LyricsProvider.best([cached, document].compactMap { $0 })
+        if !force, let cached = cache[key],
+           cached.source == "本地导入" || LyricsProvider.hasActualLyrics(cached, duration: snapshot.duration),
+           cached.source == "本地导入" || LyricsSourceID.from(cached).map(sourcePreferences.orderedEnabledSources(for: snapshot).contains) == true {
+            document = [adaptedToCurrentPlayer(cached, media: snapshot), document].compactMap { $0 }
+                .reduce(nil as LyricsDocument?) { current, candidate in
+                    sourcePreferences.prefers(candidate, to: current) ? candidate : current
+                }
             updateStatus()
-            if let document, document.hasWordTiming && (document.parserRevision ?? 0) >= 2 { return }
             if document?.source == "本地导入" { return }
         }
         status = "正在查找歌词…"
+        let preferences = sourcePreferences
         request = Task { [weak self] in
-            let result = await LyricsProvider.lookup(snapshot) { [weak self] candidate in
+            let result = await LyricsProvider.lookup(snapshot, preferences: preferences) { [weak self] candidate in
                 guard !Task.isCancelled, let self, self.running, !self.suspended, self.appearance.enabled, self.generation == ticket else { return }
-                if (self.document?.hasWordTiming != true || (self.document?.source != "本地导入" && (self.document?.parserRevision ?? 0) < 2 && (candidate.parserRevision ?? 0) >= 2)), LyricsProvider.isBetter(candidate, than: self.document) {
+                self.recordCandidate(candidate)
+                if self.shouldSelect(candidate) {
                     self.document = candidate; self.updateStatus()
                 }
             }
             let found = result.document
             guard !Task.isCancelled, let self, self.running, !self.suspended, self.appearance.enabled, self.generation == ticket else { return }
-            if replaceTimed || self.document?.hasWordTiming != true {
-                self.document = LyricsProvider.best([found, self.document, previous].compactMap { $0 })
+            self.sourceStatus = result.sourceStatus
+            let localSource: LyricsSourceID? = snapshot.bundleIdentifier?.lowercased() == "com.apple.music"
+                ? .appleMusicLocal
+                : snapshot.bundleIdentifier?.lowercased().contains("kugou") == true ? .kugouLocal : nil
+            if let localSource, preferences.enabled.contains(localSource),
+               result.sourceStatus[localSource] == "未找到匹配歌词" {
+                self.retryLocalCache(localSource, for: snapshot, ticket: ticket)
             }
+            if let found, self.shouldSelect(found) { self.document = found }
             if let selected = self.document { self.cache[self.key] = selected; self.saveCache() }
             self.updateStatus()
             if found == nil && previous == nil && result.unavailable { self.status = "歌词服务暂时不可用，可重试或导入歌词" }
-            if (self.document?.hasWordTiming != true || (self.document?.source != "本地导入" && (self.document?.parserRevision ?? 0) < 2)), self.upgradeAttempts < 2 {
+            if self.document?.hasWordTiming != true, self.document?.source != "本地导入", self.upgradeAttempts < 2 {
                 self.upgradeAttempts += 1
                 let delay = self.upgradeAttempts == 1 ? 6 : 18
                 self.upgradeTask = Task { [weak self] in
@@ -238,11 +316,109 @@ struct LyricsAppearance: Codable, Equatable {
             }
         }
     }
+    private func retryLocalCache(_ source: LyricsSourceID, for snapshot: MediaSnapshot, ticket: UUID) {
+        localCacheTask?.cancel()
+        localCacheTask = Task { [weak self] in
+            for delay in [1, 2, 3] {
+                try? await Task.sleep(for: .seconds(delay))
+                guard !Task.isCancelled else { return }
+                let found = await Task.detached(priority: .utility) {
+                    source == .appleMusicLocal
+                        ? AppleMusicLocalLyrics.lookup(snapshot)
+                        : KugouLocalLyrics.lookup(snapshot)
+                }.value
+                guard !Task.isCancelled, let self, self.running, !self.suspended,
+                      self.generation == ticket else { return }
+                if let found {
+                    self.sourceStatus[source] = found.hasWordTiming ? "已找到逐字歌词" : "已找到逐行歌词"
+                    self.recordCandidate(found)
+                    if self.shouldSelect(found) {
+                        self.document = found; self.cache[self.key] = found; self.saveCache(); self.updateStatus()
+                    }
+                    return
+                }
+            }
+        }
+    }
     private func updateStatus() {
         guard let document else { status = "未找到匹配歌词，可导入 LRC / YRC"; return }
         status = !canSynchronize ? "播放器未提供进度，暂时无法同步"
             : media.isPlaying && !isPlaybackProgressing ? "等待播放器进度…"
             : document.hasWordTiming ? "已连接 · 逐字时间轴" : "已连接 · 逐行时间轴（无逐字数据）"
+    }
+    var selectedCandidateID: String? { pinnedSelection(for: key) }
+    func setSource(_ source: LyricsSourceID, enabled: Bool) {
+        if enabled { sourcePreferences.enabled.insert(source) }
+        else { sourcePreferences.enabled.remove(source) }
+    }
+    func moveSource(_ source: LyricsSourceID, by offset: Int) {
+        guard let index = sourcePreferences.order.firstIndex(of: source),
+              sourcePreferences.order.indices.contains(index + offset) else { return }
+        sourcePreferences.order.swapAt(index, index + offset)
+    }
+    func selectCandidate(_ identifier: String?) {
+        guard !key.isEmpty else { return }
+        // An empty value explicitly disables an older compatible pin.
+        pinnedSelections[key] = identifier ?? ""
+        if let data = try? JSONEncoder().encode(pinnedSelections) {
+            UserDefaults.standard.set(data, forKey: "NotchTriage.Lyrics.pinnedSelections")
+        }
+        if let identifier {
+            guard let selected = candidates.first(where: { $0.selectionID == identifier }) else { return }
+            document = selected
+        } else if let selected = candidates.reduce(nil as LyricsDocument?, { sourcePreferences.prefers($1, to: $0) ? $1 : $0 }) {
+            document = selected
+        }
+        if let document { cache[key] = document; saveCache() }
+        updateStatus()
+    }
+    private func recordCandidate(_ candidate: LyricsDocument) {
+        if let index = candidates.firstIndex(where: { $0.selectionID == candidate.selectionID }) {
+            if LyricsProvider.isBetter(candidate, than: candidates[index]) { candidates[index] = candidate }
+        } else {
+            candidates.append(candidate)
+        }
+        candidates.sort { sourcePreferences.prefers($0, to: $1) }
+        if candidates.count > 20 { candidates.removeLast(candidates.count - 20) }
+    }
+    private func shouldSelect(_ candidate: LyricsDocument) -> Bool {
+        if let pinned = pinnedSelection(for: key) {
+            if candidate.selectionID == pinned { return true }
+            if document?.selectionID == pinned { return false }
+        }
+        return sourcePreferences.prefers(candidate, to: document)
+    }
+    private func pinnedSelection(for trackKey: String) -> String? {
+        if let exact = pinnedSelections[trackKey] { return exact.isEmpty ? nil : exact }
+        let current = trackKey.split(separator: "|", omittingEmptySubsequences: false).map(String.init)
+        guard current.count == 4, let durationBucket = Int(current[2]) else { return nil }
+        return pinnedSelections.compactMap { stored, selection -> (Int, String, String)? in
+            let parts = stored.split(separator: "|", omittingEmptySubsequences: false).map(String.init)
+            guard parts.count == 4, let oldBucket = Int(parts[2]),
+                  parts[0] == current[0], parts[1] == current[1],
+                  abs(oldBucket - durationBucket) <= 1,
+                  parts[3] == current[3] || parts[3].isEmpty || current[3].isEmpty else { return nil }
+            let score = (parts[3] == current[3] ? 4 : 0) + (oldBucket == durationBucket ? 2 : 0)
+            return (score, stored, selection)
+        }.sorted { left, right in
+            left.0 == right.0 ? left.1 < right.1 : left.0 > right.0
+        }.first?.2
+    }
+    private func adaptedToCurrentPlayer(_ candidate: LyricsDocument, media: MediaSnapshot) -> LyricsDocument {
+        var result = candidate
+        let player = media.bundleIdentifier?.lowercased() ?? ""
+        let belongsToCurrentPlayer: Bool
+        switch LyricsSourceID.from(candidate) {
+        case .appleMusicLocal: belongsToCurrentPlayer = player == "com.apple.music"
+        case .appleMusicOnline: belongsToCurrentPlayer = player == "com.apple.music"
+        case .kugouLocal: belongsToCurrentPlayer = player.contains("kugou")
+        case .kugouOnline: belongsToCurrentPlayer = false
+        case .qq: belongsToCurrentPlayer = player.contains("qqmusic")
+        case .netease: belongsToCurrentPlayer = player.contains("netease")
+        case .migu, .kuwo, .soda, .amll, .musixmatch, .deezer, .lyricFind, .lrclib, .none: belongsToCurrentPlayer = false
+        }
+        if !belongsToCurrentPlayer { result.isNativeMatch = false }
+        return result
     }
     private func legacyCache(for snapshot: MediaSnapshot) -> LyricsDocument? {
         let title = LyricsProvider.normalized(snapshot.title)
@@ -305,13 +481,71 @@ struct LyricsAppearance: Codable, Equatable {
         spectrumVisible = value; updateSpectrum()
     }
     func retrySpectrum() { spectrum.stop(); spectrum.resetFailure(); updateSpectrum() }
-    func retry() { upgradeAttempts = 0; receive(media, force: true) }
+    func retry() {
+        upgradeAttempts = 0
+        Task { [weak self] in
+            await LyricsSourceHealth.shared.reset()
+            guard let self else { return }
+            self.receive(self.media, force: true)
+        }
+    }
+    func rematch() {
+        guard running, !suspended, appearance.enabled, media != .idle, !key.isEmpty else { return }
+        request?.cancel(); upgradeTask?.cancel(); upgradeTask = nil
+        localCacheTask?.cancel(); localCacheTask = nil
+        generation = UUID()
+        let ticket = generation, snapshot = media, preferences = sourcePreferences
+        let previous = document
+        status = "正在重新匹配歌词…"
+        rematchFeedback = nil
+        candidates = []
+        request = Task { [weak self] in
+            await LyricsSourceHealth.shared.reset()
+            let result = await LyricsProvider.lookup(snapshot, preferences: preferences) { [weak self] candidate in
+                guard !Task.isCancelled, let self, self.generation == ticket else { return }
+                self.recordCandidate(candidate)
+            }
+            guard !Task.isCancelled, let self, self.generation == ticket else { return }
+            self.sourceStatus = result.sourceStatus
+            if let winner = result.document {
+                if previous?.hasWordTiming == true, !winner.hasWordTiming {
+                    self.rematchFeedback = "找到候选，但保留当前逐字歌词，避免退回逐行"
+                } else {
+                    self.document = winner
+                    self.cache[self.key] = winner; self.saveCache()
+                    self.pinnedSelections[self.key] = ""
+                    if let data = try? JSONEncoder().encode(self.pinnedSelections) {
+                        UserDefaults.standard.set(data, forKey: "NotchTriage.Lyrics.pinnedSelections")
+                    }
+                    self.rematchFeedback = winner.selectionID == previous?.selectionID
+                        ? "重新匹配完成，当前版本仍是最佳候选"
+                        : "已切换到 \(winner.source) 的更合适版本"
+                }
+            } else {
+                self.rematchFeedback = result.unavailable
+                    ? "歌词来源暂时不可用，已保留当前版本"
+                    : "未找到可用的新候选，已保留当前版本"
+            }
+            self.updateStatus()
+        }
+    }
     func importLyrics() {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [UTType(filenameExtension: "lrc") ?? .plainText, UTType(filenameExtension: "yrc") ?? .plainText, UTType(filenameExtension: "qrc") ?? .plainText, .plainText]
+        panel.allowedContentTypes = [UTType(filenameExtension: "lrc") ?? .plainText, UTType(filenameExtension: "yrc") ?? .plainText, UTType(filenameExtension: "qrc") ?? .plainText, UTType(filenameExtension: "krc") ?? .data, .plainText]
         panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        guard let data = try? Data(contentsOf: url), data.count < 1_000_000, let text = String(data: data, encoding: .utf8), let parsed = LyricsParser.parse(text, source: "本地导入", duration: media.duration, format: url.pathExtension.lowercased() == "qrc" ? .qrc : .automatic) else { status = "导入失败：需要 UTF-8 编码的带时间轴歌词"; return }
+        guard let data = try? Data(contentsOf: url), data.count < 1_000_000 else {
+            status = "导入失败：文件无法读取或过大"; return
+        }
+        let parsed: LyricsDocument?
+        if url.pathExtension.lowercased() == "krc", let text = LyricsKRC.decode(data) {
+            parsed = LyricsKRC.parse(text, duration: media.duration)
+        } else if let text = String(data: data, encoding: .utf8) {
+            parsed = LyricsParser.parse(text, source: "本地导入", duration: media.duration,
+                                        format: url.pathExtension.lowercased() == "qrc" ? .qrc : .automatic)
+        } else { parsed = nil }
+        guard var parsed else { status = "导入失败：需要带时间轴的 LRC / YRC / QRC / KRC"; return }
+        parsed.source = "本地导入"
         if !appearance.enabled { appearance.enabled = true }
         request?.cancel(); upgradeTask?.cancel(); upgradeTask = nil; generation = UUID(); document = parsed
         if !key.isEmpty { cache[key] = parsed; saveCache() }

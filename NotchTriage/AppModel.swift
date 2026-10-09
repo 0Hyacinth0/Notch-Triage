@@ -835,6 +835,13 @@ final class AppModel: ObservableObject {
 
     func reconnectCodex() { codexService.reconnect() }
 
+    func selectPlaybackPlayers(_ selection: Set<PlaybackPlayerPreference>) {
+        guard !selection.isEmpty else { return }
+        UserDefaults.standard.set(selection.map(\.rawValue).sorted(), forKey: PlaybackPlayerPreference.key)
+        lyrics.resetForPlayerSwitch()
+        mediaService.selectionChanged()
+    }
+
     func sendMediaCommand(_ command: MediaCommand) {
         guard mediaCommandAvailability.isEnabled(for: command) else { return }
 

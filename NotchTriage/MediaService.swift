@@ -2,6 +2,48 @@ import AppKit
 import Darwin
 import Foundation
 
+private enum PlayerScriptPositionProbe {
+    enum Result { case snapshot(MediaSnapshot), denied, unavailable }
+
+    static func read(bundleIdentifier: String) -> Result {
+        let apple = bundleIdentifier.lowercased() == "com.apple.music"
+        let app = apple ? "Music" : "Spotify"
+        let started = Date()
+        let script = """
+        if application "\(app)" is running then
+            with timeout of 2 seconds
+                tell application "\(app)"
+                    if player state is not stopped then
+                        return {name of current track, artist of current track, duration of current track, player position, (player state is playing), album of current track}
+                    end if
+                end tell
+            end timeout
+        end if
+        return {}
+        """
+        var error: NSDictionary?
+        guard let descriptor = NSAppleScript(source: script)?.executeAndReturnError(&error),
+              descriptor.numberOfItems >= 5 else {
+            return (error?[NSAppleScript.errorNumber] as? NSNumber)?.intValue == -1743
+                ? .denied : .unavailable
+        }
+        let title = descriptor.atIndex(1)?.stringValue ?? ""
+        guard !title.isEmpty else { return .unavailable }
+        return .snapshot(MediaSnapshot(
+            sourceName: apple ? "Apple Music" : "Spotify",
+            bundleIdentifier: bundleIdentifier,
+            title: title,
+            artist: descriptor.atIndex(2)?.stringValue ?? "",
+            duration: (descriptor.atIndex(3)?.doubleValue ?? 0) * (apple ? 1 : 0.001),
+            elapsed: descriptor.atIndex(4)?.doubleValue ?? 0,
+            isPlaying: descriptor.atIndex(5)?.booleanValue ?? false,
+            progressAnchorDate: started.addingTimeInterval(Date().timeIntervalSince(started) / 2),
+            album: descriptor.numberOfItems >= 6 ? descriptor.atIndex(6)?.stringValue ?? "" : "",
+            positionSource: .playerScript
+        ))
+    }
+}
+
 struct QQMusicTrackMetadata: Equatable, Sendable {
     let title: String
     let artist: String
@@ -319,6 +361,11 @@ final class MediaService {
     private var getNowPlayingInfo: GetNowPlayingInfo?
     private var appleScriptFallbackDisabled = false
     private var adapterBridgeHealthy = false
+    private var lastAdapterSnapshot: MediaSnapshot?
+    private let playerScriptQueue = DispatchQueue(label: "com.hyacinth.notchtriage.player-position", qos: .utility)
+    private var playerScriptProbeInFlight = false
+    private var playerScriptProbeGeneration = 0
+    private var browserProbeDisabled = false
     private var stopping = false
 
     private struct QQMusicAXRequest: Equatable {
@@ -373,12 +420,14 @@ final class MediaService {
     }
 
     var canSendCommands: Bool {
-        commandSender?.isAvailable
+        if !PlaybackPlayerPreference.acceptsSelected(lastAdapterSnapshot?.bundleIdentifier) { return false }
+        return commandSender?.isAvailable
             ?? (adapterBridgeHealthy && adapterBridge.isAvailable)
     }
 
     func send(_ command: MediaCommand) async -> Bool {
         guard !stopping else { return false }
+        if !PlaybackPlayerPreference.acceptsSelected(lastAdapterSnapshot?.bundleIdentifier) { return false }
         if let commandSender {
             return await commandSender.send(command)
         }
@@ -390,16 +439,24 @@ final class MediaService {
         adapterBridgeHealthy = true
         if adapterBridge.start() {
             onHealth(.ready("已连接媒体适配器"))
+            if let selected = PlaybackPlayerPreference.soleExplicit,
+               selected == .appleMusic || selected == .spotify
+                || selected.bundleIdentifier.map(BrowserPlaybackProbe.supports) == true {
+                refresh()
+            }
             return
         }
 
         adapterBridgeHealthy = false
         onHealth(.warning("媒体适配器不可用，将使用系统播放桥接"))
-        refreshDirect()
+        refresh()
     }
 
     func stop() {
         stopping = true
+        playerScriptProbeGeneration &+= 1
+        playerScriptProbeInFlight = false
+        lastAdapterSnapshot = nil
         adapterBridge.stop()
         adapterBridgeHealthy = false
         resetQQMusicEnrichment()
@@ -415,14 +472,87 @@ final class MediaService {
         getNowPlayingInfo = nil
     }
 
+    func selectionChanged() {
+        playerScriptProbeGeneration &+= 1
+        playerScriptProbeInFlight = false
+        lastAdapterSnapshot = nil
+        resetQQMusicEnrichment()
+        onSnapshot(.idle)
+        refresh()
+    }
+
     func refresh() {
+        let selection = PlaybackPlayerPreference.soleExplicit
+        if selection == .appleMusic || selection == .spotify, let selection {
+            refreshSelectedScript(selection)
+            return
+        }
+        if let browser = selection?.bundleIdentifier, BrowserPlaybackProbe.supports(browser) {
+            refreshSelectedBrowser(browser)
+            return
+        }
         if adapterBridgeHealthy {
             if adapterBridge.isRunning {
+                if let current = lastAdapterSnapshot,
+                   !PlaybackPlayerPreference.acceptsSelected(current.bundleIdentifier) {
+                    refreshDirect()
+                    return
+                }
+                if let bundle = lastAdapterSnapshot?.bundleIdentifier,
+                   (bundle.lowercased() == "com.apple.music" || bundle.lowercased() == "com.spotify.client"),
+                   !appleScriptFallbackDisabled {
+                    probePlayerScript(bundleIdentifier: bundle)
+                } else if let bundle = lastAdapterSnapshot?.bundleIdentifier,
+                          BrowserPlaybackProbe.supports(bundle), !browserProbeDisabled {
+                    probeBrowserPosition()
+                } else { probeCurrentPosition() }
                 return
             }
             adapterBridgeHealthy = false
         }
         refreshDirect()
+    }
+
+    private func refreshSelectedScript(_ selection: PlaybackPlayerPreference) {
+        guard !playerScriptProbeInFlight, let bundle = selection.bundleIdentifier else { return }
+        playerScriptProbeInFlight = true
+        playerScriptProbeGeneration &+= 1
+        let generation = playerScriptProbeGeneration
+        playerScriptQueue.async { [weak self] in
+            let result = PlayerScriptPositionProbe.read(bundleIdentifier: bundle)
+            Task { @MainActor [weak self] in
+                guard let self, !self.stopping, generation == self.playerScriptProbeGeneration else { return }
+                self.playerScriptProbeInFlight = false
+                switch result {
+                case .snapshot(let snapshot): self.onSnapshot(snapshot)
+                case .denied:
+                    self.onHealth(.warning("播放器自动化权限未授权，无法读取指定播放器"))
+                    self.onSnapshot(.idle)
+                case .unavailable: self.onSnapshot(.idle)
+                }
+            }
+        }
+    }
+
+    private func refreshSelectedBrowser(_ bundle: String) {
+        guard !playerScriptProbeInFlight else { return }
+        playerScriptProbeInFlight = true
+        playerScriptProbeGeneration &+= 1
+        let generation = playerScriptProbeGeneration
+        playerScriptQueue.async { [weak self] in
+            let result = BrowserPlaybackProbe.read(bundleIdentifier: bundle)
+            Task { @MainActor [weak self] in
+                guard let self, !self.stopping, generation == self.playerScriptProbeGeneration else { return }
+                self.playerScriptProbeInFlight = false
+                switch result {
+                case .snapshot(let snapshot): self.onSnapshot(snapshot)
+                case .denied:
+                    self.onHealth(.warning("浏览器自动化或 JavaScript 权限未授权"))
+                    self.onSnapshot(.idle)
+                case .unavailable: self.onSnapshot(.idle)
+                }
+            }
+        }
     }
 
     private func refreshDirect() {
@@ -453,6 +583,14 @@ final class MediaService {
 
     func receiveAdapterSnapshot(_ snapshot: MediaSnapshot) {
         guard !stopping else { return }
+        lastAdapterSnapshot = snapshot == .idle ? nil : snapshot
+        let selection = PlaybackPlayerPreference.soleExplicit
+        if selection == .appleMusic || selection == .spotify
+            || selection?.bundleIdentifier.map(BrowserPlaybackProbe.supports) == true { return }
+        if snapshot != .idle, !PlaybackPlayerPreference.acceptsSelected(snapshot.bundleIdentifier) {
+            onSnapshot(.idle)
+            return
+        }
         if snapshot == .idle {
             resetQQMusicEnrichment()
             onSnapshot(.idle)
@@ -466,9 +604,90 @@ final class MediaService {
     private func adapterDidFail(_ reason: String) {
         guard !stopping else { return }
         adapterBridgeHealthy = false
+        lastAdapterSnapshot = nil
         resetQQMusicEnrichment()
         onHealth(.warning("媒体适配器异常：\(reason)；已切换系统播放桥接"))
-        refreshDirect()
+        refresh()
+    }
+
+    /// The event stream can repeat an old elapsed value after a seek. Ask the
+    /// system for one independent current reading on the existing refresh
+    /// schedule, and only forward it when it is the same player and track.
+    private func probeCurrentPosition() {
+        guard let getNowPlayingInfo, let expected = lastAdapterSnapshot,
+              expected.isPlaying else { return }
+        let callback: NowPlayingCallback = { [weak self] dictionary in
+            Task { @MainActor [weak self] in
+                guard let self, !self.stopping, let current = self.lastAdapterSnapshot,
+                      let probe = self.parseMediaRemote(dictionary),
+                      PlaybackPlayerPreference.acceptsSelected(probe.bundleIdentifier),
+                      probe.bundleIdentifier?.lowercased() == current.bundleIdentifier?.lowercased(),
+                      LyricsProvider.normalized(probe.title) == LyricsProvider.normalized(current.title),
+                      LyricsProvider.normalized(probe.artist) == LyricsProvider.normalized(current.artist),
+                      current.duration <= 0 || probe.duration <= 0
+                        || abs(current.duration - probe.duration) < 5 else { return }
+                self.onSnapshot(probe)
+            }
+        }
+        getNowPlayingInfo(.main, callback)
+    }
+
+    private func probePlayerScript(bundleIdentifier: String) {
+        guard !playerScriptProbeInFlight else { return }
+        playerScriptProbeInFlight = true
+        playerScriptProbeGeneration &+= 1
+        let generation = playerScriptProbeGeneration
+        playerScriptQueue.async { [weak self] in
+            let result = PlayerScriptPositionProbe.read(bundleIdentifier: bundleIdentifier)
+            Task { @MainActor [weak self] in
+                guard let self, !self.stopping, generation == self.playerScriptProbeGeneration else { return }
+                self.playerScriptProbeInFlight = false
+                switch result {
+                case .snapshot(let probe):
+                    guard let current = self.lastAdapterSnapshot,
+                          PlaybackPlayerPreference.acceptsSelected(probe.bundleIdentifier),
+                          current.bundleIdentifier?.lowercased() == bundleIdentifier.lowercased(),
+                          LyricsProvider.normalized(probe.title) == LyricsProvider.normalized(current.title),
+                          LyricsProvider.normalized(probe.artist) == LyricsProvider.normalized(current.artist),
+                          current.duration <= 0 || probe.duration <= 0
+                            || abs(current.duration - probe.duration) < 5 else { return }
+                    self.onSnapshot(probe)
+                case .denied:
+                    self.appleScriptFallbackDisabled = true
+                    self.onHealth(.warning("播放器自动化权限未授权，已改用系统进度"))
+                    self.probeCurrentPosition()
+                case .unavailable:
+                    self.probeCurrentPosition()
+                }
+            }
+        }
+    }
+
+    private func probeBrowserPosition() {
+        guard !playerScriptProbeInFlight, let expected = lastAdapterSnapshot else { return }
+        playerScriptProbeInFlight = true
+        playerScriptProbeGeneration &+= 1
+        let generation = playerScriptProbeGeneration
+        playerScriptQueue.async { [weak self] in
+            let result = BrowserPlaybackProbe.read(bundleIdentifier: expected.bundleIdentifier ?? "", current: expected)
+            Task { @MainActor [weak self] in
+                guard let self, !self.stopping, generation == self.playerScriptProbeGeneration else { return }
+                self.playerScriptProbeInFlight = false
+                switch result {
+                case .snapshot(let snapshot):
+                    guard let current = self.lastAdapterSnapshot,
+                          PlaybackPlayerPreference.acceptsSelected(snapshot.bundleIdentifier),
+                          current.bundleIdentifier == snapshot.bundleIdentifier,
+                          LyricsProvider.normalized(current.title) == LyricsProvider.normalized(snapshot.title) else { return }
+                    self.onSnapshot(snapshot)
+                case .denied:
+                    self.browserProbeDisabled = true
+                    self.onHealth(.warning("浏览器脚本权限未授权，已改用系统播放进度"))
+                    self.probeCurrentPosition()
+                case .unavailable: self.probeCurrentPosition()
+                }
+            }
+        }
     }
 
     private func loadMediaRemote() {
@@ -597,6 +816,10 @@ final class MediaService {
     }
 
     private func refreshWithAppleScript() {
+        guard PlaybackPlayerPreference.acceptsSelected(qqMusicBundleIdentifier) else {
+            refreshWithPlayerScripts()
+            return
+        }
         guard qqMusicFallbackTask == nil else { return }
         guard let processIdentifier = qqMusicProcessIdentifier() else {
             refreshWithPlayerScripts()
@@ -622,14 +845,15 @@ final class MediaService {
             self.qqMusicFallbackCancellation = nil
 
             if let metadata {
-                self.onSnapshot(MediaSnapshot(
+                self.publish(MediaSnapshot(
                     sourceName: "QQ 音乐",
                     bundleIdentifier: self.qqMusicBundleIdentifier,
                     title: metadata.title,
                     artist: metadata.artist,
                     duration: 0,
                     elapsed: 0,
-                    isPlaying: metadata.isPlaying
+                    isPlaying: metadata.isPlaying,
+                    positionSource: .metadataOnly
                 ))
             } else {
                 self.refreshWithPlayerScripts()
@@ -643,9 +867,11 @@ final class MediaService {
             return
         }
 
-        if let snapshot = appleMusicSnapshot() {
+        if PlaybackPlayerPreference.acceptsSelected("com.apple.Music"),
+           let snapshot = appleMusicSnapshot() {
             onSnapshot(snapshot)
-        } else if !appleScriptFallbackDisabled,
+        } else if PlaybackPlayerPreference.acceptsSelected("com.spotify.client"),
+                  !appleScriptFallbackDisabled,
                   let snapshot = spotifySnapshot() {
             onSnapshot(snapshot)
         } else {
@@ -654,6 +880,10 @@ final class MediaService {
     }
 
     private func publish(_ snapshot: MediaSnapshot) {
+        guard PlaybackPlayerPreference.acceptsSelected(snapshot.bundleIdentifier) else {
+            onSnapshot(.idle)
+            return
+        }
         let normalizedBundleIdentifier = snapshot.bundleIdentifier?.lowercased()
         let isQQMusic = normalizedBundleIdentifier == qqMusicBundleIdentifier.lowercased()
         let canBeUnidentifiedQQMusic = snapshot.bundleIdentifier == nil
@@ -873,7 +1103,8 @@ final class MediaService {
             elapsed: descriptor.atIndex(4)?.doubleValue ?? 0,
             isPlaying: descriptor.atIndex(5)?.booleanValue ?? false,
             progressAnchorDate: requestStarted.addingTimeInterval(Date().timeIntervalSince(requestStarted) / 2),
-            album: descriptor.numberOfItems >= 6 ? descriptor.atIndex(6)?.stringValue ?? "" : ""
+            album: descriptor.numberOfItems >= 6 ? descriptor.atIndex(6)?.stringValue ?? "" : "",
+            positionSource: .playerScript
         )
     }
 }

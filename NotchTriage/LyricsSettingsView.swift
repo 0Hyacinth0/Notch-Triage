@@ -4,15 +4,18 @@ import SwiftUI
 struct LyricsSettingsView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var store: LyricsStore
+    @ObservedObject private var appleMusicAccount = AppleMusicAccount.shared
     @State private var previewWidth: CGFloat = 500
     @State private var previewPaused = false
+    @State private var selectedPlayers = PlaybackPlayerPreference.selectedPlayers
     init(model: AppModel) { self.model = model; store = model.lyrics }
     var body: some View {
         SettingsPage(title: "歌词显示", subtitle: "让歌词在刘海下方随音乐流动。", symbol: "text.quote") {
-            SettingsGroup(title: "实时示意") {
+            SettingsGroup(title: "实时预览") {
                 Toggle("启用歌词显示", isOn: $store.appearance.enabled)
-                HStack(spacing: 7) {
-                    Circle().fill(store.document == nil ? Color.secondary : Color.green).frame(width: 6, height: 6)
+                HStack(spacing: 8) {
+                    Image(systemName: store.document == nil ? "music.note" : "checkmark.circle.fill")
+                        .foregroundStyle(store.document == nil ? Color.secondary : Color.green)
                     Text(model.localized(store.status)).font(.caption).foregroundStyle(.secondary)
                     Spacer(minLength: 0)
                 }
@@ -34,7 +37,7 @@ struct LyricsSettingsView: View {
                 .lineLimit(1)
                 preview
                 HStack {
-                    Text("修改后立即预览").font(.caption).foregroundStyle(.secondary)
+                    Text("调整外观时，示意会立即更新").font(.caption).foregroundStyle(.secondary)
                     Spacer()
                     Button { previewPaused.toggle() } label: {
                         Image(systemName: previewPaused ? "play.fill" : "pause.fill")
@@ -44,7 +47,7 @@ struct LyricsSettingsView: View {
                     Button(store.previewing ? "结束刘海预览" : "在刘海下方预览 30 秒") { store.togglePreview() }
                 }
             }
-            SettingsGroup(title: "视觉与动画") {
+            SettingsGroup(title: "逐字视觉") {
                 Picker("歌词视觉效果", selection: Binding(get: { store.appearance.style }, set: { store.appearance.visualStyle = $0 })) {
                     ForEach(LyricsVisualStyle.allCases, id: \.self) { style in
                         Text(LocalizedStringKey(style.title)).tag(style)
@@ -66,7 +69,7 @@ struct LyricsSettingsView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
-            SettingsGroup(title: "文字与位置") {
+            SettingsGroup(title: "排版与位置") {
                 Picker("字体", selection: $store.appearance.fontFamily) {
                     Text("系统字体").tag("System")
                     ForEach(NSFontManager.shared.availableFontFamilies.sorted(), id: \.self) { Text($0).tag($0) }
@@ -76,22 +79,22 @@ struct LyricsSettingsView: View {
                     ForEach(LyricsChineseVariant.allCases, id: \.self) { Text(LocalizedStringKey($0.title)).tag($0) }
                 }
                 Toggle("显示下一句", isOn: $store.appearance.showNext)
+                Toggle("显示歌词译文", isOn: Binding(get: { store.appearance.showsTranslation }, set: { store.appearance.showTranslation = $0 }))
+                Toggle("显示罗马音", isOn: Binding(get: { store.appearance.showsRomanization }, set: { store.appearance.showRomanization = $0 }))
                 slider("显示宽度", value: $store.appearance.width, range: 200...2000, suffix: "pt")
                 slider("距刘海间隔", value: $store.appearance.gap, range: -30...160, suffix: "pt")
-                DisclosureGroup("显示说明") {
-                    Text("间隔按可见文字计算；长句保持单行并横向滚动，逐字歌词跟随演唱位置。刘海面板展开时暂时隐藏歌词。")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
+                Text("长句保持单行并横向滚动；展开刘海面板时暂时隐藏歌词。")
+                    .font(.caption).foregroundStyle(.secondary)
             }
-            SettingsGroup(title: "更多外观选项") {
-                DisclosureGroup {
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                        ForEach(LyricsLightPreset.allCases.filter { $0 != .custom }, id: \.self) { preset in
-                            presetCard(preset)
-                        }
+            SettingsGroup(title: "配色与光晕") {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                    ForEach(LyricsLightPreset.allCases.filter { $0 != .custom }, id: \.self) { preset in
+                        presetCard(preset)
                     }
-                    Text("预设只改变颜色与光晕强度，保留字号、位置和视觉效果。")
-                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Text("预设只调整颜色和柔光；字体、位置与动画保持当前设置。")
+                    .font(.caption).foregroundStyle(.secondary)
+                DisclosureGroup("自定义颜色与柔光") {
                     ColorPicker("光效主色", selection: colorBinding(\.highlight))
                     ColorPicker("光效尾色", selection: Binding(get: { store.appearance.endColor.color }, set: {
                         store.appearance.glowEnd = RingColor($0); store.appearance.lightPreset = .custom
@@ -102,14 +105,9 @@ struct LyricsSettingsView: View {
                         .disabled(store.appearance.glow == 0)
                     Toggle("呼吸光效", isOn: Binding(get: { store.appearance.hasBreathing }, set: { store.appearance.breathing = $0 }))
                         .disabled(store.appearance.glow == 0)
-                } label: {
-                    HStack {
-                        Text("配色与光晕")
-                        Spacer()
-                        Text(LocalizedStringKey((store.appearance.lightPreset ?? .custom).title))
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
                 }
+            }
+            SettingsGroup(title: "两侧律动") {
                 Toggle("两侧律动装饰", isOn: Binding(get: { store.appearance.hasOrnaments }, set: { store.appearance.ornaments = $0 }))
                 if store.appearance.hasOrnaments {
                     DisclosureGroup("律动细节") {
@@ -134,15 +132,132 @@ struct LyricsSettingsView: View {
                     }
                 }
             }
-            SettingsGroup(title: "歌词来源与同步") {
-                if store.media != .idle { Text("\(store.media.title) · \(store.media.artist)").font(.callout).lineLimit(2) }
+            SettingsGroup(title: "播放器与账户") {
+                if store.media != .idle {
+                    SettingsStatusRow(title: store.media.sourceName,
+                                      subtitle: "\(store.media.title) · \(store.media.artist)",
+                                      symbol: "music.note", tint: .green)
+                    Text("播放进度：\(store.progressSourceLabel) · 歌词：\(store.document?.source ?? "查找中")")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                DisclosureGroup {
+                    ForEach(PlaybackPlayerPreference.allCases) { player in
+                        Toggle(player.title, isOn: Binding(
+                            get: { selectedPlayers.contains(player) },
+                            set: { enabled in
+                                if enabled { selectedPlayers.insert(player) }
+                                else if selectedPlayers.count > 1 { selectedPlayers.remove(player) }
+                                model.selectPlaybackPlayers(selectedPlayers)
+                            }
+                        ))
+                    }
+                } label: {
+                    HStack {
+                        Text("播放器")
+                        Spacer()
+                        Text(String(format: model.localized("已选择 %d 个"), selectedPlayers.count))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Text("自动识别跟随系统播放源。只选 Apple Music、Spotify 或单个浏览器时可直连；多选时按系统当前播放源取舍。")
+                    .font(.caption).foregroundStyle(.secondary)
+                DisclosureGroup("浏览器连接说明") {
+                    Text("浏览器播放头需要 macOS 自动化授权，并在浏览器中开启「允许通过 Apple 事件执行 JavaScript」。应用读取各窗口的活动标签页；未授权时，自动识别可沿用系统进度，仅指定浏览器则无法直连。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                HStack {
+                    Label(appleMusicAccount.isConnected ? "Apple Music 在线歌词已连接" : "Apple Music 在线歌词未连接",
+                          systemImage: appleMusicAccount.isConnected ? "checkmark.circle.fill" : "link")
+                        .foregroundStyle(appleMusicAccount.isConnected ? Color.green : Color.secondary)
+                    Spacer()
+                    if appleMusicAccount.isConnected {
+                        Button("断开") { appleMusicAccount.disconnect(); store.retry() }
+                    } else {
+                        Button(appleMusicAccount.isConnecting ? "连接中…" : "连接 Apple Music") {
+                            appleMusicAccount.connect()
+                        }.disabled(appleMusicAccount.isConnecting)
+                    }
+                }
+                .onChange(of: appleMusicAccount.isConnected) { _, _ in store.retry() }
+                if let message = appleMusicAccount.message {
+                    Text(message).font(.caption).foregroundStyle(.secondary)
+                }
+                Text("连接后可查询 Apple Music 在线歌词；需有效订阅。令牌仅存本机钥匙串。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            SettingsGroup(title: "歌词来源") {
+                Picker("自动选词方式", selection: $store.sourcePreferences.mode) {
+                    ForEach(LyricsSourceSelectionMode.allCases, id: \.self) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+                Text("默认自动挑选匹配版本；需要固定来源时可按下方顺序查找。")
+                    .font(.caption).foregroundStyle(.secondary)
+                DisclosureGroup {
+                    ForEach(store.sourcePreferences.order, id: \.self) { source in
+                        HStack(alignment: .top, spacing: 10) {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Toggle(source.title, isOn: Binding(
+                                    get: { store.sourcePreferences.enabled.contains(source) },
+                                    set: { store.setSource(source, enabled: $0) }
+                                ))
+                                if let state = store.sourceStatus[source] {
+                                    Text(model.localized(state)).font(.caption).foregroundStyle(.secondary)
+                                        .padding(.leading, 19)
+                                }
+                            }
+                            Spacer(minLength: 0)
+                            if store.sourcePreferences.mode == .priority {
+                                Button { store.moveSource(source, by: -1) } label: { Image(systemName: "chevron.up") }
+                                    .disabled(store.sourcePreferences.order.first == source)
+                                    .help("提高来源优先级")
+                                Button { store.moveSource(source, by: 1) } label: { Image(systemName: "chevron.down") }
+                                    .disabled(store.sourcePreferences.order.last == source)
+                                    .help("降低来源优先级")
+                            }
+                        }
+                    }
+                    Text("Apple Music 本地歌词仅在 Music.app 播放且已留下歌词缓存时可用；未命中会继续查询已启用的在线来源。")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Text("酷狗本地歌词仅在酷狗播放、客户端已下载 KRC 时可用；没有缓存会继续查询其他来源。")
+                        .font(.caption).foregroundStyle(.secondary)
+                } label: {
+                    HStack {
+                        Text("来源列表")
+                        Spacer()
+                        Text(String(format: model.localized("已启用 %d 个"), store.sourcePreferences.enabled.count))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            SettingsGroup(title: "同步与纠错") {
                 HStack {
                     Button("重新查找") { store.retry() }.disabled(!store.appearance.enabled)
+                    Button("重新自动匹配") { store.rematch() }
+                        .disabled(!store.appearance.enabled || store.media == .idle)
                     Button("导入歌词…") { store.importLyrics() }
+                }
+                if let feedback = store.rematchFeedback {
+                    Text(feedback).font(.caption).foregroundStyle(.secondary)
+                }
+                if !store.candidates.isEmpty {
+                    Menu {
+                        Button("自动选择") { store.selectCandidate(nil) }
+                        Divider()
+                        ForEach(store.candidates, id: \.selectionID) { candidate in
+                            Button("\(candidate.source) · \(candidate.matchedTitle ?? store.media.title) — \(candidate.matchedArtist ?? store.media.artist) · \(candidate.matchedAlbum ?? "专辑未知") · \(candidate.hasWordTiming ? "逐字" : "逐行")") {
+                                store.selectCandidate(candidate.selectionID)
+                            }
+                        }
+                    } label: {
+                        Label(store.selectedCandidateID == nil ? "选择歌词版本" : "已固定歌词版本", systemImage: "list.bullet.rectangle")
+                    }
+                    Text("找错版本时可手动固定；选择“自动选择”恢复按匹配度查找。")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 slider("歌词提前量", value: $store.appearance.offset, range: -5...5, suffix: "s")
                 DisclosureGroup("同步说明与隐私") {
-                    Text("自动查询网易云音乐、QQ 音乐与 LRCLIB，会发送歌名和歌手，并用专辑和时长筛选版本。优先使用真实逐字时间轴；逐行数据默认整句显示。支持导入 LRC、增强 LRC、YRC 和解码后的 QRC。")
+                    Text("启用的在线来源会收到歌名和歌手；匹配时还会核对可获得的专辑与时长。优先使用真实逐字时间轴；仅有逐行歌词时默认整句显示。支持导入 LRC、增强 LRC、YRC，以及解码后的 QRC、KRC。")
                         .font(.caption).foregroundStyle(.secondary)
                     Text("正值使歌词提前，负值使歌词延后。")
                         .font(.caption).foregroundStyle(.secondary)

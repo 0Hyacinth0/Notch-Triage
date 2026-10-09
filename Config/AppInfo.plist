@@ -3,4 +3,14 @@
 <plist version="1.0"><dict>
 <key>NSAudioCaptureUsageDescription</key>
 <string>用于在本机分析系统音频，让歌词两侧的真实频谱随音乐律动。音频不保存、不上传。</string>
+<key>NSAppTransportSecurity</key>
+<dict>
+  <key>NSExceptionDomains</key>
+  <dict>
+    <key>krcs.kugou.com</key>
+    <dict><key>NSExceptionAllowsInsecureHTTPLoads</key><true/></dict>
+    <key>lyrics.kugou.com</key>
+    <dict><key>NSExceptionAllowsInsecureHTTPLoads</key><true/></dict>
+  </dict>
+</dict>
 </dict></plist>

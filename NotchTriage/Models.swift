@@ -654,6 +654,12 @@ struct CodexLimitBucket: Identifiable, Equatable {
     }
 }
 
+enum MediaPositionSource: Equatable {
+    case mediaRemote
+    case playerScript
+    case metadataOnly
+}
+
 struct MediaSnapshot: Equatable {
     var album: String
     var sourceName: String
@@ -674,6 +680,7 @@ struct MediaSnapshot: Equatable {
     /// Playback speed reported by the media provider.  Most players use 1x;
     /// keeping this optional lets older/fallback providers omit the value.
     var playbackRate: Double?
+    var positionSource: MediaPositionSource
 
     init(
         sourceName: String,
@@ -686,7 +693,8 @@ struct MediaSnapshot: Equatable {
         prohibitsSkip: Bool = false,
         progressAnchorDate: Date? = nil,
         playbackRate: Double? = nil,
-        album: String = ""
+        album: String = "",
+        positionSource: MediaPositionSource = .mediaRemote
     ) {
         self.album = album
         self.sourceName = sourceName
@@ -699,6 +707,7 @@ struct MediaSnapshot: Equatable {
         self.prohibitsSkip = prohibitsSkip
         self.progressAnchorDate = progressAnchorDate
         self.playbackRate = playbackRate
+        self.positionSource = positionSource
     }
 
     /// Compatibility alias for callers that use the adapter's `timestamp`

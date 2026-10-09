@@ -108,7 +108,9 @@ private struct LyricShape {
     static var variant: LyricsChineseVariant?
     static var converted: LyricsDocument?
     static func document(_ value: LyricsDocument, variant: LyricsChineseVariant) -> LyricsDocument {
-        if original == value, self.variant == variant, let converted { return converted }
+        let sameDocument = value.revisionID != nil && original?.revisionID == value.revisionID
+            || original == value
+        if sameDocument, self.variant == variant, let converted { return converted }
         let display = value.displaying(variant)
         original = value; self.variant = variant; converted = display
         return display
@@ -146,13 +148,14 @@ enum LyricsDisplayMetrics {
         let ink = max(appearance.font.ascender - appearance.font.descender, appearance.font.pointSize * 1.2)
         return topInset(appearance) + max(ink, appearance.hasOrnaments ? appearance.sideHeight : 0)
             + (appearance.motion == .dock ? appearance.fontSize * appearance.dockAmount : 0) + effectInset(appearance)
-            + (appearance.showNext ? max(12, appearance.fontSize * 0.56) * 1.5 + 7 : 0)
+            + ((appearance.showNext ? 1 : 0) + (appearance.showsTranslation ? 1 : 0) + (appearance.showsRomanization ? 1 : 0)) * (max(12, appearance.fontSize * 0.56) * 1.5 + 7)
     }
     @MainActor static func height(document: LyricsDocument, time: Double, appearance: LyricsAppearance, width: CGFloat) -> CGFloat {
         let display = LyricsDisplayCache.document(document, variant: appearance.variant)
         let line = display.index(at: time).map { display.lines[$0] }
         let shape = LyricShapeCache.shape(for: line, appearance: appearance, width: width)
-        return canvasHeight(shape: shape, appearance: appearance) + (appearance.showNext ? max(12, appearance.fontSize * 0.56) * 1.5 + 7 : 0)
+        return canvasHeight(shape: shape, appearance: appearance)
+            + ((appearance.showNext ? 1 : 0) + (appearance.showsTranslation ? 1 : 0) + (appearance.showsRomanization ? 1 : 0)) * (max(12, appearance.fontSize * 0.56) * 1.5 + 7)
     }
     fileprivate static func canvasHeight(shape: LyricShape, appearance: LyricsAppearance) -> CGFloat {
         topInset(appearance) + max(shape.height, appearance.hasOrnaments ? appearance.sideHeight : 0) + (appearance.motion == .dock ? appearance.fontSize * appearance.dockAmount : 0) + effectInset(appearance)
@@ -172,7 +175,7 @@ struct LyricsDisplayView: View {
     var body: some View {
         let display = LyricsDisplayCache.document(document, variant: appearance.variant)
         GeometryReader { geometry in
-            TimelineView(.animation(minimumInterval: 1.0 / 60, paused: !playing)) { timeline in
+            TimelineView(.animation(minimumInterval: document.hasWordTiming ? 1.0 / 60 : 1.0 / 30, paused: !playing)) { timeline in
                 let time = demo ? timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 15) : elapsed(timeline.date)
                 let index = display.index(at: time)
                 let line = index.map { display.lines[$0] }
@@ -208,7 +211,7 @@ struct LyricsDisplayView: View {
                     return shape.rowWidths[row] + expansion
                 }.max() ?? 0
                 VStack(spacing: 7) {
-                    Canvas { context, size in
+                    Canvas(rendersAsynchronously: true) { context, size in
                         guard let line else { return }
                         let progress = min(1, max(0, (time - line.start) / max(0.01, line.end - line.start)))
                         var extras: [Int: CGFloat] = [:]
@@ -343,6 +346,21 @@ struct LyricsDisplayView: View {
                     }
                     .id(line?.start)
                     .transition(.opacity)
+                    if appearance.showsTranslation, let translation = line?.translation {
+                        Text(translation)
+                            .font(appearance.fontFamily == "System" ? .system(size: max(12, appearance.fontSize * 0.56), weight: .medium) : .custom(appearance.fontFamily, size: max(12, appearance.fontSize * 0.56)))
+                            .foregroundStyle(appearance.resting.color)
+                            .lineLimit(1).minimumScaleFactor(0.5)
+                            .shadow(color: .black.opacity(0.8), radius: 3)
+                            .padding(.horizontal, 18)
+                    }
+                    if appearance.showsRomanization, let romanization = line?.romanization {
+                        Text(romanization)
+                            .font(appearance.fontFamily == "System" ? .system(size: max(12, appearance.fontSize * 0.48), weight: .medium) : .custom(appearance.fontFamily, size: max(12, appearance.fontSize * 0.48)))
+                            .foregroundStyle(appearance.resting.color.opacity(0.8))
+                            .lineLimit(1).minimumScaleFactor(0.5)
+                            .padding(.horizontal, 18)
+                    }
                     if appearance.showNext {
                         Text(index.flatMap { $0 + 1 < display.lines.count ? display.lines[$0 + 1].text : nil } ?? " ")
                             .font(appearance.fontFamily == "System" ? .system(size: max(12, appearance.fontSize * 0.56), weight: .medium) : .custom(appearance.fontFamily, size: max(12, appearance.fontSize * 0.56)))

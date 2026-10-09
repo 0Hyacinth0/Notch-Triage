@@ -10,15 +10,29 @@ struct LyricLine: Codable, Equatable, Sendable {
     var end: Double
     var text: String
     var words: [LyricWord] = []
+    var translation: String? = nil
+    var romanization: String? = nil
+    var speaker: String? = nil
     var hasWordTiming: Bool { words.contains { $0.end - $0.start >= 0.02 && !$0.text.trimmingCharacters(in: .whitespaces).isEmpty } }
 }
 struct LyricsDocument: Codable, Equatable, Sendable {
+    // A parsed document keeps the same identity while a frame is rendered.
+    // Older cached documents decode this optional field as nil.
+    var revisionID: UUID? = UUID()
     var lines: [LyricLine]
     var source: String
     var matchScore: Double? = nil
     var trackIdentifier: String? = nil
     var parserRevision: Int? = nil
+    var matchedTitle: String? = nil
+    var matchedArtist: String? = nil
+    var matchedAlbum: String? = nil
+    var matchedDuration: Double? = nil
+    var isNativeMatch: Bool? = nil
     var hasWordTiming: Bool { lines.contains { $0.hasWordTiming } }
+    var selectionID: String {
+        trackIdentifier ?? "\(source)|\(matchedTitle ?? "")|\(matchedArtist ?? "")|\(matchedDuration ?? 0)"
+    }
     func index(at time: Double) -> Int? {
         var low = 0, high = lines.count
         while low < high { let mid = (low + high) / 2; if lines[mid].start <= time { low = mid + 1 } else { high = mid } }
@@ -41,6 +55,21 @@ struct LyricsDocument: Codable, Equatable, Sendable {
 enum LyricsTimestampFormat { case automatic, lrc, yrc, klyric, qrc }
 
 enum LyricsParser {
+    enum SecondaryTrack { case translation, romanization }
+    static func attach(_ text: String, to document: inout LyricsDocument, as track: SecondaryTrack) {
+        guard let secondary = parse(text, source: document.source) else { return }
+        for line in secondary.lines {
+            guard let index = document.lines.indices.min(by: {
+                abs(document.lines[$0].start - line.start) < abs(document.lines[$1].start - line.start)
+            }), abs(document.lines[index].start - line.start) <= 0.4 else { continue }
+            let value = line.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !value.isEmpty, value != document.lines[index].text else { continue }
+            switch track {
+            case .translation: document.lines[index].translation = value
+            case .romanization: document.lines[index].romanization = value
+            }
+        }
+    }
     // Enhanced LRC uses absolute word timestamps; YRC uses absolute millisecond starts.
     static func parse(_ input: String, source: String, duration: Double = 0, format: LyricsTimestampFormat = .automatic) -> LyricsDocument? {
         let stamp = try! NSRegularExpression(pattern: #"\[(\d+):(\d+(?:\.\d+)?)\]"#)
@@ -136,8 +165,12 @@ enum LyricsChineseVariant: String, Codable, CaseIterable {
         let result: String
         switch self {
         case .original: result = text
-        case .simplified: result = text.applyingTransform(StringTransform(rawValue: "Traditional-Simplified"), reverse: false) ?? text
-        case .traditional: result = text.applyingTransform(StringTransform(rawValue: "Simplified-Traditional"), reverse: false) ?? text
+        case .simplified:
+            result = OpenCCPhraseConverter.convert(text, toSimplified: true)
+                ?? text.applyingTransform(StringTransform(rawValue: "Traditional-Simplified"), reverse: false) ?? text
+        case .traditional:
+            result = OpenCCPhraseConverter.convert(text, toSimplified: false)
+                ?? text.applyingTransform(StringTransform(rawValue: "Simplified-Traditional"), reverse: false) ?? text
         }
         Self.conversions.setObject(result as NSString, forKey: key, cost: text.utf16.count)
         return result
@@ -148,13 +181,28 @@ extension LyricsDocument {
         guard variant != .original else { return self }
         var result = self
         for i in result.lines.indices {
+            if let translation = result.lines[i].translation {
+                result.lines[i].translation = variant.convert(translation)
+            }
             if result.lines[i].words.isEmpty {
                 result.lines[i].text = variant.convert(result.lines[i].text)
             } else {
-                // Transform each timed fragment, then rebuild text from those same
-                // fragments. This keeps glyph indices aligned with word timings.
-                for j in result.lines[i].words.indices {
-                    result.lines[i].words[j].text = variant.convert(result.lines[i].words[j].text)
+                // Convert the full phrase so context-sensitive Chinese words keep
+                // their intended variant. Chinese variant changes normally keep
+                // one glyph per glyph, allowing timing boundaries to stay put.
+                let original = result.lines[i].words.map(\.text).joined()
+                let converted = variant.convert(original)
+                if converted.count == original.count {
+                    var cursor = converted.startIndex
+                    for j in result.lines[i].words.indices {
+                        let end = converted.index(cursor, offsetBy: result.lines[i].words[j].text.count)
+                        result.lines[i].words[j].text = String(converted[cursor..<end])
+                        cursor = end
+                    }
+                } else {
+                    for j in result.lines[i].words.indices {
+                        result.lines[i].words[j].text = variant.convert(result.lines[i].words[j].text)
+                    }
                 }
                 result.lines[i].text = result.lines[i].words.map(\.text).joined()
             }
