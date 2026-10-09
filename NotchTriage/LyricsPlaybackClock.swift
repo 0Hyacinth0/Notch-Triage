@@ -11,6 +11,11 @@ struct LyricsPlaybackClock {
     private var lastTimestamp: Date?
     private var lastObserved: Double = 0
     private var pendingSeek: (difference: Double, startedAt: Double)?
+    // A player may report `playing` as soon as the user seeks, while audio is
+    // still buffering. Do not extrapolate from that flag until its reported
+    // position has actually advanced beyond the seek destination.
+    private var awaitingProgressAfterSeek: (position: Double, startedAt: Double)?
+    var isAdvancing: Bool { rate > 0 }
     mutating func update(
         _ media: MediaSnapshot,
         trackChanged: Bool = false,
@@ -25,14 +30,35 @@ struct LyricsPlaybackClock {
         let delta = observed - predicted
         let changedObservation = media.progressAnchorDate != lastTimestamp || abs(media.elapsed - lastObserved) > 0.001
         if trackChanged || key != identity {
-            position = observed; pendingSeek = nil
+            position = max(0, media.elapsed); pendingSeek = nil
+            awaitingProgressAfterSeek = (media.elapsed, now)
+        } else if let waiting = awaitingProgressAfterSeek {
+            let progress = media.elapsed - waiting.position
+            let maximumPlausibleProgress = max(2, (now - waiting.startedAt) * max(1, nextRate) * 1.5 + 0.75)
+            if progress < -0.5 || progress > maximumPlausibleProgress {
+                // Another seek happened before the previous destination loaded.
+                position = max(0, media.elapsed)
+                awaitingProgressAfterSeek = (media.elapsed, now)
+            } else if nextRate > 0, changedObservation, progress > 0.12 {
+                position = max(0, media.elapsed)
+                awaitingProgressAfterSeek = nil
+            } else if nextRate == 0 {
+                position = max(0, media.elapsed)
+                awaitingProgressAfterSeek = (media.elapsed, now)
+            } else {
+                position = max(0, waiting.position)
+            }
         } else if !changedObservation {
             position = predicted
         } else if abs(delta) >= 5 {
             // A large jump is a seek or a replay of the same track.
-            position = observed; pendingSeek = nil
+            position = max(0, media.elapsed); pendingSeek = nil
+            awaitingProgressAfterSeek = (media.elapsed, now)
         } else if nextRate == 0 {
             position = observed; pendingSeek = nil
+            if abs(media.elapsed - lastObserved) >= 0.5 {
+                awaitingProgressAfterSeek = (media.elapsed, now)
+            }
         } else if abs(delta) >= 2.5 {
             // Some players report progress with roughly two seconds of jitter.
             // A moderate seek needs two independent, consistent observations;
@@ -42,8 +68,9 @@ struct LyricsPlaybackClock {
                now - pendingSeek.startedAt < 12,
                delta.sign == pendingSeek.difference.sign,
                abs(delta - pendingSeek.difference) < 0.75 {
-                position = observed
+                position = max(0, media.elapsed)
                 self.pendingSeek = nil
+                awaitingProgressAfterSeek = (media.elapsed, now)
             } else {
                 position = predicted
                 pendingSeek = (delta, now)
@@ -54,7 +81,7 @@ struct LyricsPlaybackClock {
             position = predicted
             pendingSeek = nil
         }
-        rate = nextRate
+        rate = awaitingProgressAfterSeek == nil ? nextRate : 0
         identity = key; uptime = now; duration = media.duration
         lastTimestamp = media.progressAnchorDate; lastObserved = media.elapsed
     }

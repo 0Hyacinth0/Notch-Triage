@@ -47,6 +47,8 @@ struct SettingsRootView: View {
                     sidebarItem("外观", symbol: "rectangle.on.rectangle", destination: .appearance)
                     sidebarItem("歌词显示", symbol: "text.quote", destination: .lyrics)
                     sidebarItem("AI 套餐用量", symbol: "gauge.with.dots.needle.67percent", destination: .aiUsage)
+                }
+                Section("应用与维护") {
                     sidebarItem("通用", symbol: "slider.horizontal.3", destination: .behavior)
                     sidebarItem("权限", symbol: "lock.shield", destination: .permissions)
                     sidebarItem("更新", symbol: "arrow.trianglehead.2.clockwise.rotate.90", destination: .updates)
@@ -336,6 +338,8 @@ struct SettingsRootView: View {
                 Text("有通知或新提示时，当前显示的每个圆环中央都会出现提示图标；两侧使用同一个节拍同步播放。没有圆环的一侧不会显示。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                Button("设置通知横幅…") { selectedPane = Destination.behavior.rawValue }
+                    .buttonStyle(.borderless)
             }
 
 
@@ -513,6 +517,8 @@ struct SettingsRootView: View {
                     )
                     Spacer(minLength: 0)
                 }
+                Button("设置刘海通知提示…") { selectedPane = Destination.appearance.rawValue }
+                    .buttonStyle(.borderless)
             }
 
             SettingsGroup(title: "剪贴板历史") {

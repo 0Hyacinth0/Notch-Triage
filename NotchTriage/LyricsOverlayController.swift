@@ -9,7 +9,7 @@ import SwiftUI
             if store.previewing {
                 LyricsDisplayView(document: .demo, appearance: store.appearance, elapsed: { _ in 0 }, demo: true)
             } else if let document = store.document {
-                LyricsDisplayView(document: document, appearance: store.appearance, elapsed: { store.elapsed(at: $0) }, playing: store.media.isPlaying, spectrum: store.spectrum)
+                LyricsDisplayView(document: document, appearance: store.appearance, elapsed: { store.elapsed(at: $0) }, playing: store.isPlaybackProgressing, spectrum: store.spectrum)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)

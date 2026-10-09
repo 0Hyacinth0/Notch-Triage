@@ -150,6 +150,7 @@ struct LyricsAppearance: Codable, Equatable {
     }
     func stop() { running = false; upgradeTask?.cancel(); upgradeTask = nil; idleTask?.cancel(); idleTask = nil; spectrum.stop(); request?.cancel(); previewTask?.cancel(); previewing = false }
     var canSynchronize: Bool { media.duration > 0 }
+    var isPlaybackProgressing: Bool { clock.isAdvancing }
     func elapsed(at date: Date) -> Double { clock.elapsed() + appearance.offset }
     func receive(_ snapshot: MediaSnapshot, force: Bool = false) {
         var snapshot = snapshot
@@ -185,6 +186,7 @@ struct LyricsAppearance: Codable, Equatable {
         }
         media = snapshot
         clock.update(snapshot, trackChanged: !sameSong, identity: "\(LyricsProvider.normalized(snapshot.title))|\(LyricsProvider.normalized(snapshot.artist))")
+        if document != nil { updateStatus() }
         updateSpectrum()
         guard running, !suspended, appearance.enabled else { return }
         cachedTrackMedia = snapshot
@@ -234,7 +236,9 @@ struct LyricsAppearance: Codable, Equatable {
     }
     private func updateStatus() {
         guard let document else { status = "未找到匹配歌词，可导入 LRC / YRC"; return }
-        status = !canSynchronize ? "播放器未提供进度，暂时无法同步" : document.hasWordTiming ? "已连接 · 逐字时间轴" : "已连接 · 逐行时间轴（无逐字数据）"
+        status = !canSynchronize ? "播放器未提供进度，暂时无法同步"
+            : media.isPlaying && !isPlaybackProgressing ? "等待播放器进度…"
+            : document.hasWordTiming ? "已连接 · 逐字时间轴" : "已连接 · 逐行时间轴（无逐字数据）"
     }
     private func legacyCache(for snapshot: MediaSnapshot) -> LyricsDocument? {
         let title = LyricsProvider.normalized(snapshot.title)
@@ -263,7 +267,7 @@ struct LyricsAppearance: Codable, Equatable {
     }
     private func updateSpectrum() {
         if !appearance.capturesSpectrum { spectrum.disable(); return }
-        spectrum.setActive(spectrumVisible && running && !suspended && appearance.enabled && appearance.hasOrnaments && appearance.capturesSpectrum && media.isPlaying)
+        spectrum.setActive(spectrumVisible && running && !suspended && appearance.enabled && appearance.hasOrnaments && appearance.capturesSpectrum && isPlaybackProgressing)
     }
     func setSpectrumVisible(_ value: Bool) {
         guard spectrumVisible != value else { return }

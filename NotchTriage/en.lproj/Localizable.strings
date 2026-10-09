@@ -647,3 +647,10 @@
 "等待歌词显示和音乐播放" = "Waiting for visible lyrics and music playback";
 
 "间隔按可见文字计算；长句保持单行并横向滚动，逐字歌词跟随演唱位置。刘海面板展开时暂时隐藏歌词。" = "Gap is measured from visible text. Long lines scroll horizontally without wrapping; word-timed lyrics follow the singing position. Lyrics hide while the notch panel is expanded.";
+
+"概览" = "Overview";
+"快捷状态" = "Quick status";
+"设置通知横幅…" = "Configure notification banners…";
+"设置刘海通知提示…" = "Configure notch notification hints…";
+"等待播放器进度…" = "Waiting for player progress…";
+"应用与维护" = "App & maintenance";

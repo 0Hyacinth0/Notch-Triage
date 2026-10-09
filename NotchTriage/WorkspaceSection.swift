@@ -11,7 +11,7 @@ enum WorkspaceSection: String, CaseIterable, Identifiable, Sendable {
     var title: String {
         switch self {
         case .power: return "电源"
-        case .notifications: return "通知"
+        case .notifications: return "概览"
         case .shelf: return "暂存"
         case .clipboard: return "剪贴板"
         }

@@ -39,6 +39,14 @@ struct NotificationInbox: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            HStack {
+                Label("通知", systemImage: "bell")
+                    .font(.system(size: 12.5, weight: .semibold))
+                Spacer()
+            }
+            .padding(.horizontal, 11)
+            .frame(height: 30)
+
             if model.notificationSources.isEmpty && model.notificationCenterSources.isEmpty {
                 VStack(spacing: 9) {
                     Image(systemName: "checkmark")

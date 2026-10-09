@@ -356,6 +356,10 @@ private struct ExpandedPanel: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 VStack(spacing: NotchDesign.Spacing.group) {
+                    Text("快捷状态")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     CodexUsageCard(model: model)
                     TrashCompactCard(
                         model: model,
