@@ -191,7 +191,7 @@ struct LyricsSettingsView: View {
                         Text(mode.title).tag(mode)
                     }
                 }
-                Text("默认自动挑选匹配版本；需要固定来源时可按下方顺序查找。")
+                Text("自动选择优先使用真实逐字歌词，再比较歌曲版本匹配度；需要固定来源时可按下方顺序查找。")
                     .font(.caption).foregroundStyle(.secondary)
                 DisclosureGroup {
                     ForEach(store.sourcePreferences.order, id: \.self) { source in
@@ -252,7 +252,7 @@ struct LyricsSettingsView: View {
                     } label: {
                         Label(store.selectedCandidateID == nil ? "选择歌词版本" : "已固定歌词版本", systemImage: "list.bullet.rectangle")
                     }
-                    Text("找错版本时可手动固定；选择“自动选择”恢复按匹配度查找。")
+                    Text("找错版本时可手动固定；选择“自动选择”恢复逐字优先的自动匹配。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 slider("歌词提前量", value: $store.appearance.offset, range: -5...5, suffix: "s")

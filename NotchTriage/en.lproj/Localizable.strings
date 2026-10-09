@@ -677,7 +677,8 @@
 "断开" = "Disconnect";
 "连接后可查询 Apple Music 在线歌词；需有效订阅。令牌仅存本机钥匙串。" = "Connect to search Apple Music online lyrics. An active subscription is required; the token stays in this Mac's Keychain.";
 "自动选词方式" = "Automatic lyric selection";
-"默认自动挑选匹配版本；需要固定来源时可按下方顺序查找。" = "The best match is selected automatically. You can choose source order below.";
+"自动选择优先使用真实逐字歌词，再比较歌曲版本匹配度；需要固定来源时可按下方顺序查找。" = "Auto selection prefers real word-timed lyrics, then compares track-version match quality. Choose source order below when needed.";
+"找错版本时可手动固定；选择“自动选择”恢复逐字优先的自动匹配。" = "Pin a version if the match is wrong. Auto select restores word-timing-first matching.";
 "提高来源优先级" = "Move source up";
 "降低来源优先级" = "Move source down";
 "同步与纠错" = "Sync and corrections";

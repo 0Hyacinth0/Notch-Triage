@@ -129,6 +129,15 @@ private struct LyricPaint {
 }
 
 enum LyricsDisplayMetrics {
+    static func secondaryHeight(_ appearance: LyricsAppearance, count: Int) -> CGFloat {
+        guard count > 0 else { return 0 }
+        let textHeight = max(12, appearance.fontSize * 0.56) * 1.25
+        // Secondary rows sit inside the canvas's transparent glow tail.
+        return max(0, 4 - effectInset(appearance) + CGFloat(count) * textHeight + CGFloat(count - 1) * 2)
+    }
+    static func secondaryCount(_ appearance: LyricsAppearance) -> Int {
+        (appearance.showNext ? 1 : 0) + (appearance.showsTranslation ? 1 : 0) + (appearance.showsRomanization ? 1 : 0)
+    }
     // The window extends upwards by this amount, so the resting glyph ink,
     // rather than its shadow or motion padding, sits at the configured gap.
     static func topInset(_ appearance: LyricsAppearance) -> CGFloat {
@@ -148,14 +157,16 @@ enum LyricsDisplayMetrics {
         let ink = max(appearance.font.ascender - appearance.font.descender, appearance.font.pointSize * 1.2)
         return topInset(appearance) + max(ink, appearance.hasOrnaments ? appearance.sideHeight : 0)
             + (appearance.motion == .dock ? appearance.fontSize * appearance.dockAmount : 0) + effectInset(appearance)
-            + ((appearance.showNext ? 1 : 0) + (appearance.showsTranslation ? 1 : 0) + (appearance.showsRomanization ? 1 : 0)) * (max(12, appearance.fontSize * 0.56) * 1.5 + 7)
+            + secondaryHeight(appearance, count: secondaryCount(appearance))
     }
     @MainActor static func height(document: LyricsDocument, time: Double, appearance: LyricsAppearance, width: CGFloat) -> CGFloat {
         let display = LyricsDisplayCache.document(document, variant: appearance.variant)
         let line = display.index(at: time).map { display.lines[$0] }
         let shape = LyricShapeCache.shape(for: line, appearance: appearance, width: width)
-        return canvasHeight(shape: shape, appearance: appearance)
-            + ((appearance.showNext ? 1 : 0) + (appearance.showsTranslation ? 1 : 0) + (appearance.showsRomanization ? 1 : 0)) * (max(12, appearance.fontSize * 0.56) * 1.5 + 7)
+        let count = (appearance.showNext ? 1 : 0)
+            + (appearance.showsTranslation && line?.translation != nil ? 1 : 0)
+            + (appearance.showsRomanization && line?.romanization != nil ? 1 : 0)
+        return canvasHeight(shape: shape, appearance: appearance) + secondaryHeight(appearance, count: count)
     }
     fileprivate static func canvasHeight(shape: LyricShape, appearance: LyricsAppearance) -> CGFloat {
         topInset(appearance) + max(shape.height, appearance.hasOrnaments ? appearance.sideHeight : 0) + (appearance.motion == .dock ? appearance.fontSize * appearance.dockAmount : 0) + effectInset(appearance)
@@ -210,7 +221,7 @@ struct LyricsDisplayView: View {
                     }
                     return shape.rowWidths[row] + expansion
                 }.max() ?? 0
-                VStack(spacing: 7) {
+                VStack(spacing: 0) {
                     Canvas(rendersAsynchronously: true) { context, size in
                         guard let line else { return }
                         let progress = min(1, max(0, (time - line.start) / max(0.01, line.end - line.start)))
@@ -346,28 +357,34 @@ struct LyricsDisplayView: View {
                     }
                     .id(line?.start)
                     .transition(.opacity)
-                    if appearance.showsTranslation, let translation = line?.translation {
-                        Text(translation)
-                            .font(appearance.fontFamily == "System" ? .system(size: max(12, appearance.fontSize * 0.56), weight: .medium) : .custom(appearance.fontFamily, size: max(12, appearance.fontSize * 0.56)))
-                            .foregroundStyle(appearance.resting.color)
-                            .lineLimit(1).minimumScaleFactor(0.5)
-                            .shadow(color: .black.opacity(0.8), radius: 3)
-                            .padding(.horizontal, 18)
-                    }
-                    if appearance.showsRomanization, let romanization = line?.romanization {
-                        Text(romanization)
-                            .font(appearance.fontFamily == "System" ? .system(size: max(12, appearance.fontSize * 0.48), weight: .medium) : .custom(appearance.fontFamily, size: max(12, appearance.fontSize * 0.48)))
-                            .foregroundStyle(appearance.resting.color.opacity(0.8))
-                            .lineLimit(1).minimumScaleFactor(0.5)
-                            .padding(.horizontal, 18)
-                    }
-                    if appearance.showNext {
-                        Text(index.flatMap { $0 + 1 < display.lines.count ? display.lines[$0 + 1].text : nil } ?? " ")
-                            .font(appearance.fontFamily == "System" ? .system(size: max(12, appearance.fontSize * 0.56), weight: .medium) : .custom(appearance.fontFamily, size: max(12, appearance.fontSize * 0.56)))
-                            .foregroundStyle(appearance.resting.color.opacity(0.75))
-                            .lineLimit(1).minimumScaleFactor(0.5)
-                            .shadow(color: .black.opacity(0.8), radius: 3)
-                            .padding(.horizontal, 18)
+                    if appearance.showNext || (appearance.showsTranslation && line?.translation != nil)
+                        || (appearance.showsRomanization && line?.romanization != nil) {
+                        VStack(spacing: 2) {
+                            if appearance.showsTranslation, let translation = line?.translation {
+                                Text(translation)
+                                    .font(appearance.fontFamily == "System" ? .system(size: max(12, appearance.fontSize * 0.56), weight: .medium) : .custom(appearance.fontFamily, size: max(12, appearance.fontSize * 0.56)))
+                                    .foregroundStyle(appearance.resting.color)
+                                    .lineLimit(1).minimumScaleFactor(0.5)
+                                    .shadow(color: .black.opacity(0.8), radius: 3)
+                                    .padding(.horizontal, 18)
+                            }
+                            if appearance.showsRomanization, let romanization = line?.romanization {
+                                Text(romanization)
+                                    .font(appearance.fontFamily == "System" ? .system(size: max(12, appearance.fontSize * 0.48), weight: .medium) : .custom(appearance.fontFamily, size: max(12, appearance.fontSize * 0.48)))
+                                    .foregroundStyle(appearance.resting.color.opacity(0.8))
+                                    .lineLimit(1).minimumScaleFactor(0.5)
+                                    .padding(.horizontal, 18)
+                            }
+                            if appearance.showNext {
+                                Text(index.flatMap { $0 + 1 < display.lines.count ? display.lines[$0 + 1].text : nil } ?? " ")
+                                    .font(appearance.fontFamily == "System" ? .system(size: max(12, appearance.fontSize * 0.56), weight: .medium) : .custom(appearance.fontFamily, size: max(12, appearance.fontSize * 0.56)))
+                                    .foregroundStyle(appearance.resting.color.opacity(0.75))
+                                    .lineLimit(1).minimumScaleFactor(0.5)
+                                    .shadow(color: .black.opacity(0.8), radius: 3)
+                                    .padding(.horizontal, 18)
+                            }
+                        }
+                        .padding(.top, -LyricsDisplayMetrics.effectInset(appearance) + 4)
                     }
                 }
                 .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: index)

@@ -21,9 +21,10 @@ struct LyricsPlaybackClock {
     private static let maximumSeekHold: Double = 2
     var isAdvancing: Bool { rate > 0 }
     func remainingSeekHold(at now: Double = ProcessInfo.processInfo.systemUptime) -> Double? {
-        // Player-owned and quantized clocks can supply a fresh reading after
-        // the seek. A timer is no proof that their buffering has finished.
-        if sourceTier != .clean { return nil }
+        // A direct player clock supplies fresh positions. MediaRemote can keep
+        // returning the same quantized QQ Music position after a seek; without
+        // a bounded recovery that leaves the lyric clock stopped indefinitely.
+        if sourceTier == .precise { return nil }
         return awaitingProgressAfterSeek.map { max(0, Self.maximumSeekHold - (now - $0.startedAt)) }
     }
     mutating func resumeIfSeekHoldExpired(
@@ -31,12 +32,11 @@ struct LyricsPlaybackClock {
         now: Double = ProcessInfo.processInfo.systemUptime,
         observedAt: Date = Date()
     ) -> Bool {
-        guard sourceTier == .clean, media.isPlaying, let waiting = awaitingProgressAfterSeek,
+        guard sourceTier != .precise, media.isPlaying, let waiting = awaitingProgressAfterSeek,
               now - waiting.startedAt >= Self.maximumSeekHold else { return false }
-        // Some media sources never publish another raw elapsed value after a
-        // seek. Resume from the player's reported timeline so the hold does
-        // not make lyrics permanently late by its own duration.
-        position = media.estimatedElapsed(at: observedAt)
+        // Resume from the latest reported timeline. Keep the seek destination
+        // when MediaRemote briefly replays an older position after the seek.
+        position = max(waiting.position, media.estimatedElapsed(at: observedAt))
         uptime = now
         rate = max(0, media.playbackRate ?? 1)
         awaitingProgressAfterSeek = nil

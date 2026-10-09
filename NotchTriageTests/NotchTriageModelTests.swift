@@ -66,6 +66,31 @@ private final class TestMediaCommandSender: MediaCommandSending {
 }
 
 final class NotchTriageModelTests: XCTestCase {
+    func testQQMusicSeekHoldRecoversWhenMediaRemoteRepeatsPosition() {
+        var clock = LyricsPlaybackClock()
+        let observedAt = Date(timeIntervalSince1970: 1_000)
+        let initial = MediaSnapshot(
+            sourceName: "QQ 音乐", bundleIdentifier: "com.tencent.QQMusicMac",
+            title: "Song", artist: "Artist", duration: 200, elapsed: 12,
+            isPlaying: true, progressAnchorDate: observedAt
+        )
+        clock.update(initial, trackChanged: true, now: 100, observedAt: observedAt)
+        let sought = MediaSnapshot(
+            sourceName: "QQ 音乐", bundleIdentifier: "com.tencent.QQMusicMac",
+            title: "Song", artist: "Artist", duration: 200, elapsed: 80,
+            isPlaying: true, progressAnchorDate: observedAt.addingTimeInterval(1)
+        )
+        clock.update(sought, now: 101, observedAt: observedAt.addingTimeInterval(1))
+        clock.update(sought, now: 102, observedAt: observedAt.addingTimeInterval(2))
+        XCTAssertFalse(clock.isAdvancing)
+        XCTAssertEqual(clock.elapsed(at: 102), 80)
+        XCTAssertTrue(clock.resumeIfSeekHoldExpired(
+            from: sought, now: 103.1, observedAt: observedAt.addingTimeInterval(3.1)
+        ))
+        XCTAssertTrue(clock.isAdvancing)
+        XCTAssertEqual(clock.elapsed(at: 104.1), 83.1, accuracy: 0.01)
+    }
+
     func testMediaCommandsMatchMediaRemoteAdapterIDs() {
         XCTAssertEqual(MediaCommand.previousTrack.rawValue, 5)
         XCTAssertEqual(MediaCommand.togglePlayPause.rawValue, 2)

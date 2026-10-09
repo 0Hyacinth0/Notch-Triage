@@ -88,13 +88,16 @@ struct LyricsProvider {
         guard let existing else { return true }
         if candidate.source == "本地导入" { return true }
         if existing.source == "本地导入" { return false }
+        // All online candidates have already passed track identity checks.
+        // Prefer real word timestamps before comparing the quality of those matches.
+        if candidate.hasWordTiming != existing.hasWordTiming { return candidate.hasWordTiming }
         if candidate.isNativeMatch == true, existing.isNativeMatch != true { return true }
         if existing.isNativeMatch == true, candidate.isNativeMatch != true { return false }
-        let candidateScore = (candidate.matchScore ?? 0) + (candidate.hasWordTiming ? 0.75 : 0)
-        let existingScore = (existing.matchScore ?? 0) + (existing.hasWordTiming ? 0.75 : 0)
+        let candidateScore = candidate.matchScore ?? 0
+        let existingScore = existing.matchScore ?? 0
         if abs(candidateScore - existingScore) > 0.01 { return candidateScore > existingScore }
         if candidate.hasWordTiming, (candidate.parserRevision ?? 0) > (existing.parserRevision ?? 0) { return true }
-        return candidate.hasWordTiming && !existing.hasWordTiming
+        return false
     }
     static func best(_ documents: [LyricsDocument]) -> LyricsDocument? {
         documents.reduce(nil) { current, candidate in isBetter(candidate, than: current) ? candidate : current }
@@ -131,14 +134,22 @@ struct LyricsProvider {
         })
     }
     static func netease(_ media: MediaSnapshot) async throws -> LyricsDocument? {
+        var nativeCandidate: LyricsDocument?
         if media.bundleIdentifier?.lowercased().contains("netease") == true,
            let local = await LocalPlayerTrackCatalog.shared.netease(media), let id = Int(local.identifier),
            let document = try? await neteaseDocument(id: id, title: local.title, artist: local.artist,
                                                      album: local.album, duration: local.duration, media: media, native: true) {
-            return document
+            if document.hasWordTiming { return document }
+            nativeCandidate = document
         }
-        let response = try await json(request("https://music.163.com/api/search/get", ["s": "\(media.title) \(media.artist)", "type": "1", "limit": "12"]))
-        guard let root = response as? [String: Any], let result = root["result"] as? [String: Any], let songs = result["songs"] as? [[String: Any]] else { return nil }
+        let response: Any
+        do {
+            response = try await json(request("https://music.163.com/api/search/get", ["s": "\(media.title) \(media.artist)", "type": "1", "limit": "12"]))
+        } catch {
+            if let nativeCandidate { return nativeCandidate }
+            throw error
+        }
+        guard let root = response as? [String: Any], let result = root["result"] as? [String: Any], let songs = result["songs"] as? [[String: Any]] else { return nativeCandidate }
         func matching(_ songs: [[String: Any]]) -> [[String: Any]] { songs.filter { song in
             let artists = (song["artists"] as? [[String: Any]] ?? []).compactMap { $0["name"] as? String }.joined(separator: " / ")
             return matches(title: song["name"] as? String ?? "", artist: artists, duration: ((song["duration"] as? NSNumber)?.doubleValue ?? 0) / 1000, media: media)
@@ -149,7 +160,7 @@ struct LyricsProvider {
            let results = fallback["result"] as? [String: Any], let songs = results["songs"] as? [[String: Any]] {
             candidates = matching(songs)
         }
-        var found: [LyricsDocument] = []
+        var found: [LyricsDocument] = nativeCandidate.map { [$0] } ?? []
         var fetchAttempts = 0, fetchFailures = 0
         for song in candidates.prefix(2) {
             try Task.checkCancellation()
@@ -205,18 +216,20 @@ struct LyricsProvider {
         score(title: song["name"] as? String ?? "", artist: (song["artists"] as? [[String: Any]] ?? []).compactMap { $0["name"] as? String }.joined(separator: " / "), album: (song["album"] as? [String: Any])?["name"] as? String ?? "", duration: ((song["duration"] as? NSNumber)?.doubleValue ?? 0) / 1000, media: media)
     }
     static func qq(_ media: MediaSnapshot) async throws -> LyricsDocument? {
+        var nativeCandidate: LyricsDocument?
         if media.bundleIdentifier?.lowercased().contains("qqmusic") == true,
            let local = await LocalPlayerTrackCatalog.shared.qq(media) {
             let detail = try? await json(qqRequest("https://c.y.qq.com/v8/fcg-bin/fcg_play_single_song.fcg", ["format": "json", "platform": "yqq", "songmid": local.identifier])) as? [String: Any]
             let id = ((detail?["data"] as? [[String: Any]])?.first?["id"] as? NSNumber)?.intValue
             if let id, let document = try? await qqDocument(id: id, title: local.title, artist: local.artist,
                                                             album: local.album, duration: local.duration, media: media, native: true) {
-                return document
+                if document.hasWordTiming { return document }
+                nativeCandidate = document
             }
             if let document = try? await qqLineDocument(mid: local.identifier, title: local.title,
                                                         artist: local.artist, album: local.album,
                                                         duration: local.duration, media: media, native: true) {
-                return document
+                if isBetter(document, than: nativeCandidate) { nativeCandidate = document }
             }
         }
         var songs: [[String: Any]] = []
@@ -250,13 +263,16 @@ struct LyricsProvider {
                 }
             }
         }
-        if !searchAnswered { throw URLError(.cannotConnectToHost) }
+        if !searchAnswered {
+            if let nativeCandidate { return nativeCandidate }
+            throw URLError(.cannotConnectToHost)
+        }
         func matching(_ songs: [[String: Any]]) -> [[String: Any]] { songs.filter { song in
             let artist = (song["singer"] as? [[String: Any]] ?? []).compactMap { $0["name"] as? String }.joined(separator: " / ")
             return matches(title: song["title"] as? String ?? song["songname"] as? String ?? song["name"] as? String ?? "", artist: artist, duration: (song["interval"] as? NSNumber)?.doubleValue ?? 0, media: media)
         }.sorted { qqScore($0, media) > qqScore($1, media) } }
         let candidates = matching(songs)
-        var found: [LyricsDocument] = []
+        var found: [LyricsDocument] = nativeCandidate.map { [$0] } ?? []
         var visited = Set<Int>()
         var lyricFetchAttempts = 0
         var lyricFetchFailures = 0
