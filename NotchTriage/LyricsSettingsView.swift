@@ -14,9 +14,24 @@ struct LyricsSettingsView: View {
                 HStack(spacing: 7) {
                     Circle().fill(store.document == nil ? Color.secondary : Color.green).frame(width: 6, height: 6)
                     Text(model.localized(store.status)).font(.caption).foregroundStyle(.secondary)
-                    Spacer()
-                    if let document = store.document { Text(model.localized(document.source)).font(.caption).foregroundStyle(.secondary) }
+                    Spacer(minLength: 0)
                 }
+                HStack(spacing: 6) {
+                    if store.media != .idle {
+                        Text("播放器").foregroundStyle(.tertiary)
+                        Text(model.localized(store.media.sourceName))
+                    }
+                    if let document = store.document {
+                        if store.media != .idle {
+                            Divider().frame(height: 12).padding(.horizontal, 4)
+                        }
+                        Text("歌词来源").foregroundStyle(.tertiary)
+                        Text(model.localized(document.source))
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
                 preview
                 HStack {
                     Text("修改后立即预览").font(.caption).foregroundStyle(.secondary)

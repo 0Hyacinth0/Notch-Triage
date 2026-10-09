@@ -11,11 +11,32 @@ struct LyricsPlaybackClock {
     private var lastTimestamp: Date?
     private var lastObserved: Double = 0
     private var pendingSeek: (difference: Double, startedAt: Double)?
+    private var lastReportedRate: Double = 0
     // A player may report `playing` as soon as the user seeks, while audio is
     // still buffering. Do not extrapolate from that flag until its reported
     // position has actually advanced beyond the seek destination.
     private var awaitingProgressAfterSeek: (position: Double, startedAt: Double)?
+    private static let maximumSeekHold: Double = 2
     var isAdvancing: Bool { rate > 0 }
+    func remainingSeekHold(at now: Double = ProcessInfo.processInfo.systemUptime) -> Double? {
+        awaitingProgressAfterSeek.map { max(0, Self.maximumSeekHold - (now - $0.startedAt)) }
+    }
+    mutating func resumeIfSeekHoldExpired(
+        from media: MediaSnapshot,
+        now: Double = ProcessInfo.processInfo.systemUptime,
+        observedAt: Date = Date()
+    ) -> Bool {
+        guard media.isPlaying, let waiting = awaitingProgressAfterSeek,
+              now - waiting.startedAt >= Self.maximumSeekHold else { return false }
+        // Some media sources never publish another raw elapsed value after a
+        // seek. Resume from the player's reported timeline so the hold does
+        // not make lyrics permanently late by its own duration.
+        position = media.estimatedElapsed(at: observedAt)
+        uptime = now
+        rate = max(0, media.playbackRate ?? 1)
+        awaitingProgressAfterSeek = nil
+        return true
+    }
     mutating func update(
         _ media: MediaSnapshot,
         trackChanged: Bool = false,
@@ -33,20 +54,27 @@ struct LyricsPlaybackClock {
             position = max(0, media.elapsed); pendingSeek = nil
             awaitingProgressAfterSeek = (media.elapsed, now)
         } else if let waiting = awaitingProgressAfterSeek {
-            let progress = media.elapsed - waiting.position
-            let maximumPlausibleProgress = max(2, (now - waiting.startedAt) * max(1, nextRate) * 1.5 + 0.75)
-            if progress < -0.5 || progress > maximumPlausibleProgress {
-                // Another seek happened before the previous destination loaded.
-                position = max(0, media.elapsed)
-                awaitingProgressAfterSeek = (media.elapsed, now)
-            } else if nextRate > 0, changedObservation, progress > 0.12 {
-                position = max(0, media.elapsed)
+            if lastReportedRate == 0, nextRate > 0 {
+                // A real paused-to-playing transition is stronger evidence
+                // that loading finished than an unchanged elapsed field.
+                position = observed
                 awaitingProgressAfterSeek = nil
-            } else if nextRate == 0 {
-                position = max(0, media.elapsed)
-                awaitingProgressAfterSeek = (media.elapsed, now)
             } else {
-                position = max(0, waiting.position)
+                let progress = media.elapsed - waiting.position
+                let maximumPlausibleProgress = max(2, (now - waiting.startedAt) * max(1, nextRate) * 1.5 + 0.75)
+                if progress < -0.5 || progress > maximumPlausibleProgress {
+                    // Another seek happened before the previous destination loaded.
+                    position = max(0, media.elapsed)
+                    awaitingProgressAfterSeek = (media.elapsed, now)
+                } else if nextRate > 0, changedObservation, progress > 0.12 {
+                    position = observed
+                    awaitingProgressAfterSeek = nil
+                } else if nextRate == 0 {
+                    position = max(0, media.elapsed)
+                    awaitingProgressAfterSeek = (media.elapsed, now)
+                } else {
+                    position = max(0, waiting.position)
+                }
             }
         } else if !changedObservation {
             position = predicted
@@ -82,6 +110,7 @@ struct LyricsPlaybackClock {
             pendingSeek = nil
         }
         rate = awaitingProgressAfterSeek == nil ? nextRate : 0
+        lastReportedRate = nextRate
         identity = key; uptime = now; duration = media.duration
         lastTimestamp = media.progressAnchorDate; lastObserved = media.elapsed
     }

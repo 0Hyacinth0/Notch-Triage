@@ -112,6 +112,7 @@ struct LyricsAppearance: Codable, Equatable {
     @Published var appearance: LyricsAppearance { didSet {
         if let data = try? JSONEncoder().encode(appearance) { UserDefaults.standard.set(data, forKey: "NotchTriage.Lyrics.appearance") }
         updateSpectrum()
+        updateClockRecovery()
         if oldValue.enabled != appearance.enabled {
             if appearance.enabled { receive(media, force: true) } else { request?.cancel(); upgradeTask?.cancel(); upgradeTask = nil; document = nil; status = "歌词显示已关闭" }
         }
@@ -129,6 +130,7 @@ struct LyricsAppearance: Codable, Equatable {
     private var suspended = false
     private var spectrumVisible = false
     private var clock = LyricsPlaybackClock()
+    private var clockRecoveryTask: Task<Void, Never>?
     private var idleTask: Task<Void, Never>?
     private var upgradeTask: Task<Void, Never>?
     private var upgradeAttempts = 0
@@ -142,13 +144,14 @@ struct LyricsAppearance: Codable, Equatable {
         cacheURL = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("NotchTriage/lyrics.json")
         if let data = try? Data(contentsOf: cacheURL), data.count < 8_000_000 { cache = (try? JSONDecoder().decode([String: LyricsDocument].self, from: data)) ?? [:] }
     }
-    func start() { running = true; updateSpectrum() }
+    func start() { running = true; updateSpectrum(); updateClockRecovery() }
     func setSuspended(_ value: Bool) {
         suspended = value
         updateSpectrum()
+        updateClockRecovery()
         if value { request?.cancel(); idleTask?.cancel(); idleTask = nil; upgradeTask?.cancel(); upgradeTask = nil } else if appearance.enabled { receive(media, force: document?.hasWordTiming != true) }
     }
-    func stop() { running = false; upgradeTask?.cancel(); upgradeTask = nil; idleTask?.cancel(); idleTask = nil; spectrum.stop(); request?.cancel(); previewTask?.cancel(); previewing = false }
+    func stop() { running = false; clockRecoveryTask?.cancel(); clockRecoveryTask = nil; upgradeTask?.cancel(); upgradeTask = nil; idleTask?.cancel(); idleTask = nil; spectrum.stop(); request?.cancel(); previewTask?.cancel(); previewing = false }
     var canSynchronize: Bool { media.duration > 0 }
     var isPlaybackProgressing: Bool { clock.isAdvancing }
     func elapsed(at date: Date) -> Double { clock.elapsed() + appearance.offset }
@@ -164,7 +167,7 @@ struct LyricsAppearance: Codable, Equatable {
                     guard !Task.isCancelled, let self else { return }
                     self.idleTask = nil; self.upgradeTask?.cancel(); self.upgradeTask = nil; self.request?.cancel(); self.generation = UUID()
                     self.media = .idle; self.document = nil; self.key = ""; self.cachedTrackMedia = nil
-                    self.clock.update(.idle, trackChanged: true); self.updateSpectrum()
+                    self.clock.update(.idle, trackChanged: true); self.updateClockRecovery(); self.updateSpectrum()
                     self.status = "等待正在播放的歌曲"
                 }
             }
@@ -186,6 +189,7 @@ struct LyricsAppearance: Codable, Equatable {
         }
         media = snapshot
         clock.update(snapshot, trackChanged: !sameSong, identity: "\(LyricsProvider.normalized(snapshot.title))|\(LyricsProvider.normalized(snapshot.artist))")
+        updateClockRecovery()
         if document != nil { updateStatus() }
         updateSpectrum()
         guard running, !suspended, appearance.enabled else { return }
@@ -268,6 +272,33 @@ struct LyricsAppearance: Codable, Equatable {
     private func updateSpectrum() {
         if !appearance.capturesSpectrum { spectrum.disable(); return }
         spectrum.setActive(spectrumVisible && running && !suspended && appearance.enabled && appearance.hasOrnaments && appearance.capturesSpectrum && isPlaybackProgressing)
+    }
+    private func updateClockRecovery() {
+        guard running, !suspended, appearance.enabled, media.isPlaying,
+              clock.remainingSeekHold() != nil else {
+            clockRecoveryTask?.cancel()
+            clockRecoveryTask = nil
+            return
+        }
+        guard clockRecoveryTask == nil else { return }
+        clockRecoveryTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self, let remaining = self.clock.remainingSeekHold() else {
+                    self?.clockRecoveryTask = nil
+                    return
+                }
+                let delay = max(50, Int64(ceil(remaining * 1_000)))
+                try? await Task.sleep(for: .milliseconds(delay))
+                guard !Task.isCancelled else { return }
+                if self.clock.resumeIfSeekHoldExpired(from: self.media) {
+                    self.clockRecoveryTask = nil
+                    self.objectWillChange.send()
+                    if self.document != nil { self.updateStatus() }
+                    self.updateSpectrum()
+                    return
+                }
+            }
+        }
     }
     func setSpectrumVisible(_ value: Bool) {
         guard spectrumVisible != value else { return }
