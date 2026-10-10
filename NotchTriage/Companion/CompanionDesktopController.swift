@@ -296,7 +296,7 @@ import SwiftUI
             hudPanel.setFrame(
                 .init(
                     x: arcade.minX, y: arcade.maxY + 4,
-                    width: width, height: 82), display: true)
+                    width: width, height: 116), display: true)
             if !store.preferences.inNest { hudPanel.orderFrontRegardless() } else { hudPanel.orderOut(nil) }
             if s.paused || store.preferences.inNest {
                 if store.preferences.inNest {
@@ -1169,11 +1169,62 @@ private struct CompanionGameHUD: View {
                     }
                     .help("结束并结算").accessibilityLabel("结束并结算")
                 }.font(.caption)
+                relicSlots(s)
             }
             .buttonStyle(.borderless).padding(.horizontal, 14).padding(.vertical, 10)
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
             .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.white.opacity(0.16), lineWidth: 0.5))
             .padding(4)
+        }
+    }
+
+    @ViewBuilder private func relicSlots(_ session: CompanionSession) -> some View {
+        HStack(spacing: 5) {
+            Text("固定").font(.system(size: 9)).foregroundStyle(.secondary)
+            ForEach(0..<2, id: \.self) { index in
+                relicSlot(session.permanent.indices.contains(index) ? session.permanent[index] : nil,
+                          rank: 1, game: session.game, permanent: true)
+            }
+            Rectangle().fill(.white.opacity(0.14)).frame(width: 1, height: 20).padding(.horizontal, 2)
+            Text("本局").font(.system(size: 9)).foregroundStyle(.secondary)
+            let numbers = session.temporary.keys.sorted()
+            ForEach(0..<6, id: \.self) { index in
+                relicSlot(numbers.indices.contains(index) ? numbers[index] : nil,
+                          rank: numbers.indices.contains(index) ? session.temporary[numbers[index]] ?? 1 : 0,
+                          game: session.game, permanent: false)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    @ViewBuilder private func relicSlot(_ number: Int?, rank: Int, game: CompanionGame,
+                                        permanent: Bool) -> some View {
+        if let number {
+            let relic = CompanionCatalog.relics(game)[number-1]
+            ZStack(alignment: .bottomTrailing) {
+                Group {
+                    if let icon = CompanionRelicArtwork.image(game: game, number: number) {
+                        Image(nsImage: icon).resizable().interpolation(.none).scaledToFit()
+                    } else {
+                        Image(systemName: "sparkle").resizable().scaledToFit().padding(6)
+                            .foregroundStyle(permanent ? .mint : .cyan)
+                    }
+                }
+                .padding(2)
+                Text("R\(rank)").font(.system(size: 7, weight: .bold, design: .rounded))
+                    .padding(.horizontal, 2).background(.black.opacity(0.72), in: Capsule())
+            }
+            .frame(width: 27, height: 27)
+            .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
+            .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(
+                (permanent ? Color.mint : Color.cyan).opacity(0.38), lineWidth: 0.7))
+            .help("\(permanent ? "固定遗物" : "本局遗物")：\(relic.name) R\(rank) · \(relic.effect)")
+            .accessibilityLabel("\(relic.name)，R\(rank)")
+        } else {
+            RoundedRectangle(cornerRadius: 7)
+                .strokeBorder(.white.opacity(0.13), style: StrokeStyle(lineWidth: 0.8, dash: [2, 2]))
+                .frame(width: 27, height: 27)
+                .accessibilityLabel(permanent ? "固定遗物空槽" : "本局遗物空槽")
         }
     }
 }

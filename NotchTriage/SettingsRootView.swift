@@ -716,6 +716,15 @@ struct SettingsRootView: View {
                         .monospacedDigit()
                 }
 
+                Picker(model.localized("更新通道"), selection: $model.updateChannel) {
+                    ForEach(AppUpdateChannel.allCases) { channel in
+                        Text(model.localized(channel.title)).tag(channel)
+                    }
+                }
+                Text(model.localized(model.updateChannel.description))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
                 if let progress = model.updateDownloadProgress {
                     Divider()
                     VStack(alignment: .leading, spacing: 8) {

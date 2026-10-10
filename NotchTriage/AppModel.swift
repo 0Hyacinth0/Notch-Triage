@@ -54,6 +54,7 @@ final class AppModel: ObservableObject {
         static let clipboardRetentionPolicy = "notch.clipboard.retentionPolicy"
         static let lastUpdateCheck = "updates.lastSuccessfulCheck"
         static let lastPromptedVersion = "updates.lastPromptedVersion"
+        static let updateChannel = "updates.channel.v1"
     }
 
     @Published private(set) var panelState = PanelState()
@@ -71,6 +72,16 @@ final class AppModel: ObservableObject {
                 workspaceSection.rawValue,
                 forKey: PreferenceKey.workspaceSection
             )
+        }
+    }
+    @Published var updateChannel: AppUpdateChannel {
+        didSet {
+            guard oldValue != updateChannel else { return }
+            UserDefaults.standard.set(updateChannel.rawValue, forKey: PreferenceKey.updateChannel)
+            updateTask?.cancel()
+            availableUpdate = nil
+            updatePrompt = nil
+            updateStatus = .idle
         }
     }
     @Published private(set) var fileShelfItems: [FileShelfItem] = []
@@ -413,6 +424,9 @@ final class AppModel: ObservableObject {
         workspaceSection = WorkspaceSection.restored(
             from: defaults.string(forKey: PreferenceKey.workspaceSection)
         )
+        updateChannel = AppUpdateChannel(
+            rawValue: defaults.string(forKey: PreferenceKey.updateChannel) ?? ""
+        ) ?? .stable
         clipboardHistoryEnabled = defaults.bool(
             forKey: PreferenceKey.clipboardHistoryEnabled
         )

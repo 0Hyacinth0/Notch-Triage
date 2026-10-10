@@ -281,9 +281,13 @@ struct CompanionSettingsView: View {
                             Button {
                                 store.choose(number)
                             } label: {
-                                VStack(alignment: .leading) {
-                                    Text("\(relic.name) · 本局 R\(s.rank(number)+1)").font(.headline)
-                                    Text(relic.effect).font(.caption)
+                                HStack(spacing: 10) {
+                                    CompanionRelicGlyph(game: s.game, number: number, size: 34)
+                                    VStack(alignment: .leading) {
+                                        Text("\(relic.name) · 本局 R\(s.rank(number)+1)").font(.headline)
+                                        Text(relic.effect).font(.caption)
+                                    }
+                                    Spacer(minLength: 0)
                                 }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
                             }
                         }
@@ -297,12 +301,14 @@ struct CompanionSettingsView: View {
                         }
                     }
                     if !s.temporary.isEmpty {
-                        Text(
-                            "本局："
-                                + s.temporary.keys.sorted().map {
-                                    "\(CompanionCatalog.relics(s.game)[$0-1].name) R\(s.rank($0))"
-                                }.joined(separator: " · ")
-                        ).font(.caption).foregroundStyle(.secondary)
+                        HStack(spacing: 8) {
+                            Text("本局遗物").font(.caption).foregroundStyle(.secondary)
+                            ForEach(s.temporary.keys.sorted(), id: \.self) { number in
+                                CompanionRelicGlyph(game: s.game, number: number, size: 28,
+                                    rank: s.rank(number))
+                                    .help("\(CompanionCatalog.relics(s.game)[number-1].name) R\(s.rank(number))")
+                            }
+                        }
                     }
                 }
             }
@@ -335,11 +341,35 @@ struct CompanionSettingsView: View {
             }
         case "遗物":
             SettingsGroup(title: "永久收藏 · 两个装备位") {
-                Text("永久固定 R1；局内最多六种临时遗物，可升级到 R3。同名不重复装备。").font(.caption).foregroundStyle(.secondary)
+                Text("固定遗物最多装备两件；局内遗物最多六种，同名遗物可升至 R3。悬停图标可看效果。").font(.caption).foregroundStyle(.secondary)
+                HStack(spacing: 8) {
+                    Text("装备槽").font(.caption).foregroundStyle(.secondary)
+                    ForEach(0..<2, id: \.self) { index in
+                        if p.equipment.indices.contains(index) {
+                            let number = p.equipment[index]
+                            HStack(spacing: 5) {
+                                CompanionRelicGlyph(game: game, number: number, size: 25, rank: 1)
+                                Text(CompanionCatalog.relics(game)[number-1].name).font(.caption)
+                            }.padding(.horizontal, 7).padding(.vertical, 4)
+                                .background(.white.opacity(0.06), in: Capsule())
+                        } else {
+                            Text("空槽").font(.caption).foregroundStyle(.tertiary)
+                                .frame(width: 70, height: 30)
+                                .overlay(Capsule().strokeBorder(.secondary.opacity(0.3), style: StrokeStyle(dash: [3, 3])))
+                        }
+                    }
+                }
                 ForEach(CompanionCatalog.relics(game)) { relic in
                     HStack(alignment: .top) {
-                        Image(systemName: p.owned.contains(relic.number) ? "sparkles" : "lock")
-                            .foregroundStyle(.mint)
+                        CompanionRelicGlyph(game: game, number: relic.number, size: 42,
+                                            rank: p.owned.contains(relic.number) ? 1 : nil)
+                            .opacity(p.owned.contains(relic.number) ? 1 : 0.38)
+                            .overlay(alignment: .bottomTrailing) {
+                                if !p.owned.contains(relic.number) {
+                                    Image(systemName: "lock.fill").font(.system(size: 9, weight: .bold))
+                                        .padding(3).background(.black.opacity(0.7), in: Circle())
+                                }
+                            }
                         VStack(alignment: .leading, spacing: 4) {
                             Text(relic.name).font(.headline)
                             Text(relic.effect).font(.caption)

@@ -60,7 +60,8 @@ extension AppModel {
         updateTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let release = try await updateService.latestRelease()
+                let channel = updateChannel
+                let release = try await updateService.latestRelease(channel: channel)
                 guard !Task.isCancelled else { return }
                 UserDefaults.standard.set(
                     Date(),

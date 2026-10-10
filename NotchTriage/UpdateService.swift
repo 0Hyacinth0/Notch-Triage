@@ -3,13 +3,16 @@ import Darwin
 import Foundation
 
 actor UpdateService {
-    private static let latestReleaseURL = URL(
+    private static let stableReleaseURL = URL(
         string: "https://api.github.com/repos/0Hyacinth0/Notch-Triage/releases/latest"
+    )!
+    private static let betaReleasesURL = URL(
+        string: "https://api.github.com/repos/0Hyacinth0/Notch-Triage/releases?per_page=100"
     )!
     private static let expectedBundleIdentifier = "com.hyacinth.notchtriage"
 
-    func latestRelease() async throws -> AppRelease {
-        var request = URLRequest(url: Self.latestReleaseURL)
+    func latestRelease(channel: AppUpdateChannel) async throws -> AppRelease {
+        var request = URLRequest(url: channel == .stable ? Self.stableReleaseURL : Self.betaReleasesURL)
         request.timeoutInterval = 20
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("NotchTriage-Updater", forHTTPHeaderField: "User-Agent")
@@ -20,7 +23,16 @@ actor UpdateService {
             throw UpdateServiceError.invalidReleaseResponse
         }
 
-        let payload = try JSONDecoder().decode(ReleasePayload.self, from: data)
+        let payload: ReleasePayload
+        if channel == .stable {
+            payload = try JSONDecoder().decode(ReleasePayload.self, from: data)
+        } else {
+            let releases = try JSONDecoder().decode([ReleasePayload].self, from: data)
+            guard let prerelease = releases.first(where: { $0.isPrerelease && !$0.isDraft }) else {
+                throw UpdateServiceError.noBetaRelease
+            }
+            payload = prerelease
+        }
         guard let asset = payload.assets.first(where: { asset in
             asset.name.localizedCaseInsensitiveContains("macOS-universal")
                 && asset.name.lowercased().hasSuffix(".dmg")
@@ -444,6 +456,8 @@ private struct ReleasePayload: Decodable {
     let body: String?
     let htmlURL: URL
     let assets: [ReleaseAssetPayload]
+    let isPrerelease: Bool
+    let isDraft: Bool
 
     private enum CodingKeys: String, CodingKey {
         case tagName = "tag_name"
@@ -451,6 +465,8 @@ private struct ReleasePayload: Decodable {
         case body
         case htmlURL = "html_url"
         case assets
+        case isPrerelease = "prerelease"
+        case isDraft = "draft"
     }
 }
 
@@ -479,6 +495,7 @@ private struct ProcessResult {
 }
 
 enum UpdateServiceError: LocalizedError {
+    case noBetaRelease
     case invalidReleaseResponse
     case missingInstaller
     case untrustedDownloadLocation
@@ -497,6 +514,8 @@ enum UpdateServiceError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
+        case .noBetaRelease:
+            return "GitHub 上暂时没有可用的测试版 Pre-release"
         case .invalidReleaseResponse:
             return "无法读取 GitHub 最新版本"
         case .missingInstaller:

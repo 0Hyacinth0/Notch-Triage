@@ -709,3 +709,9 @@
 "网易云音乐" = "NetEase Music";
 "应用与维护" = "App & maintenance";
 "播放器" = "Player";
+
+"更新通道" = "Update channel";
+"正式版" = "Stable";
+"测试版" = "Beta";
+"只检查正式版更新。" = "Check stable releases only.";
+"检查 GitHub 上标记为 Pre-release 的测试版。" = "Check GitHub releases marked as Pre-release.";

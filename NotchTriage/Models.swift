@@ -500,6 +500,17 @@ struct AppRelease: Identifiable, Equatable, Sendable {
     var displayVersion: String { "v\(version)" }
 }
 
+enum AppUpdateChannel: String, CaseIterable, Identifiable, Sendable {
+    case stable
+    case beta
+
+    var id: String { rawValue }
+    var title: String { self == .stable ? "正式版" : "测试版" }
+    var description: String {
+        self == .stable ? "只检查正式版更新。" : "检查 GitHub 上标记为 Pre-release 的测试版。"
+    }
+}
+
 struct PreparedAppUpdate: Sendable {
     let appURL: URL
     let replacementDirectory: URL
