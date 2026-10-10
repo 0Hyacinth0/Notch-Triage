@@ -227,6 +227,14 @@ DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer \
 
 ---
 
-### 歌词组件许可
+### 许可证
 
-QQ QRC 解码器改编自 [MxIris-LyricsX-Project/LyricsKit](https://github.com/MxIris-LyricsX-Project/LyricsKit)，该文件按 MPL-2.0 提供；原始提交、修改说明与完整许可保存在 `NotchTriage/ThirdParty/LyricsKit/`。简繁词组数据来自 [OpenCC](https://github.com/BYVoid/OpenCC)，按 Apache-2.0 使用，许可文件随资源一同保留。其他歌词接入与显示逻辑由本项目实现。
+Copyright (C) 2026 0Hyacinth0.
+
+除下方明确列出的第三方组件外，本项目自有代码按 [GNU General Public License v3.0](./LICENSE) 授权。GPL-3.0 允许商业使用；分发程序或修改版时，须遵循协议中的对应源代码提供和授权要求。
+
+### 第三方组件许可
+
+- QQ QRC 解码器改编自 [MxIris-LyricsX-Project/LyricsKit](https://github.com/MxIris-LyricsX-Project/LyricsKit)，该文件按 MPL-2.0 提供；原始提交、修改说明与完整许可保存在 `NotchTriage/ThirdParty/LyricsKit/`。
+- 简繁词组数据来自 [OpenCC](https://github.com/BYVoid/OpenCC)，按 Apache-2.0 使用，许可文件随资源一同保留。
+- `MediaRemoteAdapter` 按 BSD 3-Clause License 提供，许可和 NOTICE 保存在 `Vendor/MediaRemoteAdapter/MediaRemoteAdapter/`。
