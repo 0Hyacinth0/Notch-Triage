@@ -227,11 +227,6 @@ DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer \
 
 ---
 
-<p align="center">
-  <strong>Notch Triage</strong><br>
-  <sub>让原本占据空间的刘海，成为抬眼可见的效率中心。</sub>
-</p>
-
 ### 歌词组件许可
 
 QQ QRC 解码器改编自 [MxIris-LyricsX-Project/LyricsKit](https://github.com/MxIris-LyricsX-Project/LyricsKit)，该文件按 MPL-2.0 提供；原始提交、修改说明与完整许可保存在 `NotchTriage/ThirdParty/LyricsKit/`。简繁词组数据来自 [OpenCC](https://github.com/BYVoid/OpenCC)，按 Apache-2.0 使用，许可文件随资源一同保留。其他歌词接入与显示逻辑由本项目实现。
