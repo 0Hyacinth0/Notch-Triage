@@ -161,11 +161,11 @@ struct CompanionCarePanel: View {
                         Button("让它玩贪吃蛇") {
                             store.startGame(.snake)
                             dismiss()
-                        }.disabled(!store.archive.snakeUnlocked)
+                        }.disabled(!store.isGameUnlocked(.snake))
                         Button("让它玩星灯航行") {
                             store.startGame(.flight)
                             dismiss()
-                        }.disabled(!store.archive.flightUnlocked)
+                        }.disabled(!store.isGameUnlocked(.flight))
                         Button("训练与游戏设置") {
                             store.openSettings("小游戏")
                             dismiss()

@@ -26,6 +26,15 @@ import Combine
     var session: CompanionSession? { archive.session }
     var preferences: CompanionPreferences { archive.preferences }
 
+    func isGameUnlocked(_ game: CompanionGame) -> Bool {
+        switch game {
+        case .snake:
+            return true
+        case .flight:
+            return archive.flightUnlocked || archive.pets.contains { $0.stage >= 1 }
+        }
+    }
+
     init() {
         url = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("NotchTriage/Companion/archive.json")
@@ -326,8 +335,8 @@ import Combine
             notice = "已有一局保存中，请继续或先结束并结算。"
             return
         }
-        guard game == .snake ? archive.snakeUnlocked : archive.flightUnlocked else {
-            notice = game == .snake ? "首只精灵进入成长期后解锁。" : "首只精灵成年后解锁。"
+        guard isGameUnlocked(game) else {
+            notice = "任一精灵进入成长期后解锁星灯航行。"
             return
         }
         archive.preferences.inNest = false
@@ -455,8 +464,8 @@ import Combine
         save()
     }
     private func evaluateCare() {
-        if archive.pets.contains(where: { $0.stage >= 1 }) { archive.snakeUnlocked = true }
-        if archive.pets.contains(where: { $0.stage == 2 }) { archive.flightUnlocked = true }
+        archive.snakeUnlocked = true
+        if archive.pets.contains(where: { $0.stage >= 1 }) { archive.flightUnlocked = true }
         for i in archive.pets.indices where archive.pets[i].stage == 2 {
             let p = archive.pets[i]
             let basic =

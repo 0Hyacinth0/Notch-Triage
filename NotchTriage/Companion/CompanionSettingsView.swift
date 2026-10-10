@@ -422,10 +422,10 @@ struct CompanionSettingsView: View {
                 HStack {
                     Button("让它玩") { store.startGame(game) }.buttonStyle(.borderedProminent)
                     Button("我来玩") { store.startGame(game, manual: true) }
-                }.disabled(store.session != nil || !store.preferences.enabled)
-                if !(game == .snake ? store.archive.snakeUnlocked : store.archive.flightUnlocked) {
-                    Text(game == .snake ? "首只精灵成长到成长期后解锁。" : "首只精灵成年后解锁。").font(.caption).foregroundStyle(
-                        .secondary)
+                }.disabled(store.session != nil || !store.preferences.enabled || !store.isGameUnlocked(game))
+                if !store.isGameUnlocked(game) {
+                    Text("任一精灵进入成长期后解锁。")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 Button("观看玩法演示") { demoID = UUID() }
                 if let demoID {
