@@ -7,6 +7,7 @@ struct SettingsRootView: View {
     private enum Destination: String, Hashable {
         case appearance
         case lyrics
+        case companion
         case behavior
         case aiUsage
         case permissions
@@ -18,6 +19,7 @@ struct SettingsRootView: View {
             switch self {
             case .appearance: return "外观"
             case .lyrics: return "歌词显示"
+            case .companion: return "桌面伙伴"
             case .behavior: return "通用"
             case .aiUsage: return "AI 套餐用量"
             case .permissions: return "权限"
@@ -46,6 +48,7 @@ struct SettingsRootView: View {
                 Section("Notch Triage") {
                     sidebarItem("外观", symbol: "rectangle.on.rectangle", destination: .appearance)
                     sidebarItem("歌词显示", symbol: "text.quote", destination: .lyrics)
+                    sidebarItem("桌面伙伴", symbol: "pawprint", destination: .companion)
                     sidebarItem("AI 套餐用量", symbol: "gauge.with.dots.needle.67percent", destination: .aiUsage)
                 }
                 Section("应用与维护") {
@@ -138,6 +141,8 @@ struct SettingsRootView: View {
             appearancePage
         case .lyrics:
             LyricsSettingsView(model: model)
+        case .companion:
+            CompanionSettingsView(store: model.companion)
         case .aiUsage:
             AIUsageSettingsView(model: model)
         case .behavior:

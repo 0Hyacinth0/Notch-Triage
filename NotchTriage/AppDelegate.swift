@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let model = AppModel()
     private var panelController: NotchPanelController?
     private var lyricsController: LyricsOverlayController?
+    private var companionController: CompanionDesktopController?
     private var settingsWindowController: SettingsWindowController?
 
     nonisolated static func shouldStartAppServices(
@@ -45,11 +46,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panelController = controller
         controller.show()
         lyricsController = LyricsOverlayController(model: model)
+        model.companion.settingsOpener = { [weak model] in
+            UserDefaults.standard.set("companion", forKey: "NotchTriage.Settings.selectedPane")
+            model?.openSettings()
+        }
+        companionController = CompanionDesktopController(store: model.companion, model: model)
         model.start()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         model.settingsWindowOpener = nil
+        companionController?.stop()
+        model.companion.settingsOpener = nil
         model.stop()
     }
 
@@ -338,6 +346,8 @@ final class NotchPanelController {
                 rightWingWidth: rightWingWidth
             )
         )
+        model.companion.nestFeedback.surfaceFrame = geometry.hoverTrackingFrame
+        model.companion.nestFeedback.centerX = screen.frame.midX
         let frame = geometry.windowFrame
         hostedPanelGeometry.update(size: frame.size)
         let expanded = state.isExpanded

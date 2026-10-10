@@ -318,6 +318,8 @@ private struct ExpandedPanel: View {
                     .controlSize(.small)
                     .frame(width: 300)
 
+                    CompanionNestEntry(store: model.companion) { model.companion.openSettings("精灵小窝") }
+
                     Button {
                         model.openSettings()
                     } label: {

@@ -87,6 +87,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var mediaCommandInFlight: MediaCommand? = nil
     let aiUsage = AIUsageStore()
     let lyrics = LyricsStore()
+    let companion = CompanionStore()
     @Published private(set) var codexExecutablePath = ""
     @Published private(set) var codexClientVersion: String?
     private var aiUsageObservation: AnyCancellable?

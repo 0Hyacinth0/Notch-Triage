@@ -91,6 +91,13 @@ struct NotchRootView: View {
                 )
             )
 
+            // A full-canvas sibling keeps the entrance at the physical notch
+            // center, independent of unequal left/right wing widths.
+            CompanionNestControl(store: model.companion, feedback: model.companion.nestFeedback)
+                .frame(width: 80, height: 18)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .offset(y: (compactHeight == model.menuBarHeight ? min(model.menuBarHeight, 40) : compactHeight) - 18)
+
             // Isolate adaptive reveal alignment from the main notch. Custom
             // alignment guides can expand a ZStack's layout bounds; keeping
             // them in a full-canvas sibling prevents that from moving the
