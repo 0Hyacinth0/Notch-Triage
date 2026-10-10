@@ -189,6 +189,10 @@
 "清理通知中心…" = "Clear Notification Center…";
 "清理 macOS 通知中心？" = "Clear macOS Notification Center?";
 "将尝试清除系统通知中心中可见的全部通知，并复查清除按钮是否消失。" = "Notch Triage will try to clear visible notifications and check whether the Clear All control disappears.";
+"清理全部通知" = "Clear All Notifications";
+"清理全部通知…" = "Clear All Notifications…";
+"清理全部通知？" = "Clear All Notifications?";
+"将尝试清除系统通知中心中的通知，并同时清除本次运行记录的横幅来源；系统结果会复查。" = "Notch Triage will try to clear Notification Center and also remove this session's banner source records, then check the system result.";
 "暂无可识别通知来源" = "No Recognized Notification Sources";
 "通知中心当前可见来源" = "Sources Currently Visible in Notification Center";
 "打开通知中心并读取可识别来源" = "Open Notification Center and read recognized sources";

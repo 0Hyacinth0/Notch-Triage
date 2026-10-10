@@ -8,7 +8,7 @@ enum NotificationClearConfirmation {
     var title: String {
         switch self {
         case .notificationCenter:
-            return "清理 macOS 通知中心？"
+            return "清理全部通知？"
         case .sessionRecords:
             return "清除本次横幅记录？"
         }
@@ -17,7 +17,7 @@ enum NotificationClearConfirmation {
     var actionTitle: String {
         switch self {
         case .notificationCenter:
-            return "清除全部通知"
+            return "清理全部通知"
         case .sessionRecords:
             return "清除本次记录"
         }
@@ -26,7 +26,7 @@ enum NotificationClearConfirmation {
     var message: String {
         switch self {
         case .notificationCenter:
-            return "将尝试清除系统通知中心中可见的全部通知，并复查清除按钮是否消失。"
+            return "将尝试清除系统通知中心中的通知，并同时清除本次运行记录的横幅来源；系统结果会复查。"
         case .sessionRecords:
             return "只清除 Notch Triage 本次运行中的来源记录，不影响 macOS 通知中心。"
         }
@@ -114,7 +114,7 @@ struct NotificationInbox: View {
                     .accessibilityLabel("清除本次横幅记录")
                 }
 
-                Button("清理通知中心…", role: .destructive) {
+                Button("清理全部通知…", role: .destructive) {
                     clearConfirmation = .notificationCenter
                 }
                 .buttonStyle(.plain)

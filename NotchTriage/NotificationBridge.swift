@@ -302,8 +302,11 @@ private final class NotificationAXWorker: @unchecked Sendable {
     private static let maximumScanDepth = 7
     private static let maximumActionDepth = 8
     private static let maximumNodeCount = 160
+    private static let maximumClearActionNodeCount = 700
     private static let messagingTimeout: Float = 0.08
     private static let scanDeadline: TimeInterval = 0.65
+    private static let clearActionDeadline: TimeInterval = 2
+    private static let clearActionMessagingTimeout: Float = 0.2
     private struct NodeSnapshot {
         let role: String?
         let textValues: [String]
@@ -319,13 +322,24 @@ private final class NotificationAXWorker: @unchecked Sendable {
     private struct ScanBudget {
         let deadlineUptime: TimeInterval
         let cancellation: NotificationAXCancellation
+        let maximumNodeCount: Int
         var visitedNodeCount = 0
         var didReachLimit = false
+
+        init(
+            deadlineUptime: TimeInterval,
+            cancellation: NotificationAXCancellation,
+            maximumNodeCount: Int = NotificationAXWorker.maximumNodeCount
+        ) {
+            self.deadlineUptime = deadlineUptime
+            self.cancellation = cancellation
+            self.maximumNodeCount = maximumNodeCount
+        }
 
         mutating func visit() -> Bool {
             guard !cancellation.isCancelled else { return false }
             guard ProcessInfo.processInfo.systemUptime < deadlineUptime,
-                  visitedNodeCount < NotificationAXWorker.maximumNodeCount else {
+                  visitedNodeCount < maximumNodeCount else {
                 didReachLimit = true
                 return false
             }
@@ -555,17 +569,18 @@ private final class NotificationAXWorker: @unchecked Sendable {
         }
 
         let application = AXUIElementCreateApplication(processIdentifier)
-        setMessagingTimeout(on: application)
+        setMessagingTimeout(on: application, timeout: clearActionMessagingTimeout)
         var budget = ScanBudget(
-            deadlineUptime: ProcessInfo.processInfo.systemUptime + scanDeadline,
-            cancellation: cancellation
+            deadlineUptime: ProcessInfo.processInfo.systemUptime + clearActionDeadline,
+            cancellation: cancellation,
+            maximumNodeCount: maximumClearActionNodeCount
         )
         var stack: [(AXUIElement, Int)] = [(application, 0)]
         var encounteredUnreadableElement = false
 
         while let (element, depth) = stack.popLast() {
             guard budget.visit() else { break }
-            setMessagingTimeout(on: element)
+            setMessagingTimeout(on: element, timeout: clearActionMessagingTimeout)
 
             guard let node = nodeSnapshot(of: element, includeChildren: true) else {
                 encounteredUnreadableElement = true
@@ -580,19 +595,15 @@ private final class NotificationAXWorker: @unchecked Sendable {
                     guard AXUIElementCopyActionNames(element, &actions) == .success,
                           let actionNames = actions as? [String],
                           actionNames.contains(kAXPressAction as String) else {
-                        return NotificationAXClearResult(
-                            status: .success,
-                            didPressClear: false
-                        )
+                        continue
                     }
 
-                    return NotificationAXClearResult(
-                        status: .success,
-                        didPressClear: AXUIElementPerformAction(
+                    if AXUIElementPerformAction(
                             element,
                             kAXPressAction as CFString
-                        ) == .success
-                    )
+                        ) == .success {
+                        return NotificationAXClearResult(status: .success, didPressClear: true)
+                    }
                 }
             }
 
@@ -624,10 +635,11 @@ private final class NotificationAXWorker: @unchecked Sendable {
         }
 
         let application = AXUIElementCreateApplication(processIdentifier)
-        setMessagingTimeout(on: application)
+        setMessagingTimeout(on: application, timeout: clearActionMessagingTimeout)
         var budget = ScanBudget(
-            deadlineUptime: ProcessInfo.processInfo.systemUptime + scanDeadline,
-            cancellation: cancellation
+            deadlineUptime: ProcessInfo.processInfo.systemUptime + clearActionDeadline,
+            cancellation: cancellation,
+            maximumNodeCount: maximumClearActionNodeCount
         )
         guard budget.visit(),
               let windows = elements(application, attribute: kAXWindowsAttribute),
@@ -639,7 +651,7 @@ private final class NotificationAXWorker: @unchecked Sendable {
         var encounteredUnreadableElement = false
         while let (element, depth) = stack.popLast() {
             guard budget.visit() else { return .inconclusive }
-            setMessagingTimeout(on: element)
+            setMessagingTimeout(on: element, timeout: clearActionMessagingTimeout)
             guard let node = nodeSnapshot(
                 of: element,
                 includeChildren: depth < maximumActionDepth
@@ -962,8 +974,11 @@ private final class NotificationAXWorker: @unchecked Sendable {
         return value as? Bool
     }
 
-    private static func setMessagingTimeout(on element: AXUIElement) {
-        _ = AXUIElementSetMessagingTimeout(element, messagingTimeout)
+    private static func setMessagingTimeout(
+        on element: AXUIElement,
+        timeout: Float = messagingTimeout
+    ) {
+        _ = AXUIElementSetMessagingTimeout(element, timeout)
     }
 
     private static func frame(of element: AXUIElement) -> CGRect? {
@@ -1240,6 +1255,11 @@ final class NotificationBridge {
     }
 
     func clearAllNotifications() {
+        // The overview also retains source-only banner records. A confirmed
+        // clear-all action removes those records along with the system items.
+        retainedNotificationItems.removeAll()
+        onSources([])
+
         guard hasAccessibilityAccess() else {
             onHealth(.warning("没有辅助功能权限，无法清理通知"))
             return
@@ -1495,6 +1515,7 @@ final class NotificationBridge {
         _ result: NotificationAXClearResult,
         verification: NotificationAXClearVerification?
     ) {
+        defer { scheduleNotificationCenterRefreshAfterClear() }
         notificationClearTask = nil
         switch result.status {
         case .cancelled:
@@ -1530,6 +1551,19 @@ final class NotificationBridge {
             }
 
             onHealth(.ready("清除请求已执行；通知中心未再显示“全部清除”按钮"))
+        }
+    }
+
+    private func scheduleNotificationCenterRefreshAfterClear() {
+        guard visibleNotificationCenterProcessIdentifier() != nil else {
+            onNotificationCenterSources([])
+            return
+        }
+
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(350))
+            guard let self, !self.stopping else { return }
+            self.refreshNow()
         }
     }
 

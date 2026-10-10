@@ -131,7 +131,7 @@ private struct ExpandedPanel: View {
         }
         .confirmationDialog(
             LocalizedStringKey(
-                notificationClearConfirmation?.title ?? "清理 macOS 通知中心？"
+                notificationClearConfirmation?.title ?? "清理全部通知？"
             ),
             isPresented: Binding(
                 get: { notificationClearConfirmation != nil },
