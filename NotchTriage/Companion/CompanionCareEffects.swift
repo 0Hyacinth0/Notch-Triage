@@ -7,6 +7,28 @@ enum CompanionCareEffects {
     static let actions: Set<String> = ["pet", "meal", "snack", "bath", "clean", "rest"]
     static func duration(_ action: String) -> Double { actions.contains(action) ? 3.2 : 2.4 }
 
+    /// Sleep markers use pixel geometry so rendering never enters the font typesetter.
+    static func drawSleepMark(at origin: NSPoint, size: CGFloat, color: NSColor) {
+        guard size.isFinite, size > 0, NSGraphicsContext.current != nil else { return }
+        let rows = ["11111", "00010", "00100", "01000", "11111"]
+        let cell = size / 5
+        let path = NSBezierPath()
+        for (row, pixels) in rows.enumerated() {
+            for (column, pixel) in pixels.enumerated() where pixel == "1" {
+                path.appendRect(
+                    NSRect(
+                        x: origin.x + CGFloat(column) * cell,
+                        y: origin.y + CGFloat(4 - row) * cell,
+                        width: cell, height: cell))
+            }
+        }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current?.shouldAntialias = false
+        color.setFill()
+        path.fill()
+        NSGraphicsContext.restoreGraphicsState()
+    }
+
     static func draw(
         _ action: String, in rect: NSRect, age: Double, intensity: Double,
         reduced: Bool, sleeping: Bool, behind: Bool
@@ -167,12 +189,9 @@ enum CompanionCareEffects {
                 moon.fill()
                 for i in 0..<3 {
                     let p = (t * 0.3 + Double(i) * 0.28).truncatingRemainder(dividingBy: 1)
-                    ("z" as NSString).draw(
+                    drawSleepMark(
                         at: .init(x: 18 + p * 22, y: 63 + p * 35),
-                        withAttributes: [
-                            .font: NSFont.monospacedSystemFont(ofSize: 9 + p * 4, weight: .medium),
-                            .foregroundColor: color(blue, 1 - p),
-                        ])
+                        size: 9 + p * 4, color: color(blue, 1 - p))
                 }
                 spark(-37, 92, 3, color(gold, 0.7))
             } else {

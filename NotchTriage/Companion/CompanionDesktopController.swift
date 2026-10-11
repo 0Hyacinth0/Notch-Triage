@@ -817,12 +817,9 @@ import SwiftUI
             }
         }
         if !carried && (store.preferences.resting || pet.autoResting) {
-            ("z" as NSString).draw(
+            CompanionCareEffects.drawSleepMark(
                 at: .init(x: bounds.maxX - 20, y: bounds.maxY - 25),
-                withAttributes: [
-                    .foregroundColor: NSColor.systemMint,
-                    .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .bold),
-                ])
+                size: 12, color: .systemMint)
         }
     }
     func bodyHit(_ p: NSPoint) -> Bool {
