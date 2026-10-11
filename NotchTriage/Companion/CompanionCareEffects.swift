@@ -7,6 +7,33 @@ enum CompanionCareEffects {
     static let actions: Set<String> = ["pet", "meal", "snack", "bath", "clean", "rest"]
     static func duration(_ action: String) -> Double { actions.contains(action) ? 3.2 : 2.4 }
 
+    static func breathingRect(_ rect: NSRect, time: Double, reduced: Bool) -> NSRect {
+        guard !reduced, time.isFinite else { return rect }
+        let inhale = (sin(time * 2 * .pi / 3.8) + 1) / 2
+        let width = rect.width * (1 - inhale * 0.012)
+        return NSRect(
+            x: rect.midX - width / 2, y: rect.minY,
+            width: width, height: rect.height * (1 + inhale * 0.04))
+    }
+
+    static func drawSleepMarks(in bounds: NSRect, time: Double, reduced: Bool) {
+        guard time.isFinite else { return }
+        let base = NSPoint(x: bounds.maxX - 30, y: bounds.midY + bounds.height * 0.12)
+        let travel = min(24, bounds.height * 0.16)
+        for index in 0..<3 {
+            let phase = reduced
+                ? Double(index) / 3
+                : (time / 2.8 + Double(index) / 3).truncatingRemainder(dividingBy: 1)
+            drawSleepMark(
+                at: NSPoint(
+                    x: base.x + sin(phase * .pi) * 3,
+                    y: base.y + phase * travel),
+                size: 8 + phase * 5,
+                color: NSColor.systemMint.withAlphaComponent(
+                    reduced ? 0.65 : sin(phase * .pi) * 0.9))
+        }
+    }
+
     /// Sleep markers use pixel geometry so rendering never enters the font typesetter.
     static func drawSleepMark(at origin: NSPoint, size: CGFloat, color: NSColor) {
         guard size.isFinite, size > 0, NSGraphicsContext.current != nil else { return }

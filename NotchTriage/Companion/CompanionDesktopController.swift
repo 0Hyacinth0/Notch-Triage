@@ -786,6 +786,8 @@ import SwiftUI
     override func draw(_ dirtyRect: NSRect) {
         guard let pet = store.pet else { return }
         let now = ProcessInfo.processInfo.systemUptime
+        let reduced = store.preferences.reduceMotion
+            || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         NSGraphicsContext.saveGraphicsState()
         if let clipHeight { NSRect(x: 0, y: 0, width: bounds.width, height: clipHeight).clip() }
         let idleCycle = now.truncatingRemainder(dividingBy: 28)
@@ -801,8 +803,7 @@ import SwiftUI
                         : idleCycle < 2.2 ? .stretch : idleCycle < 4 ? .look : idleCycle > 23 ? .groom : .idle
         CompanionArtwork.drawPet(
             pet, rect: bounds.insetBy(dx: 16, dy: 16), time: now, effects: store.preferences.effects,
-            reduced: store.preferences.reduceMotion
-                || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, action: action,
+            reduced: reduced, action: action,
             actionAge: now - actionTime, previousForm: store.previousForm,
             accessories: store.archive.accessories[pet.id, default: []],
             pose: pose, facingLeft: facingLeft, lean: lean, releaseAge: now - releaseTime, squash: nestSquash)
@@ -817,9 +818,7 @@ import SwiftUI
             }
         }
         if !carried && (store.preferences.resting || pet.autoResting) {
-            CompanionCareEffects.drawSleepMark(
-                at: .init(x: bounds.maxX - 20, y: bounds.maxY - 25),
-                size: 12, color: .systemMint)
+            CompanionCareEffects.drawSleepMarks(in: bounds, time: now, reduced: reduced)
         }
     }
     func bodyHit(_ p: NSPoint) -> Bool {

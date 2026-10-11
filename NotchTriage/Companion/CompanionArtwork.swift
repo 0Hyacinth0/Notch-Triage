@@ -356,6 +356,9 @@ enum CompanionPose: String, CaseIterable {
         r.origin.y += bob
         r.size.width *= 1 + wave
         r.size.height *= 1 - wave
+        if pose == .sleep {
+            r = CompanionCareEffects.breathingRect(r, time: time, reduced: reduced)
+        }
         if !reduced { r = r.insetBy(dx: -r.width * squash / 2, dy: r.height * squash / 2) }
         if releaseAge < 0.8 && !reduced {
             let bounce = sin(releaseAge * 17) * exp(-releaseAge * 5)
