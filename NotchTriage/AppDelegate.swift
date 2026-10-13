@@ -356,7 +356,7 @@ final class NotchPanelController {
                 leftWingWidth: leftWingWidth,
                 rightWingWidth: rightWingWidth
             ),
-            nestControlVisible: model.companion.nestFeedback.occupied
+            nestControlVisible: model.isExpanded && model.companion.nestFeedback.occupied
                 || model.companion.nestFeedback.draggingOut
         )
         model.companion.nestFeedback.surfaceFrame = geometry.hoverTrackingFrame

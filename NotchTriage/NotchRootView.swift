@@ -30,7 +30,11 @@ struct NotchRootView: View {
             alignment: .top
         )
         .overlay(alignment: .top) {
-            CompanionNestControl(store: model.companion, feedback: model.companion.nestFeedback)
+            CompanionNestControl(
+                store: model.companion,
+                feedback: model.companion.nestFeedback,
+                isNotchExpanded: model.isExpanded
+            )
                 .frame(width: 80, height: 14)
                 .frame(maxWidth: .infinity, alignment: .top)
                 .padding(.top, compactHeight + 1)

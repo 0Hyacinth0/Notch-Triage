@@ -265,7 +265,11 @@ struct CompanionNestPortal: View {
 struct CompanionNestControl: View {
     @ObservedObject var store: CompanionStore
     @ObservedObject var feedback: CompanionNestFeedback
+    let isNotchExpanded: Bool
     @State private var draggingOut = false
+    private var isVisible: Bool {
+        store.preferences.enabled && (draggingOut || isNotchExpanded && feedback.occupied)
+    }
     var body: some View {
         ZStack {
             CompanionNestPortal(feedback: feedback)
@@ -306,8 +310,9 @@ struct CompanionNestControl: View {
                     .help("点击出来玩，或按住向下拖出")
                     .accessibilityLabel("精灵小窝，点击让伙伴出来，也可向下拖出")
             }
-            .opacity(store.preferences.enabled && (feedback.occupied || draggingOut) ? 1 : 0)
-            .allowsHitTesting(store.preferences.enabled && (feedback.occupied || draggingOut))
+            .opacity(isVisible ? 1 : 0)
+            .allowsHitTesting(isVisible)
+            .animation(.easeInOut(duration: 0.18), value: isVisible)
         }
     }
 }
