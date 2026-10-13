@@ -33,7 +33,7 @@ struct NotchRootView: View {
             CompanionNestControl(
                 store: model.companion,
                 feedback: model.companion.nestFeedback,
-                isNotchExpanded: model.isExpanded
+                isNotchExpanded: model.isHoveringNotch || model.isExpanded
             )
                 .frame(width: 80, height: 14)
                 .frame(maxWidth: .infinity, alignment: .top)
