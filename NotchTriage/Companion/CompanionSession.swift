@@ -28,7 +28,7 @@ struct CompanionParticle: Codable {
 final class CompanionSession: Codable, Identifiable {
     let id: UUID, petID: UUID, game: CompanionGame
     let levels: [Int], permanent: [Int]
-    let family: Int, form: Int, skin: Bool
+    let family: Int, form: Int
     var random: UInt64
     var paused = false, manual = false, finished = false, settled = false
     var result = "", score = 0, time = 0.0
@@ -55,7 +55,6 @@ final class CompanionSession: Codable, Identifiable {
     init(pet: UUID, game: CompanionGame, progress: CompanionProgress, family: Int = 0, form: Int = 0) {
         self.family = family
         self.form = form
-        skin = progress.skin
         id = UUID()
         petID = pet
         self.game = game

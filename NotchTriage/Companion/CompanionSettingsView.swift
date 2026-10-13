@@ -9,11 +9,10 @@ struct CompanionSettingsView: View {
     @State private var nestTab = "我的精灵"
     @State private var newName = ""
     @State private var pendingPet: UUID?
+    @State private var pendingReleasePet: UUID?
     @State private var resetMode: Bool?
     @State private var demoID: UUID?
-    @State private var preview = ""
-    @State private var previewStart = Date.distantPast
-    private let sections = ["我的伙伴", "精灵小窝", "小游戏", "外观与动效", "桌面与数据"]
+    private let sections = ["我的伙伴", "精灵小窝", "小游戏", "效果与声音", "桌面与数据"]
     private func pref<T>(_ path: WritableKeyPath<CompanionPreferences, T>) -> Binding<T> {
         .init(
             get: { store.preferences[keyPath: path] },
@@ -37,15 +36,18 @@ struct CompanionSettingsView: View {
             Picker("伙伴设置", selection: $section) { ForEach(sections, id: \.self) { Text($0) } }.pickerStyle(
                 .segmented)
             if !store.preferences.enabled {
-                Text("关闭时停止活动，已有精灵、收藏和挂起游戏仍会保留。离线不会失去成长。").font(.caption).foregroundStyle(.secondary)
+                Text("关闭时停止活动，已有精灵、成就和挂起游戏仍会保留。离线不会失去成长。").font(.caption).foregroundStyle(.secondary)
             }
             switch section {
             case "我的伙伴": companion
             case "精灵小窝": nest
             case "小游戏": games
-            case "外观与动效": appearance
+            case "效果与声音": effectsAndSound
             default: desktop
             }
+        }
+        .onAppear {
+            if section == "外观与动效" { section = "效果与声音" }
         }
         .onChange(of: game) { _, _ in demoID = nil }
         .confirmationDialog(
@@ -77,7 +79,24 @@ struct CompanionSettingsView: View {
             }
             Button("取消", role: .cancel) { resetMode = nil }
         } message: {
-            Text(resetMode == true ? "清除训练、永久遗物、游戏成就及当前局；保留精灵与已经获得的蛋和外观。" : "清除所有精灵、蛋、外观、训练与游戏存档。建议先导出备份。")
+            Text(resetMode == true ? "清除训练、永久遗物、游戏成就及当前局；保留精灵、精灵蛋与照料记录。" : "清除所有精灵、精灵蛋、训练与游戏存档。建议先导出备份。")
+        }
+        .confirmationDialog(
+            "确认放生？",
+            isPresented: Binding(
+                get: { pendingReleasePet != nil },
+                set: { if !$0 { pendingReleasePet = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("放生", role: .destructive) {
+                if let id = pendingReleasePet { store.releasePet(id) }
+                pendingReleasePet = nil
+            }
+            Button("取消", role: .cancel) { pendingReleasePet = nil }
+        } message: {
+            let name = store.archive.pets.first(where: { $0.id == pendingReleasePet })?.name ?? "这只精灵"
+            Text("放生“\(name)”会删除它的成长、亲密度、形态和个体照料记录。已获得的蛋、共享训练、遗物与成就会保留。此操作无法撤销。")
         }
     }
     @ViewBuilder private var companion: some View {
@@ -195,13 +214,16 @@ struct CompanionSettingsView: View {
                     Text("图鉴").tag("图鉴")
                     Text("精灵蛋").tag("精灵蛋")
                 }.pickerStyle(.segmented)
-                if store.preferences.cushion {
-                    RoundedRectangle(cornerRadius: 12).fill(Color.blue.opacity(0.13)).overlay(
-                        Text("浅蓝软垫 · 小窝装饰").font(.caption).foregroundStyle(.secondary)
-                    ).frame(height: 36)
-                }
                 if nestTab == "我的精灵" {
                     if store.archive.pets.isEmpty { Text("还没有孵化精灵。") }
+                    if store.session != nil {
+                        Text("当前游戏结算后才能放生精灵。")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    if store.archive.pets.count == 1 && store.archive.eggs == 0 {
+                        Text("小窝里只有这只精灵且没有精灵蛋；至少保留一只伙伴或一枚蛋，才能继续孵化和照料。")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                     ForEach(store.archive.pets) { pet in
                         HStack {
                             CompanionPortrait(pet: pet).frame(width: 48, height: 48)
@@ -214,6 +236,11 @@ struct CompanionSettingsView: View {
                             Button(store.archive.selected == pet.id ? "当前伙伴" : "换它陪伴") {
                                 if store.session != nil { pendingPet = pet.id } else { store.select(pet.id) }
                             }.disabled(store.archive.selected == pet.id)
+                            Button("放生", role: .destructive) {
+                                pendingReleasePet = pet.id
+                            }
+                            .help("从图鉴移除并删除这只精灵的个体记录")
+                            .disabled(store.session != nil || (store.archive.pets.count == 1 && store.archive.eggs == 0))
                         }
                     }
                     if store.pet != nil {
@@ -399,11 +426,11 @@ struct CompanionSettingsView: View {
                         reward: "精灵蛋 ×1"), done: p.achievements.contains("\(game.prefix)C10"))
                 achievement(
                     .init(
-                        id: "11", title: "新的模样", target: game == .snake ? "单局吃 50 份食物" : "首次击败星灯核心",
-                        reward: "游戏皮肤"), done: p.achievements.contains("\(game.prefix)C11"))
+                        id: "11", title: "极限挑战", target: game == .snake ? "单局吃 50 份食物" : "首次击败星灯核心",
+                        reward: ""), done: p.achievements.contains("\(game.prefix)C11"))
                 achievement(
                     .init(
-                        id: "12", title: "训练有成", target: game == .snake ? "觅食 L5" : "闪避 L5", reward: "精灵配饰"),
+                        id: "12", title: "训练有成", target: game == .snake ? "觅食 L5" : "闪避 L5", reward: ""),
                     done: p.achievements.contains("\(game.prefix)C12"))
                 Text(game == .snake ? "每累计新增 1000 份食物，再获一枚蛋。" : "每累计新增 30 次首领击败，再获一枚蛋。").font(.caption)
                     .foregroundStyle(.secondary)
@@ -443,36 +470,15 @@ struct CompanionSettingsView: View {
                 done ? Color.mint : Color.secondary)
             VStack(alignment: .leading, spacing: 3) {
                 Text(row.title)
-                Text(row.target + " · " + row.reward).font(.caption).foregroundStyle(.secondary)
+                Text(row.reward.isEmpty ? row.target : row.target + " · " + row.reward)
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
         }.padding(.vertical, 2)
     }
-    private var appearance: some View {
+    private var effectsAndSound: some View {
         VStack(spacing: 18) {
-            SettingsGroup(title: "动效预览") {
-                if let pet = store.pet {
-                    CompanionEffectPreview(
-                        pet: pet, preferences: store.preferences, action: preview, start: previewStart,
-                        accessories: store.archive.accessories[pet.id, default: []]
-                    ).frame(height: 150)
-                }
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 80))], spacing: 8) {
-                    ForEach(
-                        [
-                            "走路", "拖起", "挥手", "摸摸", "正餐", "点心", "洗澡", "清理", "休息", "叫醒", "睡觉", "伸懒腰", "回窝",
-                            "进化", "命中爆炸",
-                        ], id: \.self
-                    ) { name in
-                        Button(name) {
-                            preview = name
-                            previewStart = Date()
-                        }
-                    }
-                }
-                Text("预览不改变精灵状态或发放奖励。").font(.caption).foregroundStyle(.secondary)
-            }
-            SettingsGroup(title: "光效与运动") {
+            SettingsGroup(title: "效果") {
                 slider("特效强度", value: pref(\.effects), range: 0...1.5)
                 HStack {
                     ForEach(["低", "标准", "华丽"], id: \.self) { name in
@@ -484,33 +490,11 @@ struct CompanionSettingsView: View {
                 slider("小游戏区域暗化", value: pref(\.dim), range: 0...0.25)
                 Toggle("减少动态效果", isOn: pref(\.reduceMotion))
             }
-            SettingsGroup(title: "声音 · 默认安静") {
+            SettingsGroup(title: "声音") {
                 Toggle("伙伴音效", isOn: pref(\.petSound))
                 slider("伙伴音量", value: pref(\.petVolume), range: 0...1)
                 Toggle("游戏音效", isOn: pref(\.gameSound))
                 slider("游戏音量", value: pref(\.gameVolume), range: 0...1)
-            }
-            SettingsGroup(title: "已获得外观") {
-                if store.archive.cosmetics.isEmpty { Text("通过照料与游戏目标解锁外观。") }
-                ForEach([1, 3, 6, 8].filter { store.archive.cosmetics.contains($0) }, id: \.self) { id in
-                    Toggle(
-                        [1: "奶油小围兜", 3: "薄荷围巾", 6: "翠叶帽", 8: "星尾挂饰"][id]!,
-                        isOn: Binding(
-                            get: {
-                                store.pet.map { store.archive.accessories[$0.id, default: []].contains(id) }
-                                    ?? false
-                            }, set: { _ in store.accessory(id) }))
-                }
-                if store.archive.cosmetics.contains(2) { Toggle("泡泡挥手动作", isOn: pref(\.bubbleWave)) }
-                if store.archive.cosmetics.contains(4) { Toggle("小窝浅蓝软垫", isOn: pref(\.cushion)) }
-                ForEach(CompanionGame.allCases) { g in
-                    if store.archive.cosmetics.contains(g == .snake ? 5 : 7) {
-                        Toggle(
-                            g == .snake ? "果糖蛇皮肤" : "糖星号皮肤",
-                            isOn: Binding(
-                                get: { store.progress(g).skin }, set: { store.skin(g, enabled: $0) }))
-                    }
-                }
             }
         }
     }
@@ -586,98 +570,6 @@ struct CompanionSettingsView: View {
                 Button("重置全部伙伴数据…", role: .destructive) { resetMode = false }
             }
         }
-    }
-}
-
-private struct CompanionEffectPreview: NSViewRepresentable {
-    let pet: CompanionPet, preferences: CompanionPreferences, action: String, start: Date
-    let accessories: Set<Int>
-    func makeNSView(context: Context) -> CompanionPreviewCanvas { CompanionPreviewCanvas() }
-    func updateNSView(_ view: CompanionPreviewCanvas, context: Context) {
-        view.pet = pet
-        view.preferences = preferences
-        view.action = action
-        view.start = start
-        view.accessories = accessories
-        view.animate()
-    }
-    static func dismantleNSView(_ view: CompanionPreviewCanvas, coordinator: ()) { view.timer?.invalidate() }
-}
-private final class CompanionPreviewCanvas: NSView {
-    var pet: CompanionPet?, preferences = CompanionPreferences(), action = "", start = Date.distantPast
-    var timer: Timer?
-    var accessories: Set<Int> = []
-    override func draw(_ dirtyRect: NSRect) {
-        guard let pet else { return }
-        let age = Date().timeIntervalSince(start)
-        let active = age < 3.2
-        NSColor.black.withAlphaComponent(0.04).setFill()
-        NSBezierPath(roundedRect: bounds, xRadius: 14, yRadius: 14).fill()
-        let reduced = preferences.reduceMotion || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        let nesting = active && action == "回窝"
-        let progress = min(1, age / (reduced ? 0.25 : 1.35))
-        let edge = bounds.maxY - 24
-        let width = nesting ? 80.0 : 100.0
-        let y = nesting ? progress * 125 : 0
-        let rect = NSRect(
-            x: bounds.midX - width / 2, y: bounds.midY - width / 2 + y, width: width, height: width)
-        if nesting {
-            NSColor.black.setFill()
-            NSBezierPath(
-                roundedRect: NSRect(x: bounds.midX - 85, y: edge, width: 170, height: 30), xRadius: 12,
-                yRadius: 12
-            ).fill()
-            NSColor.systemMint.withAlphaComponent(0.8).setFill()
-            NSBezierPath(
-                roundedRect: NSRect(x: bounds.midX - 22, y: edge + 1, width: 44, height: 3), xRadius: 2,
-                yRadius: 2
-            ).fill()
-        }
-        let pose: CompanionPose =
-            active
-            ? [
-                "走路": .walk, "拖起": .carried, "挥手": .wave,
-                "睡觉": .sleep, "休息": .sleep, "叫醒": .stretch, "伸懒腰": .stretch,
-            ][action] ?? .idle : .idle
-        NSGraphicsContext.saveGraphicsState()
-        if nesting { NSRect(x: 0, y: 0, width: bounds.width, height: edge).clip() }
-        CompanionArtwork.drawPet(
-            pet, rect: rect, time: active ? age : 0, effects: preferences.effects,
-            reduced: reduced,
-            action: [
-                "摸摸": "pet", "回窝": "nest", "进化": "evolve", "命中爆炸": "result", "正餐": "meal", "点心": "snack",
-                "洗澡": "bath", "清理": "clean", "休息": "rest", "叫醒": "rest",
-            ][action] ?? action,
-            actionAge: active ? age : 99, accessories: accessories, pose: pose,
-            lean: pose == .carried ? sin(age * 7) * 14 : 0)
-        NSGraphicsContext.restoreGraphicsState()
-        if active && preferences.bubbleWave && (pose == .wave || action == "摸摸") {
-            NSColor.systemCyan.withAlphaComponent(max(0, 1 - age.truncatingRemainder(dividingBy: 1.2) / 1.2))
-                .setStroke()
-            for i in 0..<4 {
-                NSBezierPath(
-                    ovalIn: NSRect(
-                        x: rect.minX + Double(i) * 22,
-                        y: rect.midY + age.truncatingRemainder(dividingBy: 1.2) * 25, width: 5, height: 5)
-                ).stroke()
-            }
-        }
-    }
-    func animate() {
-        needsDisplay = true
-        timer?.invalidate()
-        guard Date().timeIntervalSince(start) < 3.2 else { return }
-        timer = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] t in
-            MainActor.assumeIsolated {
-                guard let self else {
-                    t.invalidate()
-                    return
-                }
-                self.needsDisplay = true
-                if Date().timeIntervalSince(self.start) > 3.2 { t.invalidate() }
-            }
-        }
-        if let timer { RunLoop.main.add(timer, forMode: .common) }
     }
 }
 

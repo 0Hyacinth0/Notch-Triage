@@ -405,7 +405,10 @@ struct SettingsRootView: View {
 
     private func wingSelector(_ title: String, selection: Binding<NotchWingContent>) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(LocalizedStringKey(title)).font(.caption).foregroundStyle(.secondary)
+            Text(LocalizedStringKey(title))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .center)
             Picker(title, selection: selection) {
                 ForEach(NotchWingContent.allCases) { content in
                     Text(LocalizedStringKey(content.title)).tag(content)

@@ -44,6 +44,7 @@ struct CompanionProgress: Codable {
     var achievements: Set<String> = []
     var totals: [String: Int] = [:]
     var best = 0
+    // Legacy appearance state is decoded for archive compatibility only.
     var skin = false
     func level(_ skill: Int) -> Int {
         (1...10).last { xp[skill] >= 20 * ($0 - 1) * $0 } ?? 1
@@ -55,6 +56,7 @@ struct CompanionPreferences: Codable {
     var scale = 2, screenID: UInt32 = 0
     var speed = 35.0, dim = 0.10, effects = 1.0
     var reduceMotion = false, petSound = false, gameSound = false
+    // Legacy appearance state is decoded for archive compatibility only.
     var bubbleWave = false, cushion = false
     var petVolume = 0.3, gameVolume = 0.2
     var positionX = 0.5, positionY = 0.25
@@ -71,6 +73,7 @@ struct CompanionArchive: Codable {
     var eggs = 0, duplicateStreak = 0
     var eggSources: [String] = []
     var careAchievements: Set<String> = []
+    // Legacy appearance state is decoded for archive compatibility only.
     var cosmetics: Set<Int> = []
     var accessories: [UUID: Set<Int>] = [:]
     var snake = CompanionProgress(), flight = CompanionProgress()
@@ -155,12 +158,12 @@ enum CompanionCatalog {
     }
     static let care: [CompanionAchievement] = [
         .init(id: "C00", title: "初次相遇", target: "首次启用桌面伙伴", reward: "精灵蛋 ×1"),
-        .init(id: "C01", title: "第一顿饭", target: "有效正餐一次", reward: "奶油小围兜"),
-        .init(id: "C02", title: "小小清洁员", target: "有效清洁累计 5 次", reward: "泡泡挥手"),
+        .init(id: "C01", title: "第一顿饭", target: "有效正餐一次", reward: ""),
+        .init(id: "C02", title: "小小清洁员", target: "有效清洁累计 5 次", reward: ""),
         .init(id: "C03", title: "长大啦", target: "首只精灵成年", reward: "精灵蛋 ×1"),
-        .init(id: "C04", title: "熟悉的朋友", target: "任一精灵亲密度达到 100", reward: "薄荷围巾"),
+        .init(id: "C04", title: "熟悉的朋友", target: "任一精灵亲密度达到 100", reward: ""),
         .init(id: "C05", title: "两种模样", target: "解锁两个成年形态", reward: "精灵蛋 ×1"),
-        .init(id: "C06", title: "住满小窝", target: "集齐三个精灵家族", reward: "浅蓝软垫"),
+        .init(id: "C06", title: "住满小窝", target: "集齐三个精灵家族", reward: ""),
         .init(id: "C07", title: "一起成长", target: "至少两只精灵成年", reward: "精灵蛋 ×1"),
     ]
 }

@@ -229,9 +229,11 @@ struct CompanionCarePanel: View {
         surfaceFrame.map { NSPoint(x: centerX ?? $0.midX, y: $0.minY) }
     }
     @Published var occupied = false
+    @Published var draggingOut = false
     func reset() {
         phase = .none
         progress = 0
+        draggingOut = false
     }
 }
 
@@ -270,9 +272,9 @@ struct CompanionNestControl: View {
             // Keep the gesture view alive after emerge() changes inNest.
             Group {
                 Image(systemName: "pawprint.fill")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Color(nsColor: CompanionArtwork.palettes[feedback.family]))
-                    .frame(width: 54, height: 18)
+                    .frame(width: 54, height: 14)
                     .contentShape(Rectangle())
                     .onTapGesture {
                         store.dismissNestGuide()
@@ -286,9 +288,11 @@ struct CompanionNestControl: View {
                             if !draggingOut { store.dismissNestGuide() }
                             draggingOut = true
                             store.desktopDragHandler?(NSEvent.mouseLocation)
+                            feedback.draggingOut = true
                         }.onEnded { _ in
                             if draggingOut { store.desktopDragHandler?(nil) }
                             draggingOut = false
+                            feedback.draggingOut = false
                         }
                     )
                     .contextMenu {
@@ -313,7 +317,7 @@ struct CompanionNestGuide: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("它已经回到小窝", systemImage: "pawprint.fill").font(.headline)
-            Text("按住刘海底部的小爪印向下拖，就能带它出来。也可以直接点击小爪印。")
+            Text("按住刘海正下方的小爪印向下拖，就能带它出来。也可以直接点击小爪印。")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             HStack {
                 Button("知道了") { store.dismissNestGuide() }.buttonStyle(.bordered)

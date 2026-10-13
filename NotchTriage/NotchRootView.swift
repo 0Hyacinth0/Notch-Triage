@@ -29,6 +29,12 @@ struct NotchRootView: View {
             height: panelGeometry.size.height,
             alignment: .top
         )
+        .overlay(alignment: .top) {
+            CompanionNestControl(store: model.companion, feedback: model.companion.nestFeedback)
+                .frame(width: 80, height: 14)
+                .frame(maxWidth: .infinity, alignment: .top)
+                .padding(.top, compactHeight + 1)
+        }
         .background {
             if model.isExpanded || model.isPanelClosing {
                 // Keep the expanded window's transparent gutters hit-testable
@@ -90,13 +96,6 @@ struct NotchRootView: View {
                     model.isExpanded ? "收起 Notch Triage" : "展开 Notch Triage"
                 )
             )
-
-            // A full-canvas sibling keeps the entrance at the physical notch
-            // center, independent of unequal left/right wing widths.
-            CompanionNestControl(store: model.companion, feedback: model.companion.nestFeedback)
-                .frame(width: 80, height: 18)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                .offset(y: (compactHeight == model.menuBarHeight ? min(model.menuBarHeight, 40) : compactHeight) - 18)
 
             // Isolate adaptive reveal alignment from the main notch. Custom
             // alignment guides can expand a ZStack's layout bounds; keeping

@@ -16,6 +16,7 @@ struct PanelGeometry: Equatable {
 enum NotchLayout {
     static let panelWidth: CGFloat = 560
     static let hoveredHeight: CGFloat = 74
+    static let nestControlOverflow: CGFloat = 15
     static let expandedGap: CGFloat = 16
     static let expandedPanelWidth: CGFloat = 520
     static let expandedPanelHeight: CGFloat = 460
@@ -37,16 +38,20 @@ enum NotchLayout {
 
     static func panelHeight(
         menuBarHeight: CGFloat,
-        phase: PanelGeometryPhase
+        phase: PanelGeometryPhase,
+        nestControlVisible: Bool = false
     ) -> CGFloat {
+        let baseHeight: CGFloat
         switch phase {
         case .compact:
-            return menuBarHeight
+            baseHeight = menuBarHeight
         case .peek:
-            return max(menuBarHeight, hoveredHeight)
+            baseHeight = max(menuBarHeight, hoveredHeight)
         case .workspace:
-            return expandedHeight
+            baseHeight = expandedHeight
         }
+        guard nestControlVisible, phase != .workspace else { return baseHeight }
+        return baseHeight + nestControlOverflow
     }
 
     static func windowFrame(
@@ -66,11 +71,13 @@ enum NotchLayout {
         menuBarHeight: CGFloat,
         phase: PanelGeometryPhase,
         compactSurfaceWidth: CGFloat = panelWidth,
-        compactSurfaceHorizontalOffset: CGFloat = 0
+        compactSurfaceHorizontalOffset: CGFloat = 0,
+        nestControlVisible: Bool = false
     ) -> PanelGeometry {
         let height = panelHeight(
             menuBarHeight: menuBarHeight,
-            phase: phase
+            phase: phase,
+            nestControlVisible: nestControlVisible
         )
         let windowFrame = windowFrame(
             screenFrame: screenFrame,

@@ -805,18 +805,8 @@ import SwiftUI
             pet, rect: bounds.insetBy(dx: 16, dy: 16), time: now, effects: store.preferences.effects,
             reduced: reduced, action: action,
             actionAge: now - actionTime, previousForm: store.previousForm,
-            accessories: store.archive.accessories[pet.id, default: []],
             pose: pose, facingLeft: facingLeft, lean: lean, releaseAge: now - releaseTime, squash: nestSquash)
         NSGraphicsContext.restoreGraphicsState()
-        if store.preferences.bubbleWave && (pose == .wave || action == "pet" && now - actionTime < 1.2) {
-            let age = pose == .wave ? now.truncatingRemainder(dividingBy: 1.2) : now - actionTime
-            NSColor.systemCyan.withAlphaComponent(max(0, 1 - age / 1.2)).setStroke()
-            for i in 0..<4 {
-                NSBezierPath(
-                    ovalIn: .init(x: Double(i) * 20 + 8, y: 30 + age * 40, width: 5, height: 5)
-                ).stroke()
-            }
-        }
         if !carried && (store.preferences.resting || pet.autoResting) {
             CompanionCareEffects.drawSleepMarks(in: bounds, time: now, reduced: reduced)
         }
@@ -939,18 +929,15 @@ import SwiftUI
                 starting: color.withAlphaComponent(0.65 * min(1, glow)),
                 ending: color.withAlphaComponent(0))?.draw(in: r, angle: 90)
         }
-        let skin = s.skin
         if s.game == .snake {
             for (i, p) in s.snake.enumerated() {
                 let q = CompanionPoint(x: p.x + 0.5, y: p.y + 0.5)
                 pixel(
                     q, size: 0.85,
-                    color: skin
-                        ? .systemPink
-                        : (i == 0
-                            ? .systemMint
-                            : CompanionArtwork.palettes[s.family].withAlphaComponent(
-                                max(0.45, 1 - Double(i) / Double(max(1, s.snake.count)) * 0.5))))
+                    color: i == 0
+                        ? .systemMint
+                        : CompanionArtwork.palettes[s.family].withAlphaComponent(
+                            max(0.45, 1 - Double(i) / Double(max(1, s.snake.count)) * 0.5)))
                 if i == 0 {
                     pixel(.init(x: q.x - 0.18, y: q.y - 0.12), size: 0.12, color: .black)
                     pixel(.init(x: q.x + 0.18, y: q.y - 0.12), size: 0.12, color: .black)
@@ -1025,15 +1012,9 @@ import SwiftUI
                     let flame = reduced ? 8 : 9 + sin(s.time * 24) * 3
                     trail(.init(x: s.player.x, y: s.player.y + 1.3), length: flame, color: .systemCyan)
                 }
-                if skin {
-                    let badge = point(s.player)
-                    NSColor.systemPink.withAlphaComponent(0.75).setStroke()
-                    NSBezierPath(ovalIn: .init(x: badge.x - 11, y: badge.y - 11, width: 22, height: 22))
-                        .stroke()
-                }
                 if !CompanionArcadeArtwork.draw(0, at: point(s.player), size: 22) {
                     pixel(
-                        s.player, size: 1.1, color: skin ? .systemPink : CompanionArtwork.palettes[s.family])
+                        s.player, size: 1.1, color: CompanionArtwork.palettes[s.family])
                     pixel(.init(x: s.player.x, y: s.player.y - 0.9), size: 0.8, color: .white)
                     pixel(.init(x: s.player.x - 1, y: s.player.y + 0.5), size: 0.8, color: .systemMint)
                     pixel(.init(x: s.player.x + 1, y: s.player.y + 0.5), size: 0.8, color: .systemMint)

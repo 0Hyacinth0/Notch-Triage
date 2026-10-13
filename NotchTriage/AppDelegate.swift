@@ -221,6 +221,17 @@ final class NotchPanelController {
             }
             .store(in: &cancellables)
 
+        Publishers.CombineLatest(
+            model.companion.nestFeedback.$occupied,
+            model.companion.nestFeedback.$draggingOut
+        )
+        .map { $0 || $1 }
+        .removeDuplicates()
+        .sink { [weak self] _ in
+            self?.scheduleResize(animated: true)
+        }
+        .store(in: &cancellables)
+
         model.$panelState
             .map { !$0.isExpanded && !$0.isPresentingFileDropTarget }
             .removeDuplicates()
@@ -344,7 +355,9 @@ final class NotchPanelController {
             compactSurfaceHorizontalOffset: NotchLayout.compactSurfaceHorizontalOffset(
                 leftWingWidth: leftWingWidth,
                 rightWingWidth: rightWingWidth
-            )
+            ),
+            nestControlVisible: model.companion.nestFeedback.occupied
+                || model.companion.nestFeedback.draggingOut
         )
         model.companion.nestFeedback.surfaceFrame = geometry.hoverTrackingFrame
         model.companion.nestFeedback.centerX = screen.frame.midX

@@ -345,7 +345,7 @@ enum CompanionPose: String, CaseIterable {
     }
     static func drawPet(
         _ pet: CompanionPet, rect: NSRect, time: Double, effects: Double, reduced: Bool, action: String = "",
-        actionAge: Double = 99, previousForm: Int? = nil, accessories: Set<Int> = [],
+        actionAge: Double = 99, previousForm: Int? = nil,
         pose: CompanionPose = .idle, facingLeft: Bool = false, lean: Double = 0, releaseAge: Double = 99,
         squash: Double = 0
     ) {
@@ -420,22 +420,6 @@ enum CompanionPose: String, CaseIterable {
             pose: activePose, frame: reduced ? 0 : Int(time * (activePose == .walk ? 9 : 4)) % 4
         )
         .draw(in: r, from: .zero, operation: .sourceOver, fraction: 1)
-        if accessories.contains(1) || accessories.contains(3) {
-            (accessories.contains(3) ? NSColor.systemMint : .init(red: 1, green: 0.93, blue: 0.77, alpha: 1))
-                .setFill()
-            NSRect(
-                x: r.minX + r.width * 0.37, y: r.minY + r.height * 0.22, width: r.width * 0.26,
-                height: r.height * 0.10
-            ).fill()
-        }
-        if accessories.contains(6) {
-            NSColor.systemGreen.setFill()
-            NSRect(x: r.midX - 6, y: r.maxY - 10, width: 12, height: 4).fill()
-        }
-        if accessories.contains(8) {
-            NSColor.systemYellow.setFill()
-            NSRect(x: r.maxX - 10, y: r.minY + 10, width: 5, height: 5).fill()
-        }
         NSGraphicsContext.restoreGraphicsState()
         if CompanionCareEffects.actions.contains(action) {
             CompanionCareEffects.draw(

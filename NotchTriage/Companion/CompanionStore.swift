@@ -122,6 +122,38 @@ import Combine
         signal("out")
         save()
     }
+    func releasePet(_ id: UUID) {
+        guard writable else { return }
+        guard session == nil else {
+            notice = "请先结束并结算当前游戏，再放生精灵。"
+            return
+        }
+        guard archive.pets.count > 1 || archive.eggs > 0 else {
+            notice = "请先保留一只精灵或一枚精灵蛋，避免小窝失去继续孵化的入口。"
+            return
+        }
+        guard let index = archive.pets.firstIndex(where: { $0.id == id }) else { return }
+
+        let name = archive.pets[index].name
+        let wasSelected = archive.selected == id
+        archive.pets.remove(at: index)
+        archive.accessories.removeValue(forKey: id)
+        if wasSelected {
+            archive.selected = archive.pets.first?.id
+            archive.preferences.inNest = false
+            archive.preferences.resting = false
+            nestFeedback.occupied = false
+            nestFeedback.reset()
+            if nestGuideRequested { dismissNestGuide() }
+            signal(archive.selected == nil ? "release" : "out")
+        }
+
+        evaluateCare()
+        notice = wasSelected && archive.selected != nil
+            ? "\(name) 已放生，另一位伙伴接替陪伴。"
+            : "\(name) 已放生。"
+        save()
+    }
     func rename(_ name: String) {
         mutatePet { $0.name = String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(24)) }
         save()
@@ -414,7 +446,7 @@ import Combine
                 rewards.append(CompanionCatalog.relics(s.game)[i].name)
             }
         }
-        func reward(_ index: Int, when condition: Bool, egg: Bool, cosmetic: Int? = nil) {
+        func reward(_ index: Int, when condition: Bool, egg: Bool) {
             let key = "\(s.game.prefix)C\(String(format: "%02d", index))"
             if condition && p.achievements.insert(key).inserted {
                 if egg {
@@ -422,20 +454,14 @@ import Combine
                     archive.eggSources.append("\(s.game.title) · \(key)")
                     rewards.append("精灵蛋")
                 }
-                if let cosmetic {
-                    archive.cosmetics.insert(cosmetic)
-                    rewards.append("新外观")
-                }
             }
         }
         reward(9, when: s.time >= 180, egg: true)
         reward(
             10, when: snake ? p.totals["food", default: 0] >= 200 : p.totals["wave", default: 0] >= 24,
             egg: true)
-        reward(
-            11, when: snake ? food >= 50 : s.counts["boss3", default: 0] > 0, egg: false,
-            cosmetic: snake ? 5 : 7)
-        reward(12, when: p.level(snake ? 0 : 1) >= 5, egg: false, cosmetic: snake ? 6 : 8)
+        reward(11, when: snake ? food >= 50 : s.counts["boss3", default: 0] > 0, egg: false)
+        reward(12, when: p.level(snake ? 0 : 1) >= 5, egg: false)
         let tiers = p.totals[snake ? "food" : "boss", default: 0] / (snake ? 1000 : 30)
         let earned = p.totals["eggTiers", default: 0]
         if tiers > earned {
@@ -489,7 +515,6 @@ import Combine
                     archive.eggs += 1
                     archive.eggSources.append(CompanionCatalog.care[i].title)
                 }
-                if let cosmetic = [1: 1, 2: 2, 4: 3, 6: 4][i] { archive.cosmetics.insert(cosmetic) }
             }
         }
     }
@@ -501,19 +526,6 @@ import Combine
         previousForm = pet?.form
         mutatePet { if $0.unlockedForms.contains(form) { $0.form = form } }
         signal("evolve")
-        save()
-    }
-    func accessory(_ id: Int) {
-        guard let pet, archive.cosmetics.contains(id) else { return }
-        var items = archive.accessories[pet.id, default: []]
-        if items.contains(id) { items.remove(id) } else { items.insert(id) }
-        archive.accessories[pet.id] = items
-        save()
-    }
-    func skin(_ game: CompanionGame, enabled: Bool) {
-        var p = progress(game)
-        p.skin = enabled
-        setProgress(p, game: game)
         save()
     }
     func reset(gamesOnly: Bool) {
