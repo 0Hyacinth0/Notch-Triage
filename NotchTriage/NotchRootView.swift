@@ -33,7 +33,13 @@ struct NotchRootView: View {
             CompanionNestControl(
                 store: model.companion,
                 feedback: model.companion.nestFeedback,
-                isNotchExpanded: model.isHoveringNotch || model.isExpanded
+                isNotchExpanded: model.isHoveringNotch || model.isExpanded,
+                onDragActivityChanged: { dragging in
+                    guard !dragging,
+                          pointerRegion == .outside,
+                          model.isHoveringNotch else { return }
+                    model.setNotchHovered(false)
+                }
             )
                 .frame(width: 80, height: 14)
                 .frame(maxWidth: .infinity, alignment: .top)
@@ -60,6 +66,14 @@ struct NotchRootView: View {
             || model.panelState.isPresentingFileDropTarget
             ? hoveredNotchHeight
             : model.menuBarHeight
+    }
+
+    private var notchHoverTrackingHeight: CGFloat {
+        let nestControlVisible = ((model.isHoveringNotch || model.isExpanded)
+            && model.companion.nestFeedback.occupied)
+            || model.companion.nestFeedback.draggingOut
+        return compactHeight
+            + (nestControlVisible ? NotchLayout.nestControlOverflow : 0)
     }
 
     private var collapsedBar: some View {
@@ -89,10 +103,11 @@ struct NotchRootView: View {
                     Label("退出 Notch Triage", systemImage: "power")
                 }
             }
-            .background {
+            .background(alignment: .top) {
                 NotchHoverTracker { location in
                     updatePointerRegion(at: location)
                 }
+                .frame(height: notchHoverTrackingHeight)
             }
             .offset(x: compactAlignmentOffset)
             .accessibilityLabel(
@@ -273,6 +288,7 @@ struct NotchRootView: View {
 
         switch region {
         case .outside:
+            guard !model.companion.nestFeedback.draggingOut else { return }
             model.setNotchHovered(false)
         case .notch:
             model.setNotchHovered(true)

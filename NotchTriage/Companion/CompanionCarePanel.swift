@@ -266,6 +266,7 @@ struct CompanionNestControl: View {
     @ObservedObject var store: CompanionStore
     @ObservedObject var feedback: CompanionNestFeedback
     let isNotchExpanded: Bool
+    let onDragActivityChanged: (Bool) -> Void
     @State private var draggingOut = false
     private var isVisible: Bool {
         store.preferences.enabled && (draggingOut || isNotchExpanded && feedback.occupied)
@@ -289,14 +290,19 @@ struct CompanionNestControl: View {
                             guard store.preferences.enabled, store.preferences.inNest || draggingOut else {
                                 return
                             }
-                            if !draggingOut { store.dismissNestGuide() }
-                            draggingOut = true
+                            if !draggingOut {
+                                store.dismissNestGuide()
+                                draggingOut = true
+                                feedback.draggingOut = true
+                                onDragActivityChanged(true)
+                            }
                             store.desktopDragHandler?(NSEvent.mouseLocation)
-                            feedback.draggingOut = true
                         }.onEnded { _ in
-                            if draggingOut { store.desktopDragHandler?(nil) }
+                            let didDragOut = draggingOut
+                            if didDragOut { store.desktopDragHandler?(nil) }
                             draggingOut = false
                             feedback.draggingOut = false
+                            if didDragOut { onDragActivityChanged(false) }
                         }
                     )
                     .contextMenu {
