@@ -715,3 +715,19 @@
 "测试版" = "Beta";
 "只检查正式版更新。" = "Check stable releases only.";
 "检查 GitHub 上标记为 Pre-release 的测试版。" = "Check GitHub releases marked as Pre-release.";
+
+// AI usage dashboard
+"额度" = "Quota";
+"用量" = "Usage";
+"已用" = "Used";
+"额度窗口" = "Quota Windows";
+"余额与 credits" = "Balance and credits";
+"额度窗口使用" = "Quota Window Usage";
+"重置时间未提供" = "Reset time unavailable";
+"数据来源" = "Data source";
+"本机连接" = "Local Connection";
+"API 连接" = "API Connection";
+"同步中" = "Syncing";
+"已连接" = "Connected";
+"需检查" = "Check Connection";
+"连接设置与诊断" = "Connection Settings and Diagnostics";
