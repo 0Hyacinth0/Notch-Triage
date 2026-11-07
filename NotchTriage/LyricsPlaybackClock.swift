@@ -60,7 +60,7 @@ struct LyricsPlaybackClock {
         sourceTier = precise ? .precise
             : (isQQOrNetEase || media.positionSource == .metadataOnly) ? .quantized : .clean
         let seekThreshold = precise ? 0.85 : isQQOrNetEase ? 2.5 : 1.5
-        let correctionThreshold = precise ? 0.18 : isQQOrNetEase ? 0.95 : 0.45
+        let correctionThreshold = precise ? 0.18 : sourceTier == .quantized ? 0.25 : 0.45
         // A refreshed timestamp with an unchanged raw position is not a new
         // playback reading. Treating it as one made a stale value look like a
         // seek backwards after the local clock had advanced for a few seconds.
@@ -120,23 +120,26 @@ struct LyricsPlaybackClock {
                 pendingSeek = (delta, now)
             }
         } else {
-            if sourceTier == .quantized, delta > 0.05, delta < 1.5 {
-                // A floored clock can lag the real player, but a fresh reading
-                // ahead of our estimate proves the estimate is behind.
-                position = observed
-                driftAverage = 0; driftSamples = 0; pendingSeek = nil
-                rate = nextRate
-                identity = key; uptime = now; duration = media.duration
-                lastObserved = media.elapsed
-                return
-            }
             // A single remote reading may be noisy; a persistent same-sign
             // difference is a real clock bias. Correct only after repeated
             // observations, using a tighter threshold for player-owned clocks.
+            if sourceTier == .quantized {
+                // Quantized clocks can jitter in either direction. Require consecutive
+                // evidence, and discard old evidence when the error changes direction
+                // or returns to the deadband. Never snap forward on one sample.
+                if abs(delta) < 0.12 || (driftSamples > 0 && delta.sign != driftAverage.sign) {
+                    driftAverage = 0
+                    driftSamples = 0
+                }
+            }
             driftAverage = driftAverage * 0.7 + delta * 0.3
             driftSamples += 1
-            if driftSamples >= 2, abs(driftAverage) >= correctionThreshold {
-                let maximumStep = precise ? 0.16 : isQQOrNetEase ? 0.10 : 0.12
+            let requiredSamples = sourceTier == .quantized ? 3 : 2
+            if driftSamples >= requiredSamples, abs(driftAverage) >= correctionThreshold {
+                let nominalStep = precise ? 0.16 : isQQOrNetEase ? 0.10 : 0.12
+                // Frequent progress callbacks must slow the cursor, not rewind it.
+                let maximumStep = sourceTier == .quantized
+                    ? min(nominalStep, max(0, now - uptime) * 0.2) : nominalStep
                 position = max(0, predicted + min(maximumStep, max(-maximumStep, driftAverage * 0.3)))
             } else {
                 position = predicted
